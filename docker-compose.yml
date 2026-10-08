@@ -1,0 +1,63 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: geonames-server
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - geonames
+    ports:
+      - "9500:9500"
+    env_file:
+      - .env
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_HOST: ${DB_HOST:-postgres}
+      POSTGRES_PORT: ${DB_PORT:-5432}
+      POSTGRES_DB: ${DB_NAME:-geonames}
+      # required for colorized output in logs, DO NOT CHANGE
+      FORCE_COLOR: 1
+      TERM : xterm-256color
+    volumes:
+      - app-data:/app/data
+      - app-logs:/app/logs
+
+  postgres:
+    image: postgres:16
+    hostname: postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - geonames
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-geonames}
+    # uncomment to expose postgres to host machine if you plan to connect the database from host machine
+    # ports:
+    #   - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  geonames:
+
+volumes:
+  postgres-data:
+  app-data:
+  app-logs:

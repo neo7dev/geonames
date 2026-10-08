@@ -1,0 +1,67 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+	"name": "Geonames Server Dev Container",
+
+	"dockerComposeFile": "docker-compose.yml",
+	"service": "app",
+	"workspaceFolder": "/workspace",
+	"shutdownAction": "stopCompose",
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	"features": {
+		"ghcr.io/devcontainers/features/common-utils": {
+			"installZsh": "true",
+			"installOhMyZsh": "true",
+			"configureZshAsDefaultShell": "true",
+			"upgradePackages": "true"
+		},
+		// "ghcr.io/devcontainers-extra/features/uv-tool": {
+		// 	"python": "3.12",
+		// 	"uv_version": "latest"
+		// },
+		"ghcr.io/devcontainers-extra/features/uv": {
+			"version": "latest"
+		}
+	},
+	
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	"forwardPorts": [9500, 5432, 6379, 5050, 3000, 3002, 3003],
+	
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": "uv sync",
+	// "postStartCommand": "bash -c 'nohup uvicorn geonames_server.api.app:app --host 0.0.0.0 --port 9500'",
+	
+	// Configure tool-specific properties.
+	// "customizations": {},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"donjayamanne.python-extension-pack",
+				"ms-python.debugpy",
+				"cweijan.vscode-postgresql-client2",
+				"ms-ossdata.vscode-pgsql",
+				"charliermarsh.ruff",
+				"vscjava.migrate-java-to-azure",
+				"GitHub.copilot-chat",
+				"eamodio.gitlens",
+				"waderyan.gitblame",
+				"donjayamanne.git-extension-pack",
+				"pixl-garden.BongoCat",
+				"Anthropic.claude-code",
+				"AndrePimenta.claude-code-chat"
+			]
+		},
+		"settings": {
+			"python.envFile": "${workspaceFolder}/.devcontainer/.env",
+            "python.terminal.useEnvFile": true,
+			"[python]": {
+				"editor.defaultFormatter": "charliermarsh.ruff"
+			}
+		}
+	},
+
+	"updateRemoteUserUID": true,
+
+	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	"remoteUser": "devuser"
+}

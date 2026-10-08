@@ -1,0 +1,2791 @@
+openapi: 3.1.0
+info:
+  title: GeoNames Server
+  version: 0.1.0
+paths:
+  /allcountries/:
+    get:
+      tags:
+      - All Countries
+      summary: List Geonames
+      operationId: list_geonames_allcountries__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response List Geonames Allcountries  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /allcountries/filter:
+    get:
+      tags:
+      - All Countries
+      summary: Filter Geonames
+      operationId: filter_geonames_allcountries_filter_get
+      parameters:
+      - name: geonameid
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Geonameid
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      - name: asciiname
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asciiname
+      - name: alternatenames
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alternatenames
+      - name: latitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Latitude
+      - name: longitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Longitude
+      - name: feature_class
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Class
+      - name: feature_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Code
+      - name: country_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Country Code
+      - name: cc2
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cc2
+      - name: admin1_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin1 Code
+      - name: admin2_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin2 Code
+      - name: admin3_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin3 Code
+      - name: admin4_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin4 Code
+      - name: timezone
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+      - name: population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Population
+      - name: delta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Delta
+      - name: elevation
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Elevation
+      - name: dem
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Dem
+      - name: modification_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modification Date
+      - name: min_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Min Population
+      - name: max_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Population
+      - name: modified_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified After
+      - name: modified_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified Before
+      - name: synced_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced After
+      - name: synced_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced Before
+      - name: order_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/GeoNamesOrderBy'
+          - type: 'null'
+          title: Order By
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response Filter Geonames Allcountries Filter Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /allcountries/{geonameid}:
+    get:
+      tags:
+      - All Countries
+      summary: Get Geoname
+      operationId: get_geoname_allcountries__geonameid__get
+      parameters:
+      - name: geonameid
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Geonameid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoNameResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities500/:
+    get:
+      tags:
+      - Cities 500
+      summary: List Geonames
+      operationId: list_geonames_cities500__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response List Geonames Cities500  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities500/filter:
+    get:
+      tags:
+      - Cities 500
+      summary: Filter Geonames
+      operationId: filter_geonames_cities500_filter_get
+      parameters:
+      - name: geonameid
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Geonameid
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      - name: asciiname
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asciiname
+      - name: alternatenames
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alternatenames
+      - name: latitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Latitude
+      - name: longitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Longitude
+      - name: feature_class
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Class
+      - name: feature_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Code
+      - name: country_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Country Code
+      - name: cc2
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cc2
+      - name: admin1_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin1 Code
+      - name: admin2_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin2 Code
+      - name: admin3_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin3 Code
+      - name: admin4_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin4 Code
+      - name: timezone
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+      - name: population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Population
+      - name: delta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Delta
+      - name: elevation
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Elevation
+      - name: dem
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Dem
+      - name: modification_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modification Date
+      - name: min_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Min Population
+      - name: max_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Population
+      - name: modified_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified After
+      - name: modified_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified Before
+      - name: synced_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced After
+      - name: synced_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced Before
+      - name: order_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/GeoNamesOrderBy'
+          - type: 'null'
+          title: Order By
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response Filter Geonames Cities500 Filter Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities500/{geonameid}:
+    get:
+      tags:
+      - Cities 500
+      summary: Get Geoname
+      operationId: get_geoname_cities500__geonameid__get
+      parameters:
+      - name: geonameid
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Geonameid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoNameResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities1000/:
+    get:
+      tags:
+      - Cities 1000
+      summary: List Geonames
+      operationId: list_geonames_cities1000__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response List Geonames Cities1000  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities1000/filter:
+    get:
+      tags:
+      - Cities 1000
+      summary: Filter Geonames
+      operationId: filter_geonames_cities1000_filter_get
+      parameters:
+      - name: geonameid
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Geonameid
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      - name: asciiname
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asciiname
+      - name: alternatenames
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alternatenames
+      - name: latitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Latitude
+      - name: longitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Longitude
+      - name: feature_class
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Class
+      - name: feature_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Code
+      - name: country_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Country Code
+      - name: cc2
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cc2
+      - name: admin1_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin1 Code
+      - name: admin2_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin2 Code
+      - name: admin3_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin3 Code
+      - name: admin4_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin4 Code
+      - name: timezone
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+      - name: population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Population
+      - name: delta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Delta
+      - name: elevation
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Elevation
+      - name: dem
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Dem
+      - name: modification_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modification Date
+      - name: min_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Min Population
+      - name: max_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Population
+      - name: modified_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified After
+      - name: modified_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified Before
+      - name: synced_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced After
+      - name: synced_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced Before
+      - name: order_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/GeoNamesOrderBy'
+          - type: 'null'
+          title: Order By
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response Filter Geonames Cities1000 Filter Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities1000/{geonameid}:
+    get:
+      tags:
+      - Cities 1000
+      summary: Get Geoname
+      operationId: get_geoname_cities1000__geonameid__get
+      parameters:
+      - name: geonameid
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Geonameid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoNameResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities5000/:
+    get:
+      tags:
+      - Cities 5000
+      summary: List Geonames
+      operationId: list_geonames_cities5000__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response List Geonames Cities5000  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities5000/filter:
+    get:
+      tags:
+      - Cities 5000
+      summary: Filter Geonames
+      operationId: filter_geonames_cities5000_filter_get
+      parameters:
+      - name: geonameid
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Geonameid
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      - name: asciiname
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asciiname
+      - name: alternatenames
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alternatenames
+      - name: latitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Latitude
+      - name: longitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Longitude
+      - name: feature_class
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Class
+      - name: feature_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Code
+      - name: country_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Country Code
+      - name: cc2
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cc2
+      - name: admin1_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin1 Code
+      - name: admin2_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin2 Code
+      - name: admin3_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin3 Code
+      - name: admin4_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin4 Code
+      - name: timezone
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+      - name: population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Population
+      - name: delta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Delta
+      - name: elevation
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Elevation
+      - name: dem
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Dem
+      - name: modification_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modification Date
+      - name: min_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Min Population
+      - name: max_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Population
+      - name: modified_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified After
+      - name: modified_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified Before
+      - name: synced_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced After
+      - name: synced_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced Before
+      - name: order_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/GeoNamesOrderBy'
+          - type: 'null'
+          title: Order By
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response Filter Geonames Cities5000 Filter Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities5000/{geonameid}:
+    get:
+      tags:
+      - Cities 5000
+      summary: Get Geoname
+      operationId: get_geoname_cities5000__geonameid__get
+      parameters:
+      - name: geonameid
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Geonameid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoNameResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities15000/:
+    get:
+      tags:
+      - Cities 15000
+      summary: List Geonames
+      operationId: list_geonames_cities15000__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response List Geonames Cities15000  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities15000/filter:
+    get:
+      tags:
+      - Cities 15000
+      summary: Filter Geonames
+      operationId: filter_geonames_cities15000_filter_get
+      parameters:
+      - name: geonameid
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Geonameid
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      - name: asciiname
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asciiname
+      - name: alternatenames
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alternatenames
+      - name: latitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Latitude
+      - name: longitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Longitude
+      - name: feature_class
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Class
+      - name: feature_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Code
+      - name: country_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Country Code
+      - name: cc2
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cc2
+      - name: admin1_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin1 Code
+      - name: admin2_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin2 Code
+      - name: admin3_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin3 Code
+      - name: admin4_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin4 Code
+      - name: timezone
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+      - name: population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Population
+      - name: delta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Delta
+      - name: elevation
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Elevation
+      - name: dem
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Dem
+      - name: modification_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modification Date
+      - name: min_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Min Population
+      - name: max_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Population
+      - name: modified_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified After
+      - name: modified_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified Before
+      - name: synced_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced After
+      - name: synced_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced Before
+      - name: order_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/GeoNamesOrderBy'
+          - type: 'null'
+          title: Order By
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response Filter Geonames Cities15000 Filter Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /cities15000/{geonameid}:
+    get:
+      tags:
+      - Cities 15000
+      summary: Get Geoname
+      operationId: get_geoname_cities15000__geonameid__get
+      parameters:
+      - name: geonameid
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Geonameid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoNameResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /modifications/:
+    get:
+      tags:
+      - Modifications
+      summary: List Modifications
+      operationId: list_modifications_modifications__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response List Modifications Modifications  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /modifications/filter:
+    get:
+      tags:
+      - Modifications
+      summary: Filter Modifications
+      operationId: filter_modifications_modifications_filter_get
+      parameters:
+      - name: geonameid
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Geonameid
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      - name: asciiname
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asciiname
+      - name: alternatenames
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alternatenames
+      - name: latitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Latitude
+      - name: longitude
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Longitude
+      - name: feature_class
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Class
+      - name: feature_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Code
+      - name: country_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Country Code
+      - name: cc2
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cc2
+      - name: admin1_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin1 Code
+      - name: admin2_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin2 Code
+      - name: admin3_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin3 Code
+      - name: admin4_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin4 Code
+      - name: timezone
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+      - name: population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Population
+      - name: delta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Delta
+      - name: elevation
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Elevation
+      - name: dem
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Dem
+      - name: modification_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modification Date
+      - name: min_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Min Population
+      - name: max_population
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Population
+      - name: modified_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified After
+      - name: modified_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modified Before
+      - name: synced_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced After
+      - name: synced_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Synced Before
+      - name: order_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/GeoNamesOrderBy'
+          - type: 'null'
+          title: Order By
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response Filter Modifications Modifications Filter Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /modifications/{geonameid}:
+    get:
+      tags:
+      - Modifications
+      summary: Get Modifications By Geonameid
+      operationId: get_modifications_by_geonameid_modifications__geonameid__get
+      parameters:
+      - name: geonameid
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Geonameid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response Get Modifications By Geonameid Modifications  Geonameid  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /modifications/date/{modification_date}:
+    get:
+      tags:
+      - Modifications
+      summary: Get Modifications By Date
+      operationId: get_modifications_by_date_modifications_date__modification_date__get
+      parameters:
+      - name: modification_date
+        in: path
+        required: true
+        schema:
+          type: string
+          format: date
+          title: Modification Date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeoNameResponse'
+                title: Response Get Modifications By Date Modifications Date  Modification
+                  Date  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /deletions/:
+    get:
+      tags:
+      - Deletions
+      summary: List Deletions
+      operationId: list_deletions_deletions__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeletionResponse'
+                title: Response List Deletions Deletions  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /deletions/filter:
+    get:
+      tags:
+      - Deletions
+      summary: Filter Deletions
+      operationId: filter_deletions_deletions_filter_get
+      parameters:
+      - name: deletion_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Deletion Date
+      - name: geonameid
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Geonameid
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      - name: reason
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      - name: order_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/DeletionOrderBy'
+          - type: 'null'
+          title: Order By
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeletionResponse'
+                title: Response Filter Deletions Deletions Filter Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /deletions/{geonameid}:
+    get:
+      tags:
+      - Deletions
+      summary: Get Deletion
+      operationId: get_deletion_deletions__geonameid__get
+      parameters:
+      - name: geonameid
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Geonameid
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /metadata/:
+    get:
+      tags:
+      - Dataset Metadata
+      summary: List Metadata
+      operationId: list_metadata_metadata__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatasetMetaDataResponse'
+                title: Response List Metadata Metadata  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /metadata/out-of-sync:
+    get:
+      tags:
+      - Dataset Metadata
+      summary: Get Out Of Sync
+      operationId: get_out_of_sync_metadata_out_of_sync_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/DatasetMetaDataResponse'
+                type: array
+                title: Response Get Out Of Sync Metadata Out Of Sync Get
+  /metadata/needs-rebuild:
+    get:
+      tags:
+      - Dataset Metadata
+      summary: Get Needs Rebuild
+      operationId: get_needs_rebuild_metadata_needs_rebuild_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/DatasetMetaDataResponse'
+                type: array
+                title: Response Get Needs Rebuild Metadata Needs Rebuild Get
+  /metadata/filter:
+    get:
+      tags:
+      - Dataset Metadata
+      summary: Filter Metadata
+      operationId: filter_metadata_metadata_filter_get
+      parameters:
+      - name: dataset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Dataset
+      - name: out_of_sync
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Out Of Sync
+      - name: needs_rebuild
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Needs Rebuild
+      - name: etag
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Etag
+      - name: remote_etag
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Remote Etag
+      - name: last_modified
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Modified
+      - name: remote_last_modified
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Remote Last Modified
+      - name: modified_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Modified After
+      - name: modified_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Modified Before
+      - name: remote_modified_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Remote Modified After
+      - name: remote_modified_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Remote Modified Before
+      - name: order_by
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetMetaDataOrderBy'
+          - type: 'null'
+          title: Order By
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatasetMetaDataResponse'
+                title: Response Filter Metadata Metadata Filter Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /metadata/{dataset}:
+    get:
+      tags:
+      - Dataset Metadata
+      summary: Get Metadata
+      operationId: get_metadata_metadata__dataset__get
+      parameters:
+      - name: dataset
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Dataset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMetaDataResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /sync/:
+    post:
+      tags:
+      - Sync
+      summary: Start Sync
+      operationId: start_sync_sync__post
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncAcceptedResponse'
+  /sync/{sync_id}:
+    get:
+      tags:
+      - Sync
+      summary: Get Sync Status
+      operationId: get_sync_status_sync__sync_id__get
+      parameters:
+      - name: sync_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Sync Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    DatasetMetaDataOrderBy:
+      type: string
+      enum:
+      - dataset
+      - -dataset
+      - out_of_sync
+      - -out_of_sync
+      - needs_rebuild
+      - -needs_rebuild
+      - last_modified
+      - -last_modified
+      - remote_last_modified
+      - -remote_last_modified
+      title: DatasetMetaDataOrderBy
+    DatasetMetaDataResponse:
+      properties:
+        dataset:
+          type: string
+          title: Dataset
+        zip_file:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Zip File
+        txt_file:
+          type: string
+          title: Txt File
+        out_of_sync:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Out Of Sync
+        needs_rebuild:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Needs Rebuild
+        etag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Etag
+        remote_etag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Remote Etag
+        last_modified:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Modified
+        remote_last_modified:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Remote Last Modified
+      type: object
+      required:
+      - dataset
+      - txt_file
+      title: DatasetMetaDataResponse
+    DatasetStatusResponse:
+      properties:
+        name:
+          type: string
+          title: Name
+        last_modified:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Modified
+        out_of_sync:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Out Of Sync
+        needs_rebuild:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Needs Rebuild
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - name
+      - status
+      title: DatasetStatusResponse
+    DeletionOrderBy:
+      type: string
+      enum:
+      - deletion_date
+      - -deletion_date
+      - geonameid
+      - -geonameid
+      - name
+      - -name
+      - reason
+      - -reason
+      title: DeletionOrderBy
+    DeletionResponse:
+      properties:
+        deletion_date:
+          type: string
+          format: date
+          title: Deletion Date
+        geonameid:
+          type: integer
+          title: Geonameid
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - deletion_date
+      - geonameid
+      title: DeletionResponse
+    GeoNameResponse:
+      properties:
+        geonameid:
+          type: integer
+          title: Geonameid
+        name:
+          type: string
+          title: Name
+        asciiname:
+          type: string
+          title: Asciiname
+        alternatenames:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alternatenames
+        latitude:
+          type: number
+          title: Latitude
+        longitude:
+          type: number
+          title: Longitude
+        feature_class:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Class
+        feature_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Feature Code
+        country_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Country Code
+        cc2:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cc2
+        admin1_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin1 Code
+        admin2_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin2 Code
+        admin3_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin3 Code
+        admin4_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Admin4 Code
+        population:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Population
+        elevation:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Elevation
+        dem:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Dem
+        timezone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+        modification_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Modification Date
+      type: object
+      required:
+      - geonameid
+      - name
+      - asciiname
+      - latitude
+      - longitude
+      title: GeoNameResponse
+    GeoNamesOrderBy:
+      type: string
+      enum:
+      - geonameid
+      - -geonameid
+      - name
+      - -name
+      - asciiname
+      - -asciiname
+      - population
+      - -population
+      - elevation
+      - -elevation
+      - modification_date
+      - -modification_date
+      - country_code
+      - -country_code
+      - timezone
+      - -timezone
+      - feature_class
+      - -feature_class
+      - feature_code
+      - -feature_code
+      title: GeoNamesOrderBy
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    SyncAcceptedResponse:
+      properties:
+        sync_id:
+          type: string
+          title: Sync Id
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - sync_id
+      - message
+      title: SyncAcceptedResponse
+    SyncStatusResponse:
+      properties:
+        sync_id:
+          type: string
+          title: Sync Id
+        status:
+          type: string
+          title: Status
+        current_step:
+          type: string
+          title: Current Step
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        datasets:
+          items:
+            $ref: '#/components/schemas/DatasetStatusResponse'
+          type: array
+          title: Datasets
+          default: []
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - sync_id
+      - status
+      - current_step
+      - started_at
+      title: SyncStatusResponse
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

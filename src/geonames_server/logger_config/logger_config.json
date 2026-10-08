@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+
+  "formatters": {
+
+    "rich_extra": {
+      "()": "geonames_server.log.formatters.RichExtraFormatter"
+    },
+
+    "json": {
+      "()": "geonames_server.log.formatters.MyJSONFormatter",
+      "fmt_keys": {
+        "timestamp": "timestamp",
+        "level": "levelname",
+        "logger": "name",
+        "module": "module",
+        "function": "funcName",
+        "line": "lineno",
+        "message": "message",
+        "thread": "threadName"
+      }
+    }
+
+  },
+
+  "filters": {
+
+    "only_errors": {
+      "()": "geonames_server.log.filters.OnlyErrorsFilter"
+    }
+
+  },
+
+  "handlers": {
+
+    "console": {
+      "class": "rich.logging.RichHandler",
+      "level": "DEBUG",
+      "rich_tracebacks": true,
+      "tracebacks_show_locals": true,
+      "show_time": true,
+      "show_level": true,
+      "show_path": true,
+      "formatter": "rich_extra"
+    },
+
+    "file": {
+      "class": "logging.handlers.RotatingFileHandler",
+      "level": "ERROR",
+      "filename": "logs/geonames.jsonl",
+      "maxBytes": 102400,
+      "backupCount": 5,
+      "encoding": "utf-8",
+      "formatter": "json",
+      "filters": ["only_errors"]
+    }
+
+  },
+
+  "loggers": {
+    "sqlalchemy.engine": {
+      "level": "INFO",
+      "handlers": [],
+      "propagate": true
+    },
+    "uvicorn": {
+      "level": "INFO",
+      "handlers": [],
+      "propagate": true
+    },
+    "uvicorn.error": {
+      "level": "INFO",
+      "handlers": [],
+      "propagate": true
+    },
+    "uvicorn.access": {
+      "level": "INFO",
+      "handlers": [],
+      "propagate": true
+    }
+  },
+
+  "root": {
+    "level": "DEBUG",
+    "handlers": ["console", "file"]
+  }
+
+}
