@@ -14,6 +14,9 @@ log = get_logger()
 
 _SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 
+# Supabase Auth (GoTrue) needs a JWT secret of at least 32 characters.
+_MIN_JWT_SECRET_LENGTH = 32
+
 # Schemas owned by Postgres or Supabase. postgres_schema must not be one of them.
 _RESERVED_SCHEMAS = frozenset(
     {
@@ -212,6 +215,23 @@ class Settings(BaseSettings):
                 "use a schema owned by geonames-server alone"
             )
         return value
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def validate_jwt_secret(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        # `JWT_SECRET =` in .env (as shipped in .env.example) counts as not set,
+        # so the startup check rejects it instead of every login failing later.
+        secret = value.get_secret_value().strip()
+        if not secret:
+            return None
+        if len(secret) < _MIN_JWT_SECRET_LENGTH:
+            raise ValueError(
+                f"jwt_secret must be at least {_MIN_JWT_SECRET_LENGTH} characters; "
+                "generate one with `make supabase-keys`"
+            )
+        return SecretStr(secret)
 
     @field_validator("sync_schedule_hours", mode="before")
     @classmethod

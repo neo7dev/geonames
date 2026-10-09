@@ -86,3 +86,17 @@ class TestPostgresSchema:
     def test_rejects_names_that_need_quoting(self, schema):
         with pytest.raises(ValidationError, match="lowercase identifier"):
             Settings(postgres_schema=schema)
+
+
+class TestJwtSecret:
+    @pytest.mark.parametrize("secret", ["", "   "])
+    def test_blank_secret_counts_as_not_set(self, secret):
+        assert Settings(jwt_secret=secret).jwt_secret is None
+
+    def test_rejects_short_secret(self):
+        with pytest.raises(ValidationError, match="at least 32 characters"):
+            Settings(jwt_secret="too-short")
+
+    def test_accepts_long_secret(self):
+        secret = "s" * 32
+        assert Settings(jwt_secret=secret).jwt_secret.get_secret_value() == secret
