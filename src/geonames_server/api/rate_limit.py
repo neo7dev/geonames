@@ -472,16 +472,21 @@ class RateLimiter:
             last_used_field,
             int(now),
         ]
+        rebuilt = True
         try:
             result = await self._script(keys=keys, args=args)
             if result == -1:
-                if not await self._rebuild(principal, windows, now):
-                    return None
-                result = await self._script(keys=keys, args=args)
+                rebuilt = await self._rebuild(principal, windows, now)
+                if rebuilt:
+                    result = await self._script(keys=keys, args=args)
         except (RedisError, OSError) as e:
             self._redis_failed(e, now)
             return await self._hit_locally(principal, windows, now)
         self._redis_ok()
+        if not rebuilt:
+            # Postgres failed: count in memory, like during an outage, so the
+            # request is still limited and recorded.
+            return await self._hit_locally(principal, windows, now)
         # A second -1 (the counter vanished again) lets the request through.
         return int(result) - 1 if result > 0 else None
 

@@ -344,22 +344,25 @@ class TestRebuildFromPostgres:
         assert await _counter(redis, user_id, clock, 2) == 4
 
     @pytest.mark.asyncio
-    async def test_a_failed_rebuild_lets_the_request_through(
+    async def test_a_failed_rebuild_counts_the_request_in_memory(
         self, auth_client, limiter, redis, make_user, make_key, clock
     ):
-        key = await make_key(await make_user("free"))
+        user_id = await make_user("free")
+        key = await make_key(user_id)
 
-        with (
-            patch.object(
-                rate_limit, "stored_usage", AsyncMock(side_effect=OSError("db down"))
-            ),
-            patch.object(rate_limit.log, "warning") as warning,
+        with patch.object(
+            rate_limit, "stored_usage", AsyncMock(side_effect=OSError("db down"))
         ):
             assert await _calls(auth_client, key, 1) == [200]
 
-        warning.assert_called_once()
-        # Nothing was counted, so the next request rebuilds
         assert await redis.dbsize() == 0
+        assert limiter.local.usage.total() == 1
+        assert limiter.local.users == {user_id}
+
+        # The next request rebuilds from the in-memory counts
+        assert await _calls(auth_client, key, 1) == [200]
+        assert await _counter(redis, user_id, clock, 2) == 2
+        assert limiter.local.users == set()
 
     @pytest.mark.asyncio
     async def test_a_counter_missing_twice_lets_the_request_through(
