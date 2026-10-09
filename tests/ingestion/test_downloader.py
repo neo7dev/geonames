@@ -464,6 +464,16 @@ class TestReusesCurrentCopy:
 
         assert result.path.read_bytes() == b"HELLO"
 
+    def test_force_replaces_unreadable_file(self, dirs):
+        dest = _seed_dest(dirs)
+        dest.chmod(0o000)
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"HELLO"])], force=True)
+
+        result = dl.download(URL, "test.txt")
+
+        dl._session.head.assert_not_called()
+        assert result.path.read_bytes() == b"HELLO"
+
     def test_force_downloads_when_head_not_ok(self, dirs):
         _seed_dest(dirs)
         dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"HELLO"])], force=True)

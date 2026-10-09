@@ -159,11 +159,13 @@ class Downloader:
         meta = self.cache_dir / f"{file_name}.part.meta"
 
         if dest.exists():
-            if not _has_read_access(dest):
-                raise PermissionError(f"No read access to {dest}")
+            readable = _has_read_access(dest)
             if not self.force:
+                if not readable:
+                    raise PermissionError(f"No read access to {dest}")
                 return DownloadResult(path=dest)
-            current = self._current_copy(url, dest)
+            # An unreadable copy cannot be reused, but a forced download replaces it.
+            current = self._current_copy(url, dest) if readable else None
             if current is not None:
                 log.info(f"Already up to date, skipping download: {dest}")
                 return current
@@ -171,8 +173,9 @@ class Downloader:
         if not _has_write_access(part):
             raise PermissionError(f"No write access to {part}")
 
-        if not _has_write_access(dest):
-            raise PermissionError(f"No write access to {dest}")
+        # dest is replaced by a rename, which needs write access to its directory only.
+        if not _has_write_access(self.data_dir):
+            raise PermissionError(f"No write access to {self.data_dir}")
 
         for attempt in range(1, self.max_attempts + 1):
             try:
