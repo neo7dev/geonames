@@ -322,13 +322,6 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                 )
                 cur.copy_expert(copy_sql, wrapper)
 
-                new_rows, live_rows = _count(cur, staged), _count(cur, table_name)
-                if new_rows == 0 or new_rows < live_rows * MIN_ROW_RATIO:
-                    raise RowCountError(
-                        f"{table_name}: loaded {new_rows} rows vs {live_rows} live; "
-                        "refusing to swap"
-                    )
-
                 # Keys that appear more than once are dropped entirely.
                 cur.execute(
                     sql.SQL(
@@ -336,6 +329,15 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                         "(SELECT {k} FROM {s} GROUP BY {k} HAVING COUNT(*) > 1)"
                     ).format(s=ident(staged), k=keys)
                 )
+
+                # Checked after deduplication: that is what would be swapped in.
+                new_rows, live_rows = _count(cur, staged), _count(cur, table_name)
+                if new_rows == 0 or new_rows < live_rows * MIN_ROW_RATIO:
+                    raise RowCountError(
+                        f"{table_name}: loaded {new_rows} rows vs {live_rows} live; "
+                        "refusing to swap"
+                    )
+
                 cur.execute(
                     sql.SQL("ALTER TABLE {s} ADD PRIMARY KEY ({k})").format(
                         s=ident(staged), k=keys

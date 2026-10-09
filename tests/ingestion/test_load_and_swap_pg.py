@@ -93,6 +93,14 @@ def test_much_smaller_load_is_refused(conn, tmp_path):
     assert _scalar(conn, f"SELECT COUNT(*) FROM {TABLE}") == 20
 
 
+def test_load_shrunk_by_deduplication_is_refused(conn, tmp_path):
+    _run(_file(tmp_path, [_row(i) for i in range(1, 11)]))
+    # 20 rows pass a pre-dedup count, but only one unique key survives
+    with pytest.raises(RowCountError):
+        _run(_file(tmp_path, [_row(i) for i in range(1, 11)] * 2 + [_row(99)]))
+    assert _scalar(conn, f"SELECT COUNT(*) FROM {TABLE}") == 10
+
+
 def test_bad_row_rolls_back_everything(conn, tmp_path):
     _run(_file(tmp_path, [_row(1, "Keep")]))
     with pytest.raises(psycopg2.Error):
