@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
+from geonames_server.api.app import app
 from geonames_server.ingestion.sync_tracker import (
     DatasetStatus,
     OverallStatus,
@@ -18,6 +19,13 @@ def _clean_tracker():
     clear()
     yield
     clear()
+
+
+@pytest.fixture(autouse=True)
+def _startup_done():
+    app.state.dataset_startup = "done"
+    yield
+    del app.state.dataset_startup
 
 
 class TestPostSync:
@@ -43,6 +51,25 @@ class TestPostSync:
             response = await client.post("/sync/")
             assert response.status_code == 409
             assert "already in progress" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("startup", ["pending", "running"])
+    async def test_post_sync_returns_409_while_startup_prepares_datasets(
+        self, client, startup
+    ):
+        app.state.dataset_startup = startup
+        with patch("geonames_server.api.routers.sync.run_tracked_sync") as mock_run:
+            response = await client.post("/sync/")
+        assert response.status_code == 409
+        assert "being prepared at startup" in response.json()["detail"]
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_post_sync_allowed_after_failed_startup(self, client):
+        app.state.dataset_startup = "failed"
+        with patch("geonames_server.api.routers.sync.run_tracked_sync"):
+            response = await client.post("/sync/")
+        assert response.status_code == 202
 
 
 class TestGetSyncStatus:

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 
 from geonames_server.api.schemas.sync import (
     DatasetStatusResponse,
@@ -16,7 +16,15 @@ router = APIRouter(tags=["Sync"])
     response_model=SyncAcceptedResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def start_sync(background_tasks: BackgroundTasks):
+async def start_sync(request: Request, background_tasks: BackgroundTasks):
+    # The startup thread rebuilds datasets and updates their metadata; a sync
+    # now would apply daily updates to tables about to be swapped out.
+    startup = getattr(request.app.state, "dataset_startup", "pending")
+    if startup in ("pending", "running"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Datasets are still being prepared at startup; retry later",
+        )
     if sync_tracker.is_running():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

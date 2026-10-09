@@ -146,7 +146,7 @@ Route group: `/sync`
 	- `POST /sync/`
 	- Behavior:
 	  - Starts background sync and returns `202 Accepted` with `sync_id`.
-	  - Returns `409` if a sync is already running.
+	  - Returns `409` if a sync is already running, or while startup is still checking and rebuilding datasets.
 
 2. Track sync status
 	- `GET /sync/{sync_id}`
