@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -379,6 +380,98 @@ class TestAtomicVerified:
         with pytest.raises(requests.ConnectionError):
             dl.download(URL, "test.txt")
         assert (dirs[1] / "test.txt").read_text() == "old"
+
+
+LAST_MODIFIED = "Fri, 09 Oct 2026 02:44:21 GMT"
+LAST_MODIFIED_TS = 1791513861  # LAST_MODIFIED as a Unix timestamp
+
+
+def _head(length="5", last_modified=LAST_MODIFIED, etag='"e1"', status=200):
+    r = MagicMock()
+    r.status_code = status
+    r.headers = {
+        k: v
+        for k, v in {
+            "Content-Length": length,
+            "Last-Modified": last_modified,
+            "ETag": etag,
+        }.items()
+        if v is not None
+    }
+    return r
+
+
+def _seed_dest(dirs, data=b"hello", mtime=LAST_MODIFIED_TS):
+    dest = dirs[1] / "test.txt"
+    dest.write_bytes(data)
+    os.utime(dest, (mtime, mtime))
+    return dest
+
+
+class TestReusesCurrentCopy:
+    def test_download_sets_mtime_to_last_modified(self, dirs):
+        headers = {"content-length": "5", "Last-Modified": LAST_MODIFIED}
+        dl = _dl(dirs, [_resp(200, headers, [b"hello"])])
+        result = dl.download(URL, "test.txt")
+        assert int(result.path.stat().st_mtime) == LAST_MODIFIED_TS
+
+    def test_force_reuses_matching_file_without_get(self, dirs):
+        dest = _seed_dest(dirs)
+        dl = _dl(dirs, [], force=True)
+        dl._session.head.return_value = _head()
+
+        result = dl.download(URL, "test.txt")
+
+        dl._session.get.assert_not_called()
+        assert result.path == dest
+        assert result.etag == '"e1"'
+        assert int(result.last_modified.timestamp()) == LAST_MODIFIED_TS
+        assert dest.read_bytes() == b"hello"
+
+    def test_force_downloads_when_size_differs(self, dirs):
+        _seed_dest(dirs, data=b"old")
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"hello"])], force=True)
+        dl._session.head.return_value = _head(length="5")
+
+        result = dl.download(URL, "test.txt")
+
+        assert result.path.read_bytes() == b"hello"
+
+    def test_force_downloads_when_last_modified_differs(self, dirs):
+        _seed_dest(dirs, mtime=LAST_MODIFIED_TS - 86400)
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"HELLO"])], force=True)
+        dl._session.head.return_value = _head()
+
+        result = dl.download(URL, "test.txt")
+
+        assert result.path.read_bytes() == b"HELLO"
+
+    def test_force_downloads_without_last_modified_header(self, dirs):
+        _seed_dest(dirs)
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"HELLO"])], force=True)
+        dl._session.head.return_value = _head(last_modified=None)
+
+        result = dl.download(URL, "test.txt")
+
+        assert result.path.read_bytes() == b"HELLO"
+
+    def test_force_downloads_when_head_fails(self, dirs):
+        _seed_dest(dirs)
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"HELLO"])], force=True)
+        dl._session.head.side_effect = requests.ConnectionError("x")
+
+        result = dl.download(URL, "test.txt")
+
+        assert result.path.read_bytes() == b"HELLO"
+
+    def test_force_downloads_when_head_not_ok(self, dirs):
+        _seed_dest(dirs)
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"HELLO"])], force=True)
+        dl._session.head.return_value = _head(status=405)
+
+        result = dl.download(URL, "test.txt")
+
+        assert result.path.read_bytes() == b"HELLO"
 
 
 class TestResume:

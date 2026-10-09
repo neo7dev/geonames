@@ -116,9 +116,13 @@ class Downloader:
     """Resumable, verified HTTP downloader.
 
     Streams to ``<cache_dir>/<file>.part`` with a ``.meta`` sidecar holding the
-    validator (ETag / Last-Modified). Resumes with ``Range`` + ``If-Range``,
-    verifies the size, then atomically moves into ``data_dir``. Transient
-    failures are retried with exponential backoff and jitter.
+    validator (ETag / Last-Modified). Resumes with ``Range`` + ``If-Range``,    verifies the size, then atomically moves into ``data_dir`` with the remote
+    Last-Modified as its mtime. Transient failures are retried with exponential
+    backoff and jitter.
+
+    An existing file is reused without a request unless ``force`` is set. With
+    ``force``, it is still reused when a HEAD shows the remote file has the same
+    size and Last-Modified, so unchanged files are never downloaded twice.
     """
 
     def __init__(
@@ -154,10 +158,15 @@ class Downloader:
         part = self.cache_dir / f"{file_name}.part"
         meta = self.cache_dir / f"{file_name}.part.meta"
 
-        if dest.exists() and not self.force:
+        if dest.exists():
             if not _has_read_access(dest):
                 raise PermissionError(f"No read access to {dest}")
-            return DownloadResult(path=dest)
+            if not self.force:
+                return DownloadResult(path=dest)
+            current = self._current_copy(url, dest)
+            if current is not None:
+                log.info(f"Already up to date, skipping download: {dest}")
+                return current
 
         if not _has_write_access(part):
             raise PermissionError(f"No write access to {part}")
@@ -187,6 +196,38 @@ class Downloader:
         if retry_after is not None:
             delay = max(delay, min(retry_after, MAX_BACKOFF))
         return delay
+
+    def _current_copy(self, url: str, dest: Path) -> DownloadResult | None:
+        """Return *dest* with the remote metadata if it matches the remote file.
+
+        A match means the same size and an mtime equal to the remote
+        Last-Modified (set by ``_finalize``). Returns ``None`` when they differ,
+        the server sends neither header, or the HEAD fails: the caller then
+        downloads, which has its own retries.
+        """
+        try:
+            resp = self._session.head(url, timeout=TIMEOUT, allow_redirects=True)
+        except requests.RequestException as e:
+            log.warning(f"HEAD {url} failed ({e}); downloading instead")
+            return None
+        if resp.status_code != 200:
+            return None
+
+        length = resp.headers.get("Content-Length")
+        raw_lm = resp.headers.get("Last-Modified")
+        if not length or not raw_lm:
+            return None
+
+        last_modified = rfc2822_to_datetime(raw_lm)
+        stat = dest.stat()
+        if int(length) != stat.st_size or int(stat.st_mtime) != int(
+            last_modified.timestamp()
+        ):
+            return None
+
+        return DownloadResult(
+            path=dest, etag=resp.headers.get("ETag"), last_modified=last_modified
+        )
 
     @staticmethod
     def _read_meta(meta: Path, url: str) -> dict:
@@ -303,8 +344,13 @@ class Downloader:
         _atomic_move(part, dest)
         _unlink(meta)
         raw_lm = info.get("last_modified")
+        last_modified = rfc2822_to_datetime(raw_lm) if raw_lm else None
+        if last_modified is not None:
+            # Lets a later forced download recognise this file as current.
+            ts = last_modified.timestamp()
+            os.utime(dest, (ts, ts))
         return DownloadResult(
             path=dest,
             etag=info.get("etag"),
-            last_modified=rfc2822_to_datetime(raw_lm) if raw_lm else None,
+            last_modified=last_modified,
         )
