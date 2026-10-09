@@ -38,6 +38,16 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | pro | dev | 120 | 2.5k | 500k |
 | max | sr_dev, admin | 600 cap | unlimited | unlimited |
 
+## Phase 6 notes
+
+- Layout: `frontend/` at the repo root with its own `package.json`. Makefile targets `ui-dev` (Vite dev server) and `ui-build`.
+- No Node at runtime. Vite builds static files at image build time and FastAPI serves them at `/ui`.
+- Dockerfile: a Node build stage runs `npm ci && npm run build`; the existing uv-based Python image copies its `dist/`.
+- Devcontainer: add the Node feature. In dev, the Vite dev server gives hot reload and proxies `/portal` and the API routes to uvicorn on 9500.
+- shadcn copies component source (Radix + Tailwind) into `frontend/src/components/ui/`; it is our code, not a dependency. Tailwind v4 through `@tailwindcss/vite`.
+- Auth: `supabase-js` in the browser handles signup, login and OAuth with GoTrue, then sends the login token to `/portal/*`.
+- CORS: GoTrue is reached through Kong (:8000) and the UI is served by the app (:9500), so browser calls to Auth are cross-origin. Allow the UI origin in Kong's `cors` plugin (already enabled), or in production put both behind one domain (`/` to the app, `/auth/v1` to Kong) and skip CORS.
+
 ## Progress
 
 ### Phase 1: Dev infra (`776c8f2`)
