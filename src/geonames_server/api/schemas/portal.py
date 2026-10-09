@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 
 class Limits(BaseModel):
     # None means unlimited
-    per_minute: int
+    per_minute: int | None
     per_hour: int | None
     per_month: int | None
     max_keys: int | None

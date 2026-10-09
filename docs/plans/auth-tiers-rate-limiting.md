@@ -36,7 +36,7 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | basic | free (default) | 10 | 100 | 5k | 1 |
 | plus | tester | 30 | 500 | 50k | 3 |
 | pro | dev | 120 | 2.5k | 500k | 5 |
-| max | sr_dev, admin | 600 cap | unlimited | unlimited | unlimited |
+| max | sr_dev, admin | unlimited | unlimited | unlimited | unlimited |
 
 ## Phase 4 scope
 
@@ -68,7 +68,7 @@ Branch `phase-4-auth` from `main`.
 
 | Table | Columns |
 |---|---|
-| `app.tiers` | `name text PK`, `per_minute int NOT NULL`, `per_hour int NULL`, `per_month int NULL`, `max_keys int NULL` (NULL = unlimited; `CHECK (> 0)`) |
+| `app.tiers` | `name text PK`, `per_minute int NULL`, `per_hour int NULL`, `per_month int NULL`, `max_keys int NULL` (NULL = unlimited; `CHECK (> 0)`) |
 | `app.roles` | `name text PK`, `tier text NOT NULL → tiers(name) ON UPDATE CASCADE`, `is_admin bool NOT NULL DEFAULT false` |
 | `app.profiles` | `id uuid PK → auth.users(id) ON DELETE CASCADE`, `email text`, `role text NOT NULL DEFAULT 'free' → roles(name) ON UPDATE CASCADE`, `created_at timestamptz DEFAULT now()` |
 | `app.api_keys` | `id uuid PK DEFAULT gen_random_uuid()`, `user_id uuid NOT NULL → profiles(id) ON DELETE CASCADE`, `name text NOT NULL CHECK (length 1-64)`, `prefix text NOT NULL`, `key_hash text NOT NULL UNIQUE`, `created_at timestamptz DEFAULT now()`, `last_used_at timestamptz`, `revoked_at timestamptz`; index on `(user_id) WHERE revoked_at IS NULL` |

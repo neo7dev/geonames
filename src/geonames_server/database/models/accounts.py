@@ -39,7 +39,7 @@ class Tier(AppBase):
     )
 
     name: Mapped[str] = mapped_column(Text, primary_key=True)
-    per_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    per_minute: Mapped[int | None] = mapped_column(Integer)
     per_hour: Mapped[int | None] = mapped_column(Integer)
     per_month: Mapped[int | None] = mapped_column(Integer)
     # Active (not revoked) API keys a user may hold

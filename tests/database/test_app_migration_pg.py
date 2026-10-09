@@ -86,7 +86,7 @@ def test_fresh_database_creates_app_tables_and_seeds():
         ("basic", 10, 100, 5000, 1),
         ("plus", 30, 500, 50000, 3),
         ("pro", 120, 2500, 500000, 5),
-        ("max", 600, None, None, None),
+        ("max", None, None, None, None),
     ]
     assert _query("SELECT name, tier, is_admin FROM app.roles ORDER BY name") == [
         ("admin", "max", True),

@@ -53,7 +53,7 @@ class Principal:
     role: str
     is_admin: bool
     tier: str
-    per_minute: int
+    per_minute: int | None
     per_hour: int | None
     per_month: int | None
     max_keys: int | None

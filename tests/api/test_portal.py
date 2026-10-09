@@ -125,7 +125,7 @@ class TestMe:
 
         assert body["tier"] == "max"
         assert body["limits"] == {
-            "per_minute": 600,
+            "per_minute": None,
             "per_hour": None,
             "per_month": None,
             "max_keys": None,
