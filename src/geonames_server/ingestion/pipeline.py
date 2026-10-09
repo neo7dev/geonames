@@ -408,8 +408,12 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                 conn.close()
 
 
-def build_all_datasets() -> None:
-    """Rebuild enabled datasets that have needs_rebuild=True."""
+def build_all_datasets() -> list[str]:
+    """Rebuild enabled datasets that have needs_rebuild=True.
+
+    A failed build is logged and does not stop the others. Returns the names
+    of the datasets that failed to build.
+    """
     enabled = get_enabled_datasets(settings.enabled_datasets)
 
     # Query which enabled datasets actually need a rebuild
@@ -423,7 +427,7 @@ def build_all_datasets() -> None:
 
     if not to_build:
         log.info("No enabled datasets need rebuilding")
-        return
+        return []
 
     log.info(f"Rebuilding {len(to_build)} dataset(s): {[d.name for d in to_build]}")
 
@@ -439,3 +443,4 @@ def build_all_datasets() -> None:
         log.warning(f"Build completed with failures: {failed}")
     else:
         log.info("All datasets built successfully")
+    return failed

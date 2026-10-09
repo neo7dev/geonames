@@ -89,6 +89,7 @@ A code review of phases 1-3 found ten issues, fixed one commit each:
 ### Smoke test (2026-10-09)
 
 - Devcontainer, app on a fresh database: during startup `/health` listed the datasets as pending, a dataset route answered 503 with `Retry-After: 60` and `POST /sync` answered 409. Once the builds finished: 200, 202, and the sync completed. Three `/health` calls used one Redis connection, and shutdown closed it.
+- Startup used to report `done` even when dataset builds failed. `build_all_datasets` now returns the failed names, and startup reports `failed` if there are any, so `/health` shows `degraded` with `startup: failed`. Checked live with an unreachable `GEONAMES_URL`.
 - Root stack (`docker compose up --build`, separate project on other ports): every service healthy, Studio answers 401 without basic auth and 200 with it, Auth `/auth/v1/health` answers 200, `/health` answers 200.
 
 ## Risks
@@ -98,5 +99,4 @@ A code review of phases 1-3 found ten issues, fixed one commit each:
 - In production, GoTrue needs SMTP to send confirmation emails. Dev uses Mailpit, which catches all outgoing mail. `.env.dev` points SMTP at `mailpit`, which only exists in the devcontainer stack.
 - Keep a single uvicorn worker, or APScheduler jobs run twice.
 - `.devcontainer/docker-compose.yml` passes `ENABLED_DATASETS` from `.devcontainer/.env` into the app container, which overrides the value in `.env`.
-- A local `.env` copied before a setting was added keeps missing it (the dev machine's `.env` had no `REDIS_URL`, so `/health` reported Redis as `not_configured`). Compare `.env` with `.env.dev` after env changes (`make switch2dev` overwrites local edits).
-- Startup reports `done` even when every dataset build failed; only `/health`'s `pending` list and the 503s on dataset routes show it.
+- A local `.env` copied before a setting was added keeps missing it (the dev machine's `.env` had no `REDIS_URL` until the smoke test). Compare `.env` with `.env.dev` after env changes (`make switch2dev` overwrites local edits).

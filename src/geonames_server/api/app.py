@@ -141,9 +141,13 @@ def _prepare_datasets(
 
         # 5. Rebuild enabled datasets that need it
         log.info("Checking for datasets that need rebuilding")
-        build_all_datasets()
-        log.info("Dataset rebuild step complete")
-        app.state.dataset_startup = "done"
+        failed = build_all_datasets()
+        if failed:
+            log.error(f"Startup could not build dataset(s): {failed}")
+            app.state.dataset_startup = "failed"
+        else:
+            log.info("Dataset rebuild step complete")
+            app.state.dataset_startup = "done"
     except Exception:
         log.exception("Dataset startup preparation failed")
         app.state.dataset_startup = "failed"

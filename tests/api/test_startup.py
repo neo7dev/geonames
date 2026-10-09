@@ -20,6 +20,7 @@ def startup_mocks():
     def _slow_build():
         release_build.wait(timeout=5)
         build_finished.set()
+        return []
 
     with (
         patch(f"{MODULE}.Connection"),
@@ -118,6 +119,17 @@ async def test_lifespan_without_redis_url(startup_mocks):
             startup_mocks["release_build"].set()
 
 
+@pytest.mark.asyncio
+async def test_startup_failed_when_a_dataset_build_fails(startup_mocks):
+    startup_mocks["build"].side_effect = None
+    startup_mocks["build"].return_value = ["cities15000"]
+    app = FastAPI()
+
+    async with app_module.lifespan(app):
+        await _wait_for(lambda: startup_mocks["start"].called)
+        assert app.state.dataset_startup == "failed"
+
+
 def test_prepare_datasets_tolerates_closed_loop():
     loop = MagicMock()
     loop.call_soon_threadsafe.side_effect = RuntimeError("Event loop is closed")
@@ -125,7 +137,7 @@ def test_prepare_datasets_tolerates_closed_loop():
 
     with (
         patch(f"{MODULE}.check_remote_metadata"),
-        patch(f"{MODULE}.build_all_datasets"),
+        patch(f"{MODULE}.build_all_datasets", return_value=[]),
     ):
         app_module._prepare_datasets(app, [], loop, threading.Event())
 

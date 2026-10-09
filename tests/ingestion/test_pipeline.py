@@ -588,8 +588,8 @@ class TestBuildAllDatasets:
         # First build fails, second succeeds
         mock_build.side_effect = [RuntimeError("boom"), None]
 
-        # Should not raise — failures are logged
-        build_all_datasets()
+        # Should not raise — failures are logged and returned
+        assert build_all_datasets() == ["cities15000"]
 
         assert mock_build.call_count == 2
 
