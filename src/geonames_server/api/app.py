@@ -16,7 +16,8 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from redis.asyncio import Redis
 
-from geonames_server.api.auth import require_admin, require_api_key
+from geonames_server.api.auth import require_admin
+from geonames_server.api.rate_limit import RateLimiter, enforce_rate_limit
 from geonames_server.api.routers import (
     dataset_metadata,
     deletions,
@@ -99,6 +100,11 @@ async def lifespan(app: FastAPI):
         if settings.redis_url
         else None
     )
+    if app.state.redis is None:
+        log.warning("REDIS_URL is not set — rate limits are off, usage is not counted")
+        app.state.rate_limiter = None
+    else:
+        app.state.rate_limiter = RateLimiter(app.state.redis)
 
     # 4-6. Remote check, rebuilds and scheduler run in the background, so the API
     #      (and /health) answer while large datasets download and load.
@@ -176,9 +182,13 @@ app = FastAPI(title="GeoNames Server", version=settings.app_version, lifespan=li
 # Health router, public like the docs
 app.include_router(health.router, prefix="/health")
 
-# Data routes need an API key. Router-level dependencies run before the routers'
-# own, so a request without a key gets 401 before any dataset check.
-_api_key = [Depends(require_api_key)]
+# Data routes need an API key and count against the caller's rate limits.
+# Router-level dependencies run before the routers' own, so a request without a
+# key gets 401, and a limited one 429, before any dataset check.
+_api_key = [Depends(enforce_rate_limit)]
+_limit_responses = {
+    429: {"description": "Rate limit exceeded; retry after Retry-After seconds"}
+}
 
 # Geo dataset routers
 for _model, _tag, _name in [
@@ -192,19 +202,41 @@ for _model, _tag, _name in [
         create_geoname_router(_model, _tag, _name),
         prefix=f"/{_name}",
         dependencies=_api_key,
+        responses=_limit_responses,
     )
 
 # Modifications router
-app.include_router(modifications.router, prefix="/modifications", dependencies=_api_key)
+app.include_router(
+    modifications.router,
+    prefix="/modifications",
+    dependencies=_api_key,
+    responses=_limit_responses,
+)
 
 # Deletions router
-app.include_router(deletions.router, prefix="/deletions", dependencies=_api_key)
+app.include_router(
+    deletions.router,
+    prefix="/deletions",
+    dependencies=_api_key,
+    responses=_limit_responses,
+)
 
 # Dataset metadata router
-app.include_router(dataset_metadata.router, prefix="/metadata", dependencies=_api_key)
+app.include_router(
+    dataset_metadata.router,
+    prefix="/metadata",
+    dependencies=_api_key,
+    responses=_limit_responses,
+)
 
-# Sync router: admins only
-app.include_router(sync.router, prefix="/sync", dependencies=[Depends(require_admin)])
+# Sync router: admins only. The admin check comes first, so a refused
+# non-admin call does not count against their limits.
+app.include_router(
+    sync.router,
+    prefix="/sync",
+    dependencies=[Depends(require_admin), Depends(enforce_rate_limit)],
+    responses=_limit_responses,
+)
 
 # Account pages, authenticated with the Supabase Auth login token
 app.include_router(portal.router, prefix="/portal")

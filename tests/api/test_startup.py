@@ -96,6 +96,8 @@ async def test_scheduler_not_started_after_shutdown(startup_mocks):
 async def test_lifespan_shares_one_redis_client(startup_mocks):
     app = FastAPI()
     redis = AsyncMock()
+    # Not a coroutine on the real client
+    redis.register_script = MagicMock()
 
     with (
         patch.object(app_module.settings, "redis_url", "redis://redis:6379/0"),
@@ -103,6 +105,7 @@ async def test_lifespan_shares_one_redis_client(startup_mocks):
     ):
         async with app_module.lifespan(app):
             assert app.state.redis is redis
+            assert app.state.rate_limiter.redis is redis
             startup_mocks["release_build"].set()
 
     from_url.assert_called_once()
@@ -116,6 +119,7 @@ async def test_lifespan_without_redis_url(startup_mocks):
     with patch.object(app_module.settings, "redis_url", None):
         async with app_module.lifespan(app):
             assert app.state.redis is None
+            assert app.state.rate_limiter is None
             startup_mocks["release_build"].set()
 
 

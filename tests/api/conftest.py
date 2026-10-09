@@ -1,14 +1,17 @@
+import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from unittest.mock import patch
 
 import jwt
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy import event, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from geonames_server.api import dependencies
+from geonames_server.api import dependencies, rate_limit
 from geonames_server.api.app import app
 from geonames_server.api.auth import (
     Principal,
@@ -100,6 +103,43 @@ async def client(auth_client):
     """Client whose requests carry an admin's API key; test_api_key_auth.py covers the check."""
     app.dependency_overrides[require_api_key] = lambda: ADMIN
     return auth_client
+
+
+TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL")
+
+
+@pytest_asyncio.fixture
+async def redis():
+    """A real Redis from TEST_REDIS_URL (use a spare database: it is flushed)."""
+    if not TEST_REDIS_URL:
+        pytest.skip("TEST_REDIS_URL not set")
+    client = Redis.from_url(TEST_REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
+    await client.flushdb()
+    yield client
+    await client.flushdb()
+    await client.aclose()
+
+
+@pytest.fixture
+def clock():
+    """The rate limiter's clock (epoch seconds), moved by hand: clock.now += 60.
+
+    Starts at 2026-10-09 12:00:30 UTC, 30 s into a minute.
+    """
+
+    class Clock:
+        now = datetime(2026, 10, 9, 12, 0, 30, tzinfo=timezone.utc).timestamp()
+
+    with patch.object(rate_limit, "_now", lambda: Clock.now):
+        yield Clock
+
+
+@pytest_asyncio.fixture
+async def limiter(auth_client, redis, clock):
+    """Turn rate limiting on for the app, against the test Redis."""
+    app.state.rate_limiter = rate_limit.RateLimiter(redis)
+    yield app.state.rate_limiter
+    del app.state.rate_limiter
 
 
 @pytest_asyncio.fixture

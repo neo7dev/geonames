@@ -105,7 +105,8 @@ build: tests sync
 run:
 	$(UV) run uvicorn geonames_server.api.app:app --host 0.0.0.0 --port 9500
 
-## Run the test suite (the *_pg.py tests skip without TEST_PG_DSN; see tests-pg)
+## Run the test suite (the *_pg.py tests skip without TEST_PG_DSN, the Redis tests
+## without TEST_REDIS_URL; see tests-pg)
 tests: sync-dev
 	$(UV) run pytest tests/ -v
 
@@ -115,11 +116,17 @@ TEST_PG_DB ?= geonames_test
 env_value = $(strip $(shell sed -n 's/^$(1) *= *//p' .env 2>/dev/null))
 TEST_PG_DSN ?= host=$(call env_value,POSTGRES_HOST) port=$(call env_value,POSTGRES_PORT) user=$(call env_value,POSTGRES_USER) password=$(call env_value,POSTGRES_PASSWORD) dbname=$(TEST_PG_DB)
 
+# Spare Redis database for the rate limit tests, which flush it: REDIS_URL from
+# .env with database TEST_REDIS_DB.
+TEST_REDIS_DB ?= 15
+TEST_REDIS_URL ?= $(shell echo '$(call env_value,REDIS_URL)' | sed -E 's#(/[0-9]+)?$$#/$(TEST_REDIS_DB)#')
+
 ## Run the whole test suite, including the Postgres tests against TEST_PG_DB
-## (default geonames_test, on the server in .env)
+## (default geonames_test, on the server in .env) and the Redis tests against
+## database TEST_REDIS_DB (default 15) of REDIS_URL
 tests-pg: sync-dev
-	@echo "uv run pytest tests/ (TEST_PG_DSN: dbname=$(TEST_PG_DB))"
-	@TEST_PG_DSN="$(TEST_PG_DSN)" $(UV) run pytest tests/ -q
+	@echo "uv run pytest tests/ (TEST_PG_DSN: dbname=$(TEST_PG_DB), TEST_REDIS_URL: $(TEST_REDIS_URL))"
+	@TEST_PG_DSN="$(TEST_PG_DSN)" TEST_REDIS_URL="$(TEST_REDIS_URL)" $(UV) run pytest tests/ -q
 
 ## Lint with ruff and apply its fixes
 lint:
