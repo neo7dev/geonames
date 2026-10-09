@@ -64,9 +64,6 @@ class GeoNamesFilter(BaseModel):
     modified_after: date | None = None
     modified_before: date | None = None
 
-    synced_after: date | None = None
-    synced_before: date | None = None
-
     order_by: GeoNamesOrderBy | None = None
     limit: int | None = None
     offset: int | None = None

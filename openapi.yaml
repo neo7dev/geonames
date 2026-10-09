@@ -268,24 +268,6 @@ paths:
             format: date
           - type: 'null'
           title: Modified Before
-      - name: synced_after
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced After
-      - name: synced_before
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced Before
       - name: order_by
         in: query
         required: false
@@ -606,24 +588,6 @@ paths:
             format: date
           - type: 'null'
           title: Modified Before
-      - name: synced_after
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced After
-      - name: synced_before
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced Before
       - name: order_by
         in: query
         required: false
@@ -944,24 +908,6 @@ paths:
             format: date
           - type: 'null'
           title: Modified Before
-      - name: synced_after
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced After
-      - name: synced_before
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced Before
       - name: order_by
         in: query
         required: false
@@ -1282,24 +1228,6 @@ paths:
             format: date
           - type: 'null'
           title: Modified Before
-      - name: synced_after
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced After
-      - name: synced_before
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced Before
       - name: order_by
         in: query
         required: false
@@ -1620,24 +1548,6 @@ paths:
             format: date
           - type: 'null'
           title: Modified Before
-      - name: synced_after
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced After
-      - name: synced_before
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced Before
       - name: order_by
         in: query
         required: false
@@ -1958,24 +1868,6 @@ paths:
             format: date
           - type: 'null'
           title: Modified Before
-      - name: synced_after
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced After
-      - name: synced_before
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: date
-          - type: 'null'
-          title: Synced Before
       - name: order_by
         in: query
         required: false
