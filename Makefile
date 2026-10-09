@@ -148,6 +148,22 @@ db-upgrade:
 db-downgrade:
 	alembic downgrade -1
 
+## Autogenerate a revision for the app schema (user data) (MESSAGE="...")
+db-app-auto-revision:
+	alembic -n app revision --autogenerate -m "$(MESSAGE)"
+
+## Create an empty revision for the app schema (user data) (MESSAGE="...")
+db-app-revision:
+	alembic -n app revision -m "$(MESSAGE)"
+
+## Apply all app schema (user data) migrations
+db-app-upgrade:
+	alembic -n app upgrade head
+
+## Roll back one app schema (user data) migration
+db-app-downgrade:
+	alembic -n app downgrade -1
+
 ##@ GeoNames data
 
 ## Set slow-download-server speed (interactive)
@@ -187,4 +203,4 @@ push-image: push-image-version
 push-image-version:
 	docker push ghcr.io/neo7dev/$(APP_NAME):$(VERSION)
 
-.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade build-image build-image-version push-image push-image-version
+.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade build-image build-image-version push-image push-image-version

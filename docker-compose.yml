@@ -23,6 +23,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # GoTrue migrates auth.users before the app adds its signup trigger
+      auth:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:

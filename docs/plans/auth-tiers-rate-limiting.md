@@ -24,7 +24,7 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | 1. Dev infra | Done | Devcontainer compose runs a trimmed self-hosted Supabase (db, auth, kong, meta, Studio), Redis and Mailpit; the app points at the Supabase db; no app code changes | Studio opens, datasets ingest into the Supabase db, integration tests pass against it |
 | 2. Schema split | Done | Geonames tables move to a `geonames` schema, kept separate from user data and Supabase's own tables | Tests show the tables in `geonames` and nothing left in `public` |
 | 3. Deploy image + compose | Done | Prod Dockerfile; root compose with the same services as dev, plus Redis; startup no longer waits for data loads; public `/health` | `docker compose up` brings it all up, `/health` returns 200, Studio opens |
-| 4. Auth + API keys | Scoped (see Phase 4 scope) | Tiers, roles and user tables; new signups get the free role; login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
+| 4. Auth + API keys | Done (branch `phase-4-auth`) | Tiers, roles and user tables; new signups get the free role; login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
 | 5. Rate limits + quota | Not started | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
 | 6. Frontend | Not started | React + Vite + Tailwind + shadcn at `/ui`: signup/login (email, GitHub, Google), key management, usage page | Sign up, create a key, call the API, see the usage update |
 | 7. Ops (later) | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry | Image published to ghcr |
@@ -190,6 +190,20 @@ A code review of phases 1-3 found ten issues, fixed one commit each:
 - Devcontainer, app on a fresh database: during startup `/health` listed the datasets as pending, a dataset route answered 503 with `Retry-After: 60` and `POST /sync` answered 409. Once the builds finished: 200, 202, and the sync completed. Three `/health` calls used one Redis connection, and shutdown closed it.
 - Startup used to report `done` even when dataset builds failed. `build_all_datasets` now returns the failed names, and startup reports `failed` if there are any, so `/health` shows `degraded` with `startup: failed`. Checked live with an unreachable `GEONAMES_URL`.
 - Root stack (`docker compose up --build`, separate project on other ports): every service healthy, Studio answers 401 without basic auth and 200 with it, Auth `/auth/v1/health` answers 200, `/health` answers 200.
+
+### Phase 4: Auth + API keys (`f8eb5dd`, `49899f5`)
+
+Built as scoped above, on `phase-4-auth`.
+
+- Signups now get a profile from the `app_sync_profile` trigger, which runs `app.sync_profile_from_auth_user()`. `alembic -n app check` finds no drift between the models and the migration.
+- Tests: 660 pass with `TEST_PG_DSN` set (key, JWT, portal, tier limit, admin, trigger and cascade tests, plus the migration tests on a database without `auth`).
+- Smoke test (2026-10-09, devcontainer, real GoTrue):
+  - Sign up through Kong, confirm via the Mailpit link, log in: `/portal/me` shows free/basic with `max_keys` 1.
+  - Keys: the first is created, a second gets 409. A data route answers 401 without a key and 200 with it.
+  - Sync: `POST /sync` gives 403 as free. After setting the role to admin in the database, it gives 202 and the sync completes.
+  - Revoke and delete: a revoked key gets 401. Deleting the user from `auth.users` removed the profile and keys.
+  - `FORCE_REBUILD` was not run live, because it reloads every dataset; `test_force_rebuild_keeps_user_data` covers it.
+- `pyjwt` 2.15.1 added.
 
 ## Risks
 

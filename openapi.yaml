@@ -3,12 +3,31 @@ info:
   title: GeoNames Server
   version: 0.1.0
 paths:
+  /health:
+    get:
+      tags:
+      - Health
+      summary: Health
+      description: 'Liveness and readiness. Returns 503 only when the database is
+        unreachable,
+
+        so the container stays healthy while datasets build in the background.'
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
   /allcountries/:
     get:
       tags:
       - All Countries
       summary: List Geonames
       operationId: list_geonames_allcountries__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: limit
         in: query
@@ -49,6 +68,8 @@ paths:
       - All Countries
       summary: Filter Geonames
       operationId: filter_geonames_allcountries_filter_get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: query
@@ -309,6 +330,8 @@ paths:
       - All Countries
       summary: Get Geoname
       operationId: get_geoname_allcountries__geonameid__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: path
@@ -335,6 +358,8 @@ paths:
       - Cities 500
       summary: List Geonames
       operationId: list_geonames_cities500__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: limit
         in: query
@@ -375,6 +400,8 @@ paths:
       - Cities 500
       summary: Filter Geonames
       operationId: filter_geonames_cities500_filter_get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: query
@@ -635,6 +662,8 @@ paths:
       - Cities 500
       summary: Get Geoname
       operationId: get_geoname_cities500__geonameid__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: path
@@ -661,6 +690,8 @@ paths:
       - Cities 1000
       summary: List Geonames
       operationId: list_geonames_cities1000__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: limit
         in: query
@@ -701,6 +732,8 @@ paths:
       - Cities 1000
       summary: Filter Geonames
       operationId: filter_geonames_cities1000_filter_get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: query
@@ -961,6 +994,8 @@ paths:
       - Cities 1000
       summary: Get Geoname
       operationId: get_geoname_cities1000__geonameid__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: path
@@ -987,6 +1022,8 @@ paths:
       - Cities 5000
       summary: List Geonames
       operationId: list_geonames_cities5000__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: limit
         in: query
@@ -1027,6 +1064,8 @@ paths:
       - Cities 5000
       summary: Filter Geonames
       operationId: filter_geonames_cities5000_filter_get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: query
@@ -1287,6 +1326,8 @@ paths:
       - Cities 5000
       summary: Get Geoname
       operationId: get_geoname_cities5000__geonameid__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: path
@@ -1313,6 +1354,8 @@ paths:
       - Cities 15000
       summary: List Geonames
       operationId: list_geonames_cities15000__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: limit
         in: query
@@ -1353,6 +1396,8 @@ paths:
       - Cities 15000
       summary: Filter Geonames
       operationId: filter_geonames_cities15000_filter_get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: query
@@ -1613,6 +1658,8 @@ paths:
       - Cities 15000
       summary: Get Geoname
       operationId: get_geoname_cities15000__geonameid__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: path
@@ -1639,6 +1686,8 @@ paths:
       - Modifications
       summary: List Modifications
       operationId: list_modifications_modifications__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: limit
         in: query
@@ -1679,6 +1728,8 @@ paths:
       - Modifications
       summary: Filter Modifications
       operationId: filter_modifications_modifications_filter_get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: query
@@ -1939,6 +1990,8 @@ paths:
       - Modifications
       summary: Get Modifications By Geonameid
       operationId: get_modifications_by_geonameid_modifications__geonameid__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: path
@@ -1985,6 +2038,8 @@ paths:
       - Modifications
       summary: Get Modifications By Date
       operationId: get_modifications_by_date_modifications_date__modification_date__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: modification_date
         in: path
@@ -2033,6 +2088,8 @@ paths:
       - Deletions
       summary: List Deletions
       operationId: list_deletions_deletions__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: limit
         in: query
@@ -2073,6 +2130,8 @@ paths:
       - Deletions
       summary: Filter Deletions
       operationId: filter_deletions_deletions_filter_get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: deletion_date
         in: query
@@ -2153,6 +2212,8 @@ paths:
       - Deletions
       summary: Get Deletion
       operationId: get_deletion_deletions__geonameid__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: geonameid
         in: path
@@ -2179,6 +2240,8 @@ paths:
       - Dataset Metadata
       summary: List Metadata
       operationId: list_metadata_metadata__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: limit
         in: query
@@ -2229,6 +2292,8 @@ paths:
                   $ref: '#/components/schemas/DatasetMetaDataResponse'
                 type: array
                 title: Response Get Out Of Sync Metadata Out Of Sync Get
+      security:
+      - APIKeyHeader: []
   /metadata/needs-rebuild:
     get:
       tags:
@@ -2245,12 +2310,16 @@ paths:
                   $ref: '#/components/schemas/DatasetMetaDataResponse'
                 type: array
                 title: Response Get Needs Rebuild Metadata Needs Rebuild Get
+      security:
+      - APIKeyHeader: []
   /metadata/filter:
     get:
       tags:
       - Dataset Metadata
       summary: Filter Metadata
       operationId: filter_metadata_metadata_filter_get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: dataset
         in: query
@@ -2392,6 +2461,8 @@ paths:
       - Dataset Metadata
       summary: Get Metadata
       operationId: get_metadata_metadata__dataset__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: dataset
         in: path
@@ -2425,12 +2496,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SyncAcceptedResponse'
+      security:
+      - APIKeyHeader: []
   /sync/{sync_id}:
     get:
       tags:
       - Sync
       summary: Get Sync Status
       operationId: get_sync_status_sync__sync_id__get
+      security:
+      - APIKeyHeader: []
       parameters:
       - name: sync_id
         in: path
@@ -2451,8 +2526,167 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /portal/me:
+    get:
+      tags:
+      - Portal
+      summary: Me
+      operationId: me_portal_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+      security:
+      - HTTPBearer: []
+  /portal/keys:
+    get:
+      tags:
+      - Portal
+      summary: List Keys
+      operationId: list_keys_portal_keys_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ApiKeyResponse'
+                type: array
+                title: Response List Keys Portal Keys Get
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - Portal
+      summary: Create Key
+      operationId: create_key_portal_keys_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiKeyRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedApiKeyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /portal/keys/{key_id}:
+    delete:
+      tags:
+      - Portal
+      summary: Revoke Key
+      operationId: revoke_key_portal_keys__key_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    ApiKeyResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        prefix:
+          type: string
+          title: Prefix
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        last_used_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Used At
+      type: object
+      required:
+      - id
+      - name
+      - prefix
+      - created_at
+      - last_used_at
+      title: ApiKeyResponse
+    CreateApiKeyRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Name
+      type: object
+      required:
+      - name
+      title: CreateApiKeyRequest
+    CreatedApiKeyResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        prefix:
+          type: string
+          title: Prefix
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        last_used_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Used At
+        key:
+          type: string
+          title: Key
+      type: object
+      required:
+      - id
+      - name
+      - prefix
+      - created_at
+      - last_used_at
+      - key
+      title: CreatedApiKeyResponse
     DatasetMetaDataOrderBy:
       type: string
       enum:
@@ -2512,6 +2746,12 @@ components:
             format: date-time
           - type: 'null'
           title: Remote Last Modified
+        last_applied_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Last Applied Date
       type: object
       required:
       - dataset
@@ -2546,6 +2786,32 @@ components:
       - name
       - status
       title: DatasetStatusResponse
+    DatasetsHealth:
+      properties:
+        startup:
+          type: string
+          enum:
+          - pending
+          - running
+          - done
+          - failed
+          title: Startup
+        ready:
+          items:
+            type: string
+          type: array
+          title: Ready
+        pending:
+          items:
+            type: string
+          type: array
+          title: Pending
+      type: object
+      required:
+      - startup
+      - ready
+      - pending
+      title: DatasetsHealth
     DeletionOrderBy:
       type: string
       enum:
@@ -2711,6 +2977,95 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - degraded
+          - error
+          title: Status
+        database:
+          type: string
+          enum:
+          - ok
+          - error
+          title: Database
+        redis:
+          type: string
+          enum:
+          - ok
+          - error
+          - not_configured
+          title: Redis
+        datasets:
+          $ref: '#/components/schemas/DatasetsHealth'
+      type: object
+      required:
+      - status
+      - database
+      - redis
+      - datasets
+      title: HealthResponse
+    Limits:
+      properties:
+        per_minute:
+          type: integer
+          title: Per Minute
+        per_hour:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Per Hour
+        per_month:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Per Month
+        max_keys:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Keys
+      type: object
+      required:
+      - per_minute
+      - per_hour
+      - per_month
+      - max_keys
+      title: Limits
+    MeResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        role:
+          type: string
+          title: Role
+        tier:
+          type: string
+          title: Tier
+        limits:
+          $ref: '#/components/schemas/Limits'
+        active_keys:
+          type: integer
+          title: Active Keys
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - tier
+      - limits
+      - active_keys
+      title: MeResponse
     SyncAcceptedResponse:
       properties:
         sync_id:
@@ -2789,3 +3144,13 @@ components:
       - msg
       - type
       title: ValidationError
+  securitySchemes:
+    APIKeyHeader:
+      type: apiKey
+      description: API key created on /portal/keys
+      in: header
+      name: X-API-Key
+    HTTPBearer:
+      type: http
+      description: Supabase Auth access token
+      scheme: bearer

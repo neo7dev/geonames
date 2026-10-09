@@ -36,10 +36,12 @@ Also exposed: dataset metadata and sync status endpoints.
 Base URL (Docker default):
 - `http://localhost:9500`
 
-Interactive docs:
+Interactive docs (public; paste your API key into Swagger's **Authorize** button to try requests):
 - Swagger UI: `GET /docs`
 - ReDoc: `GET /redoc`
 - OpenAPI JSON: `GET /openapi.json`
+
+Every data endpoint needs an API key in the `X-API-Key` header (see [Authentication](#authentication)). Without a valid key it answers `401`. `/health` and the docs need no key.
 
 ### 1) Dataset Endpoints
 
@@ -83,7 +85,7 @@ Each dataset exposes:
 Example:
 
 ```bash
-curl "http://localhost:9500/cities15000/filter?country_code=US&min_population=1000000&order_by=-population&limit=20"
+curl -H "X-API-Key: $API_KEY" "http://localhost:9500/cities15000/filter?country_code=US&min_population=1000000&order_by=-population&limit=20"
 ```
 
 ### 2) Modifications Endpoints
@@ -140,7 +142,7 @@ Route group: `/metadata`
 
 ### 5) Sync Endpoints
 
-Route group: `/sync`
+Route group: `/sync`. Admins only: a key whose role is not an admin role gets `403`.
 
 1. Start sync
 	- `POST /sync/`
@@ -158,11 +160,52 @@ Example:
 
 ```bash
 # Start a sync
-curl -X POST http://localhost:9500/sync/
+curl -X POST -H "X-API-Key: $API_KEY" http://localhost:9500/sync/
 
 # Then poll status with returned sync_id
-curl "http://localhost:9500/sync/<sync_id>"
+curl -H "X-API-Key: $API_KEY" "http://localhost:9500/sync/<sync_id>"
 ```
+
+## Authentication
+
+Accounts live in Supabase Auth; the API checks two kinds of credential:
+- **API keys** (`X-API-Key` header) for the data endpoints and `/sync`.
+- **Login tokens** (`Authorization: Bearer <access_token>` from Supabase Auth) for `/portal`, where users manage their keys.
+
+Every signup gets the `free` role. Roles map to tiers, and each tier caps how many active API keys a user can hold:
+
+| Tier | Roles | Active API keys |
+|---|---|---|
+| basic | free (default) | 1 |
+| plus | tester | 3 |
+| pro | dev | 5 |
+| max | sr_dev, admin | unlimited |
+
+Tiers, roles and the role -> tier mapping are rows in the `app` schema (`app.tiers`, `app.roles`), editable in Studio. Admin access (`/sync`) comes from `app.roles.is_admin`. To change a user's role, edit their row in `app.profiles` in Studio; it applies on their next request. To make the first admin, sign up, then set that profile's `role` to `admin`.
+
+Until the web UI lands, get a key with curl. `ANON_KEY` is in `.env`; Kong requires it on the Auth API:
+
+```bash
+# 1. Sign up, then open the confirmation email (Mailpit at http://localhost:8025 in dev) and follow its link
+curl -X POST http://localhost:8000/auth/v1/signup -H "apikey: $ANON_KEY" \
+  -H "Content-Type: application/json" -d '{"email": "you@example.com", "password": "..."}'
+
+# 2. Log in; the response's access_token is the login token (valid for JWT_EXPIRY seconds)
+curl -X POST "http://localhost:8000/auth/v1/token?grant_type=password" -H "apikey: $ANON_KEY" \
+  -H "Content-Type: application/json" -d '{"email": "you@example.com", "password": "..."}'
+
+# 3. Create an API key. The response's "key" is shown only this once; only its hash is stored
+curl -X POST http://localhost:9500/portal/keys -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{"name": "laptop"}'
+```
+
+Portal endpoints (login token):
+- `GET /portal/me`: email, role, tier, limits and the number of active keys.
+- `GET /portal/keys`: active keys (name, prefix, created date); never the key itself.
+- `POST /portal/keys` (`{"name": "..."}`, 1-64 characters): `201` with the key, `409` when the tier's key limit is reached.
+- `DELETE /portal/keys/{id}`: revokes the key (`204`); it stops working on the next request.
+
+Deleting a user in Studio deletes their profile and keys.
 
 ## Daily Sync and Update Logic
 
@@ -237,7 +280,7 @@ Open:
 Quick API check:
 
 ```bash
-curl "http://localhost:9500/allcountries/?limit=5"
+curl -H "X-API-Key: $API_KEY" "http://localhost:9500/allcountries/?limit=5"
 ```
 
 ### 4) Run in Background
@@ -269,6 +312,7 @@ Main runtime settings (environment variables):
 - `POSTGRES_DB`
 - `POSTGRES_SCHEMA` (default `geonames`)
 - `REDIS_URL` (e.g. `redis://redis:6379/0`; reported by `/health` when set)
+- `JWT_SECRET` (Supabase Auth's JWT secret; required, used to verify login tokens on `/portal`)
 - `GEONAMES_URL`
 - `ENABLED_DATASETS`
 - `MAX_RESULTS`
@@ -278,7 +322,8 @@ Main runtime settings (environment variables):
 
 Notes:
 - `MAX_RESULTS` caps list/filter endpoint page size.
-- `FORCE_REBUILD=true` forces a full rebuild on next startup. It drops the `POSTGRES_SCHEMA` schema, so it never touches Supabase's own tables.
+- `FORCE_REBUILD=true` forces a full rebuild on next startup. It drops the `POSTGRES_SCHEMA` schema, so it never touches Supabase's own tables or user data.
+- User data (tiers, roles, profiles, API keys) lives in the `app` schema with its own migration chain (`migrations/app`, `alembic -n app ...`, `make db-app-*`), so `FORCE_REBUILD` never drops it.
 - All geonames tables, including `alembic_version`, live in the `POSTGRES_SCHEMA` schema, not Supabase's `public` schema. Supabase grants its API roles (`anon`, `authenticated`) access to every table in `public`, which is what Studio's security advisor flags. Databases from older versions are moved into the schema automatically on the next startup.
 - `SYNC_SCHEDULE_HOURS` is interpreted in UTC.
 
