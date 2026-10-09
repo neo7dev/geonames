@@ -279,6 +279,73 @@ def test_yesterday_without_deletes_file_is_not_applied(engine, remote):
     assert meta["out_of_sync"] is True
 
 
+def test_older_day_with_only_modifications_is_applied_alone(engine, remote):
+    _seed_rows(engine, AllCountries, [_geo(1, "Old1"), _geo(2, "Keep2")])
+    _seed_metadata(remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=2))
+    day = Y - timedelta(days=1)
+    remote.publish(day, [_row(1, "New1", day)], deletes=None)
+    remote.publish(Y, [], deletes=[])
+
+    apply_daily_updates([ALLCOUNTRIES], {"allcountries"})
+
+    assert _names(engine, AllCountries) == {1: "New1", 2: "Keep2"}
+    assert _metadata(remote, ALLCOUNTRIES)["last_applied_date"] == Y
+
+
+def test_older_day_with_only_deletes_is_applied_alone(engine, remote):
+    _seed_rows(engine, AllCountries, [_geo(1, "Keep1"), _geo(2, "Doomed2")])
+    _seed_metadata(remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=2))
+    day = Y - timedelta(days=1)
+    remote.publish(day, deletes=[2])
+    del remote.files[f"modifications-{day.isoformat()}.txt"]
+    remote.publish(Y, [], deletes=[])
+
+    apply_daily_updates([ALLCOUNTRIES], {"allcountries"})
+
+    assert _names(engine, AllCountries) == {1: "Keep1"}
+    assert _metadata(remote, ALLCOUNTRIES)["last_applied_date"] == Y
+
+
+def test_a_failed_day_stops_that_dataset_but_not_the_others(engine, remote):
+    # allcountries is three days behind, cities5000 one
+    _seed_metadata(remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=3))
+    _seed_metadata(remote, CITIES5000, last_applied=Y - timedelta(days=1))
+    for offset in (2, 1, 0):
+        day = Y - timedelta(days=offset)
+        remote.publish(
+            day, [_row(offset + 1, f"Town{offset}", day, population=10_000)], deletes=[]
+        )
+    upsert = daily_update._upsert_modifications
+
+    def fail_allcountries(conn_params, table, *args):
+        if table == "allcountries":
+            raise RuntimeError("disk full")
+        return upsert(conn_params, table, *args)
+
+    statuses = []
+    with patch.object(
+        daily_update, "_upsert_modifications", side_effect=fail_allcountries
+    ):
+        apply_daily_updates(
+            [ALLCOUNTRIES, CITIES5000],
+            {"allcountries", "cities5000"},
+            on_dataset=lambda name, status: statuses.append((name, status.value)),
+        )
+
+    # The later days are not applied to allcountries: that would skip the failed one
+    meta = _metadata(remote, ALLCOUNTRIES)
+    assert meta["last_applied_date"] == Y - timedelta(days=3)
+    assert meta["out_of_sync"] is True
+    assert _names(engine, AllCountries) == {}
+    assert [s for s in statuses if s[0] == "allcountries"][-1] == (
+        "allcountries",
+        "failed",
+    )
+    assert _metadata(remote, CITIES5000)["last_applied_date"] == Y
+    assert _names(engine, Cities5000) == {1: "Town0"}
+    assert statuses[-1] == ("cities5000", "synced")
+
+
 # ---------------------------------------------------------------------------
 # needs_rebuild / out_of_sync flags (real ORM event listeners)
 # ---------------------------------------------------------------------------
