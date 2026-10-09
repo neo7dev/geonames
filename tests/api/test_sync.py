@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import update
 
 from geonames_server.api.app import app
+from geonames_server.api.dependencies import get_session
 from geonames_server.database.models.accounts import Role
 from geonames_server.ingestion.sync_tracker import (
     DatasetStatus,
@@ -167,3 +168,31 @@ class TestAdminOnly:
     @pytest.mark.asyncio
     async def test_sync_needs_a_key(self, auth_client):
         assert (await auth_client.post("/sync/")).status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_admin_check_releases_its_session_before_the_sync_runs(
+        self, auth_client, async_session, make_user, make_key
+    ):
+        # The sync runs as a background task after the response; a session still
+        # open then would hold a connection, mid-transaction, for the whole sync.
+        headers = {"X-API-Key": await make_key(await make_user("admin"))}
+        open_sessions = 0
+
+        async def _counted_session():
+            nonlocal open_sessions
+            open_sessions += 1
+            try:
+                yield async_session
+            finally:
+                open_sessions -= 1
+
+        app.dependency_overrides[get_session] = _counted_session
+        open_during_sync = []
+        with patch(
+            "geonames_server.api.routers.sync.run_tracked_sync",
+            side_effect=lambda _: open_during_sync.append(open_sessions),
+        ):
+            resp = await auth_client.post("/sync/", headers=headers)
+
+        assert resp.status_code == 202
+        assert open_during_sync == [0]

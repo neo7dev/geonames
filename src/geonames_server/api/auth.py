@@ -106,7 +106,9 @@ def _unauthorized(detail: str, scheme: str) -> HTTPException:
 async def require_api_key(
     request: Request,
     key: str | None = Depends(_api_key_header),
-    session: AsyncSession = Depends(get_session),
+    # Closed as soon as the lookup is done. A request-scoped session would stay
+    # open, mid-transaction, until background tasks such as /sync finish.
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> Principal:
     if not key:
         raise _unauthorized(
