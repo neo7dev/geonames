@@ -24,7 +24,7 @@ help:
 	@awk ' \
 		/^##@ / { printf "\n\033[1m%s\033[0m\n", substr($$0, 5); desc = ""; next } \
 		/^## / { desc = desc (desc == "" ? "" : "\n") substr($$0, 4); next } \
-		/^[a-zA-Z0-9_-]+:/ && desc != "" { \
+		/^[a-zA-Z0-9_%-]+:/ && desc != "" { \
 			split($$0, t, ":"); n = split(desc, lines, "\n"); \
 			printf "  \033[36m%-22s\033[0m %s\n", t[1], lines[1]; \
 			for (i = 2; i <= n; i++) printf "  %-22s   %s\n", "", lines[i]; \
@@ -183,21 +183,10 @@ define check_dev_key
 	esac
 endef
 
-## Check the free user's dev API key against the running API
-check-key-free:
-	$(call check_dev_key,FREE)
-
-## Check the tester user's dev API key against the running API
-check-key-tester:
-	$(call check_dev_key,TESTER)
-
-## Check the dev user's dev API key against the running API
-check-key-dev:
-	$(call check_dev_key,DEV)
-
-## Check the admin user's dev API key against the running API
-check-key-admin:
-	$(call check_dev_key,ADMIN)
+## Check one dev user's API key against the running API
+## Targets: check-key-free, check-key-tester, check-key-dev, check-key-admin
+check-key-%:
+	$(call check_dev_key,$(shell echo $* | tr a-z A-Z))
 
 ## Check all four dev API keys against the running API (API_URL=..., default http://localhost:9500)
 check-keys:
@@ -244,4 +233,4 @@ push-image: push-image-version
 push-image-version:
 	docker push ghcr.io/neo7dev/$(APP_NAME):$(VERSION)
 
-.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-key-free check-key-tester check-key-dev check-key-admin check-keys build-image build-image-version push-image push-image-version
+.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version push-image push-image-version
