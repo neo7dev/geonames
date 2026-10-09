@@ -528,10 +528,13 @@ class TestPendingDays:
             date(2026, 3, 18),
         ]
 
-    def test_gap_is_capped(self):
-        days = _pending_days(date(2025, 1, 1), self.Y)
+    def test_max_gap_is_replayed(self):
+        days = _pending_days(self.Y - timedelta(days=MAX_CATCHUP_DAYS), self.Y)
         assert len(days) == MAX_CATCHUP_DAYS
         assert days[-1] == self.Y
+
+    def test_gap_over_max_needs_rebuild(self):
+        assert _pending_days(self.Y - timedelta(days=MAX_CATCHUP_DAYS + 1), self.Y) is None
 
 
 # ---------------------------------------------------------------------------
@@ -548,6 +551,7 @@ def engine():
         "_yesterday",
         "_load_last_applied",
         "_set_last_applied",
+        "_require_rebuild",
         "_stage_day",
         "_upsert_modifications",
         "_delete_from_dataset",
@@ -644,6 +648,26 @@ class TestApplyDailyUpdates:
 
         engine["_sync_metadata"].assert_not_called()
         engine["_set_last_applied"].assert_not_called()
+
+    def test_gap_over_max_marks_rebuild_instead_of_replaying(self, engine):
+        stale, ok = _make_dataset_info("allcountries"), _make_dataset_info("cities500")
+        engine["_load_last_applied"].return_value = {
+            "allcountries": Y - timedelta(days=MAX_CATCHUP_DAYS + 1),
+            "cities500": Y - timedelta(days=1),
+        }
+        seen = []
+
+        apply_daily_updates(
+            [stale, ok],
+            {"allcountries", "cities500"},
+            on_dataset=lambda n, s: seen.append((n, s)),
+        )
+
+        engine["_require_rebuild"].assert_called_once_with("allcountries")
+        assert ("allcountries", DatasetSyncStatus.FAILED) in seen
+        tables = [c.args[1] for c in engine["_upsert_modifications"].call_args_list]
+        assert tables == ["cities500"]
+        engine["_sync_metadata"].assert_called_once_with([ok])
 
     def test_already_caught_up_dataset_is_just_synced(self, engine):
         ds = _make_dataset_info()

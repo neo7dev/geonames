@@ -12,7 +12,8 @@ Applying a day is idempotent (upsert / delete by key), so replays are safe.
    ``last_applied_date`` advances only after a day is applied to a dataset.
 3. Datasets caught up to yesterday get their local etag / last-modified synced
    with the remote ones, which clears ``out_of_sync``. Failed or lagging
-   datasets stay out of sync and are retried on the next run.
+   datasets stay out of sync and are retried on the next run. Datasets more
+   than ``MAX_CATCHUP_DAYS`` behind are marked for a full rebuild instead.
 """
 
 from __future__ import annotations
@@ -79,19 +80,18 @@ def _yesterday() -> date:
     return current_utc_date() - timedelta(days=1)
 
 
-def _pending_days(last_applied: date | None, yesterday: date) -> list[date]:
-    """Days after *last_applied* up to *yesterday*, oldest first."""
+def _pending_days(last_applied: date | None, yesterday: date) -> list[date] | None:
+    """Days after *last_applied* up to *yesterday*, oldest first.
+
+    Returns ``None`` if the gap exceeds ``MAX_CATCHUP_DAYS``: daily files cannot
+    close it, so the dataset needs a full rebuild.
+    """
     if last_applied is None:
         last_applied = yesterday - timedelta(days=1)
-    start = max(
-        last_applied + timedelta(days=1), yesterday - timedelta(days=MAX_CATCHUP_DAYS - 1)
-    )
-    if start > last_applied + timedelta(days=1):
-        log.warning(
-            f"Gap since {last_applied} exceeds {MAX_CATCHUP_DAYS} days — "
-            f"replaying from {start}; a full rebuild is recommended"
-        )
-    return [start + timedelta(days=i) for i in range((yesterday - start).days + 1)]
+    gap = (yesterday - last_applied).days
+    if gap > MAX_CATCHUP_DAYS:
+        return None
+    return [last_applied + timedelta(days=i) for i in range(1, gap + 1)]
 
 
 def _download_daily_file(client: RemoteFileClient, file_name: str) -> Path | None:
@@ -375,6 +375,14 @@ def _set_last_applied(name: str, day: date) -> None:
             record.last_applied_date = day
 
 
+def _require_rebuild(name: str) -> None:
+    """Clear ``last_modified`` so the metadata listener sets ``needs_rebuild``."""
+    with get_session() as session:
+        record = DatasetMetaDataRepository(session).get_by_dataset(name)
+        if record is not None:
+            record.last_modified = None
+
+
 def _stage_day(
     day: date, on_step: Callable[[SyncStep], None], allow_partial: bool = False
 ) -> bool:
@@ -432,8 +440,19 @@ def apply_daily_updates(
     targets = [
         ds for ds in datasets if ds.name in out_of_sync_names and ds.name in enabled
     ]
-    last_applied = _load_last_applied([ds.name for ds in targets])
-    pending = {n: set(_pending_days(d, yesterday)) for n, d in last_applied.items()}
+    pending: dict[str, set[date]] = {}
+    for name, last in _load_last_applied([ds.name for ds in targets]).items():
+        days = _pending_days(last, yesterday)
+        if days is None:
+            log.warning(
+                f"[{name}] Last applied {last} is over {MAX_CATCHUP_DAYS} days ago "
+                "— marking for a full rebuild"
+            )
+            _require_rebuild(name)
+            on_dataset(name, DatasetSyncStatus.FAILED)
+            continue
+        pending[name] = set(days)
+    targets = [ds for ds in targets if ds.name in pending]
     caught_up = {n for n, days in pending.items() if not days}
     failed: set[str] = set()
     conn_params = _get_conn_params()
