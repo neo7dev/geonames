@@ -1,4 +1,7 @@
+from datetime import date
+
 import pytest
+import pytest_asyncio
 
 from geonames_server.database.models.cities15000 import Cities15000
 
@@ -210,3 +213,81 @@ class TestFilterGeonames:
         data = response.json()
         assert any(r["geonameid"] == 99000005 for r in data)
         assert all(r[field] == 0 for r in data)
+
+
+SEEDED = {99000001, 99000002, 99000003, 99000004, 99000006}
+
+
+@pytest.mark.usefixtures("seed_geonames")
+class TestEachFilter:
+    """Every /filter parameter narrows the seeded rows to the expected ones.
+
+    Only seeded ids are compared, so rows already in the database do not matter.
+    """
+
+    @pytest_asyncio.fixture(autouse=True)
+    async def _village(self, async_session):
+        # The seeded cities leave cc2 and admin3/admin4 empty
+        async_session.add(
+            Cities15000(
+                geonameid=99000006,
+                name="TestVillage",
+                asciiname="TestVillage",
+                latitude=47.0,
+                longitude=12.0,
+                country_code="DE",
+                cc2="AT",
+                admin1_code="02",
+                admin3_code="09162",
+                admin4_code="09162000",
+                population=500,
+                modification_date=date(2024, 6, 1),
+            )
+        )
+        await async_session.commit()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "params, expected",
+        [
+            ({"geonameid": 99000003}, {99000003}),
+            ({"name": "testlon"}, {99000003}),
+            ({"asciiname": "TESTTOK"}, {99000002}),
+            ({"alternatenames": "München"}, {99000004}),
+            ({"alternatenames": "berl"}, {99000001}),
+            ({"latitude": 35.6895}, {99000002}),
+            ({"longitude": -0.12574}, {99000003}),
+            ({"feature_code": "PPLA"}, {99000004}),
+            ({"country_code": "de"}, {99000001, 99000004, 99000006}),
+            ({"cc2": "at"}, {99000006}),
+            ({"admin1_code": "02"}, {99000004, 99000006}),
+            ({"admin2_code": "GLA"}, {99000003}),
+            ({"admin3_code": "09162"}, {99000006}),
+            ({"admin4_code": "09162000"}, {99000006}),
+            ({"elevation": 524}, {99000004}),
+            ({"dem": 43}, {99000001}),
+            ({"min_population": 7_000_000}, {99000002, 99000003}),
+            ({"modification_date": "2025-02-10"}, {99000003}),
+            ({"modified_after": "2025-02-15"}, {99000001, 99000004}),
+            ({"modified_before": "2025-01-31"}, {99000002, 99000006}),
+            (
+                {"modified_after": "2025-02-01", "modified_before": "2025-02-28"},
+                {99000003, 99000004},
+            ),
+            ({"country_code": "DE", "feature_code": "PPLC"}, {99000001}),
+        ],
+    )
+    async def test_filter(self, client, params, expected):
+        response = await client.get(
+            "/cities15000/filter", params={**params, "limit": 1000}
+        )
+        assert response.status_code == 200
+        assert {r["geonameid"] for r in response.json()} & SEEDED == expected
+
+    @pytest.mark.asyncio
+    async def test_population_with_delta_and_min_max_is_rejected(self, client):
+        response = await client.get(
+            "/cities15000/filter",
+            params={"population": 1000, "delta": 10, "min_population": 1},
+        )
+        assert response.status_code == 422
