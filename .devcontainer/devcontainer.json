@@ -25,7 +25,8 @@
 	},
 	
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	"forwardPorts": [9500, 5432, 6379, 5050, 3000, 3002, 3003],
+	// 8000 = Supabase Studio + Auth API (kong), 8025 = Mailpit, 3000 = Metabase
+	"forwardPorts": [9500, 5432, 6379, 8000, 8025, 5050, 3000, 3002, 3003],
 	
 	// Use 'postCreateCommand' to run commands after the container is created.
 	"postCreateCommand": "uv sync",

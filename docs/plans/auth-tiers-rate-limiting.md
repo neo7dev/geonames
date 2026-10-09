@@ -13,7 +13,7 @@ Goal: ship one deployable app image, run via docker compose alongside Redis and 
 
 | Phase | What | Done when |
 |---|---|---|
-| 1. Dev infra | Devcontainer compose runs a trimmed self-hosted Supabase (db, auth, kong, rest, meta, Studio), Redis and Mailpit; the app points at the Supabase db; no app code changes | Studio opens, datasets ingest into the Supabase db, integration tests pass against it |
+| 1. Dev infra | Devcontainer compose runs a trimmed self-hosted Supabase (db, auth, kong, meta, Studio; no PostgREST, since FastAPI does all data access), Redis and Mailpit; the app points at the Supabase db; no app code changes | Studio opens, datasets ingest into the Supabase db, integration tests pass against it |
 | 2. Schema split | Geonames tables move to a `geonames` schema, kept separate from user data and Supabase's own tables | Tests show the tables in `geonames` and nothing left in `public` |
 | 3. Deploy image + compose | Prod Dockerfile; root compose with the same services as dev; startup no longer waits for data loads; public `/health` | `docker compose up` brings it all up, `/health` returns 200, Studio opens |
 | 4. Auth + API keys | Tiers, roles and user tables; new signups get the free role; login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
