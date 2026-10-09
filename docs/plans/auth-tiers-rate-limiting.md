@@ -24,7 +24,7 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | 1. Dev infra | Done | Devcontainer compose runs a trimmed self-hosted Supabase (db, auth, kong, meta, Studio), Redis and Mailpit; the app points at the Supabase db; no app code changes | Studio opens, datasets ingest into the Supabase db, integration tests pass against it |
 | 2. Schema split | Done | Geonames tables move to a `geonames` schema, kept separate from user data and Supabase's own tables | Tests show the tables in `geonames` and nothing left in `public` |
 | 3. Deploy image + compose | Done | Prod Dockerfile; root compose with the same services as dev, plus Redis; startup no longer waits for data loads; public `/health` | `docker compose up` brings it all up, `/health` returns 200, Studio opens |
-| 4. Auth + API keys | Done (branch `phase-4-auth`) | Tiers, roles and user tables; new signups get the free role; login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
+| 4. Auth + API keys | Done (merged to `main` 2026-10-09) | Tiers, roles and user tables; new signups get the default role (free); login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
 | 5. Rate limits + quota | Not started | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
 | 6. Frontend | Not started | React + Vite + Tailwind + shadcn at `/ui`: signup/login (email, GitHub, Google), key management, usage page | Sign up, create a key, call the API, see the usage update |
 | 7. Ops (later) | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry | Image published to ghcr |
@@ -60,7 +60,7 @@ Branch `phase-4-auth` from `main`.
 - **Revoke, don't delete.** `DELETE /portal/keys/{id}` sets `revoked_at`, so phase 5 usage rows keep their key. The tier's `max_keys` caps active keys per user (1 / 3 / 5 / unlimited); revoked keys don't count. After a downgrade, keys over the new cap keep working, but no new key can be created until the user is under it.
 - **JWT check.** HS256 with `JWT_SECRET`, `aud = authenticated`, `exp` and `sub` required, 30 s leeway, claim `role = authenticated`, and `is_anonymous` not true. This rejects the public `ANON_KEY` and `SERVICE_ROLE_KEY`, which are signed with the same secret but have no `aud`/`sub`. `iss` is not checked. A token stays valid until it expires (`JWT_EXPIRY`, 3600 s) after logout or a ban.
 - **No lookup cache yet.** Each data request does one indexed query (api_keys → profiles → roles → tiers). Phase 5 adds the 60 s cache with the limits, which is where the "role change applies within 60 s" requirement lives. Until then role changes and revocations apply on the next request.
-- **Not in phase 4:** enforcing limits, `last_used_at` writes (phase 5 fills them in its 5-minute usage flush; the column exists now), `/portal/usage` (phase 5), key scopes and expiry (phase 7). Studio's ban stops logins but not existing keys; deleting the user removes their keys via the cascade.
+- **Not in phase 4:** enforcing limits, `last_used_at` writes (phase 5 fills them in its 5-minute usage flush; the column exists now), `/portal/usage` (phase 5), key scopes and expiry (phase 7). A ban or soft delete in Supabase Auth refuses the user's keys and login tokens (added after review, `c63628a`); deleting the user removes their keys via the cascade.
 
 ### Database (`migrations/app/versions/<rev>_accounts.py`)
 
@@ -208,6 +208,21 @@ Built as scoped above, on `phase-4-auth`.
   - `modifications.population` was still INTEGER, because `a684673d5b5c` recreated the table after the bigint migration. Migration `b8e1f4c2d9a6` widens it (`f8d1e07`).
   - Autogenerate on the geonames chain wanted to drop `alembic_version` (`2eac71b`).
   - Tests now run `alembic check` on both chains.
+- Code review fixes (branch `phase-4-review-fixes`, one commit each, merged to `main` 2026-10-09):
+  - `/sync`'s admin check no longer holds a database connection, mid-transaction, for the whole background sync (`de25f73`).
+  - A blank `JWT_SECRET` counts as unset, so startup refuses to run; secrets under 32 characters are rejected (`d4f0c06`).
+  - Signups get the role marked `roles.is_default` through `app.default_role()`, not the literal `'free'`; a deferred trigger keeps exactly one default (migration `a79ec0362d52`, `28f8b3f`).
+  - Startup and `seed-users` add the `auth.users` FK, signup trigger and missing profiles if the accounts migration ran before `auth.users` existed (`database/auth_link.py`, `8202032`).
+  - The trigger copies `banned_until` and `deleted_at` onto profiles; keys and logins of banned or soft-deleted users are refused (migration `bf313717012e`, `c63628a`).
+  - Key names reject control characters (422, not 500 on NUL) (`ffd149d`).
+  - The app chain works in offline `--sql` mode (`00a60a9`).
+  - Migrations hold a Postgres advisory lock, so startup and `seed-users` cannot race (`9b67af4`).
+  - `seed-users` keeps within the tier's key limit (`f2bd631`), and the devcontainer start skips it instead of failing when `.env` lacks the dev settings (`1e22758`).
+  - The `9a4d2b6e1c8f` downgrade restores only the max tier's cap (`23a3686`).
+  - The database URL is percent-encoded and escaped for Alembic, so any password works (`0763303`).
+  - Tests only write rows they created (`a4494e2`); portal and Makefile cleanups (`f6e42da`, `70e7bc1`).
+- Ruff added as a dev dependency with pinned rules, codebase formatted, and `make predeploy` (lint, format, lockfile, all tests with Postgres) plus `make image-check` added (`159b52f`, `6c13f14`, `281b64c`).
+- Tests: 703 pass with `TEST_PG_DSN` set (`make tests-pg`). `make image-check` passes.
 
 ## Risks
 
