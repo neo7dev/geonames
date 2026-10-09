@@ -19,7 +19,12 @@ from geonames_server.api.auth import (
     require_user,
 )
 from geonames_server.api.dependencies import get_session
-from geonames_server.api.rate_limit import RateLimiter, Windows, stored_usage
+from geonames_server.api.rate_limit import (
+    RateLimiter,
+    Windows,
+    flushed_counts,
+    stored_usage,
+)
 from geonames_server.api.schemas.portal import (
     ApiKeyResponse,
     CreateApiKeyRequest,
@@ -151,8 +156,7 @@ async def _current_counts(
     if limiter is not None:
         return await limiter.current_usage(user_id, windows, now)
     # No Redis configured: nothing is counted live, only what reached Postgres
-    month, hour = await stored_usage(session, user_id, windows)
-    return [None, hour, month], False
+    return flushed_counts(await stored_usage(session, user_id, windows)), False
 
 
 async def _daily(

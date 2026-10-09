@@ -6,13 +6,14 @@ Needs TEST_REDIS_URL and the Supabase database the other API tests use.
 import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
 
 from geonames_server.api import usage_flush
-from geonames_server.api.rate_limit import USAGE_PENDING
+from geonames_server.api.rate_limit import USAGE_PENDING, RateLimiter
 from geonames_server.api.usage_flush import BATCHES, FLUSHING_PREFIX, flush_usage
 from geonames_server.database.models.accounts import ApiKey, ApiKeyUsage, UsageFlush
 
@@ -44,6 +45,10 @@ def _hour(clock_now: float, hours_later: int = 0) -> datetime:
     )
 
 
+async def _flush(redis, session_factory) -> int:
+    return await flush_usage(RateLimiter(redis, session_factory), session_factory)
+
+
 @pytest.mark.asyncio
 async def test_calls_in_two_hours_give_two_rows_and_set_last_used(
     auth_client,
@@ -62,7 +67,7 @@ async def test_calls_in_two_hours_give_two_rows_and_set_last_used(
     clock.now += 3600
     await auth_client.get(PATH, headers={"X-API-Key": key})
 
-    assert await flush_usage(redis, session_factory) == 4
+    assert await _flush(redis, session_factory) == 4
 
     assert await _usage_rows(async_session, key_id) == [
         (_hour(start), 3),
@@ -88,11 +93,11 @@ async def test_flushes_add_up_and_an_empty_flush_adds_nothing(
 ):
     key, key_id = await _key(make_user, make_key, async_session)
     await auth_client.get(PATH, headers={"X-API-Key": key})
-    await flush_usage(redis, session_factory)
+    await _flush(redis, session_factory)
     await auth_client.get(PATH, headers={"X-API-Key": key})
-    await flush_usage(redis, session_factory)
+    await _flush(redis, session_factory)
 
-    assert await flush_usage(redis, session_factory) == 0
+    assert await _flush(redis, session_factory) == 0
     assert await _usage_rows(async_session, key_id) == [(_hour(clock.now), 2)]
 
 
@@ -114,12 +119,12 @@ async def test_a_failed_write_keeps_the_batch_for_the_next_flush(
         usage_flush, "write_usage", AsyncMock(side_effect=OSError("db down"))
     ):
         with pytest.raises(OSError):
-            await flush_usage(redis, session_factory)
+            await _flush(redis, session_factory)
     assert len(await redis.keys(f"{FLUSHING_PREFIX}*")) == 1
     assert await redis.scard(BATCHES) == 1
 
     await auth_client.get(PATH, headers={"X-API-Key": key})
-    assert await flush_usage(redis, session_factory) == 2
+    assert await _flush(redis, session_factory) == 2
     assert await _usage_rows(async_session, key_id) == [(_hour(clock.now), 2)]
     assert await redis.keys("usage:*") == []
 
@@ -135,7 +140,7 @@ async def test_a_batch_written_before_is_only_deleted(
     async_session.add(UsageFlush(batch=batch))
     await async_session.commit()
 
-    assert await flush_usage(redis, session_factory) == 0
+    assert await _flush(redis, session_factory) == 0
 
     assert await _usage_rows(async_session, key_id) == []
     assert await redis.keys("usage:*") == []
@@ -157,7 +162,7 @@ async def test_a_deleted_keys_counts_are_dropped(
         },
     )
 
-    await flush_usage(redis, session_factory)
+    await _flush(redis, session_factory)
 
     assert await _usage_rows(async_session, key_id) == [(_hour(clock.now), 2)]
     assert await _usage_rows(async_session, gone) == []
@@ -174,7 +179,7 @@ async def test_old_flush_records_are_pruned(redis, session_factory, async_sessio
     await async_session.commit()
     await redis.hset(USAGE_PENDING, "t:" + str(uuid.uuid4()), 1)
 
-    await flush_usage(redis, session_factory)
+    await _flush(redis, session_factory)
 
     batches = set(await async_session.scalars(select(UsageFlush.batch)))
     assert "old" not in batches
@@ -185,7 +190,8 @@ async def test_old_flush_records_are_pruned(redis, session_factory, async_sessio
 async def test_the_flusher_keeps_running_after_a_failure():
     flush = AsyncMock(side_effect=[OSError("db down"), 3, 3])
     with patch.object(usage_flush, "flush_usage", flush):
-        task = asyncio.create_task(usage_flush.run_usage_flusher(None, None, 0.01))
+        limiter = SimpleNamespace(recovered=asyncio.Event())
+        task = asyncio.create_task(usage_flush.run_usage_flusher(limiter, None, 0.01))
         while flush.await_count < 3:
             await asyncio.sleep(0.01)
         task.cancel()

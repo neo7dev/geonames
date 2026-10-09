@@ -113,7 +113,7 @@ async def test_lifespan_shares_one_redis_client(startup_mocks):
             startup_mocks["release_build"].set()
         # Shutdown flushes what is left, before closing Redis
         flush.assert_awaited_once()
-        assert flush.await_args.args[0] is redis
+        assert flush.await_args.args[0].redis is redis
 
     from_url.assert_called_once()
     redis.aclose.assert_awaited_once()

@@ -310,6 +310,15 @@ class LocalLimiter:
             del self._counts[key]
 
 
+def flushed_counts(stored: tuple[int, int] | None) -> list[int | None]:
+    """Minute, hour and month counts from stored_usage (None if unknown).
+
+    Postgres has no minute count.
+    """
+    month, hour = stored or (None, None)
+    return [None, hour, month]
+
+
 async def stored_usage(
     session: AsyncSession, user_id: uuid.UUID, windows: Windows
 ) -> tuple[int, int]:
@@ -433,8 +442,7 @@ class RateLimiter:
                 return [int(minute or 0), _int(hour), _int(month)], True
         if self.local.is_loaded(user_id, windows):
             return list(self.local.counts(user_id, windows)), False
-        month, hour = await self._stored_usage(user_id, windows) or (None, None)
-        return [None, hour, month], False
+        return flushed_counts(await self._stored_usage(user_id, windows)), False
 
     async def _rebuild(
         self, principal: Principal, windows: Windows, now: float

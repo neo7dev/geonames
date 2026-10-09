@@ -179,7 +179,7 @@ async def test_outage_calls_are_flushed_with_redis_still_down(
     await _calls(auth_client, key, 3)
 
     with pytest.raises(RedisConnectionError):
-        await flush_usage(down_limiter.redis, session_factory, down_limiter)
+        await flush_usage(down_limiter, session_factory)
 
     assert await _stored_total(async_session, user_id) == 3
     assert down_limiter.local.all_written()
@@ -206,11 +206,11 @@ async def test_with_postgres_down_too_counts_wait_in_memory(
     assert await _calls(auth_client, key, 11) == [200] * 10 + [429]
 
     with pytest.raises(OSError):
-        await flush_usage(down_limiter.redis, broken_factory, down_limiter)
+        await flush_usage(down_limiter, broken_factory)
     assert down_limiter.local.unwritten[1].total() == 10
 
     with pytest.raises(RedisConnectionError):
-        await flush_usage(down_limiter.redis, session_factory, down_limiter)
+        await flush_usage(down_limiter, session_factory)
     assert await _stored_total(async_session, user_id) == 10
 
 
@@ -239,11 +239,11 @@ async def test_a_write_that_failed_after_committing_is_not_repeated(
         patch.object(usage_flush, "write_usage", lost_reply),
         pytest.raises(OSError),
     ):
-        await flush_usage(down_limiter.redis, session_factory, down_limiter)
+        await flush_usage(down_limiter, session_factory)
     await _calls(auth_client, key, 2)
 
     with pytest.raises(RedisConnectionError):
-        await flush_usage(down_limiter.redis, session_factory, down_limiter)
+        await flush_usage(down_limiter, session_factory)
 
     assert await _stored_total(async_session, user_id) == 5
     assert down_limiter.local.all_written()
@@ -274,7 +274,7 @@ async def test_after_the_outage_counters_include_the_outage_calls(
     assert await _calls(auth_client, key, 1) == [200]  # Redis again
     assert limiter.recovered.is_set()
 
-    assert await flush_usage(redis, session_factory, limiter) == 6
+    assert await flush_usage(limiter, session_factory) == 6
     assert await _stored_total(async_session, user_id) == 6
     # The outage minute has ended; the hour and month gained the 3 outage calls
     assert await _counters(redis, user_id, clock.now) == [1, 6, 6]
@@ -298,7 +298,7 @@ async def test_outage_calls_count_in_the_minute_they_were_made(
     break_redis.broken = False
     limiter._down_until = 0
     assert await _calls(auth_client, key, 1) == [200]  # In Redis
-    await flush_usage(redis, session_factory, limiter)
+    await flush_usage(limiter, session_factory)
 
     # The free tier allows 10 a minute: all used
     assert await _calls(auth_client, key, 1) == [429]
@@ -328,7 +328,7 @@ async def test_counters_redis_lost_are_rebuilt_with_the_unflushed_outage_calls(
     assert await _counters(redis, user_id, clock.now) == [1, 4, 4]
     assert limiter.local.users == set()
 
-    await flush_usage(redis, session_factory, limiter)
+    await flush_usage(limiter, session_factory)
     assert await _stored_total(async_session, user_id) == 4
     assert await _counters(redis, user_id, clock.now) == [1, 4, 4]
 
@@ -350,7 +350,7 @@ async def test_a_rebuild_and_the_reconcile_add_the_outage_calls_once(
     key = await make_key(user_id)
     assert await _calls(auth_client, key, 3) == [200] * 3  # In memory
     # Writes the outage calls; Redis still counts as down, so no reconcile yet
-    await flush_usage(redis, session_factory, limiter)
+    await flush_usage(limiter, session_factory)
     assert limiter.local.users == {user_id}
 
     principal = SimpleNamespace(user_id=user_id)
@@ -400,14 +400,14 @@ async def test_calls_counted_in_memory_during_the_reconcile_are_kept(
         return await real_add(**kwargs)
 
     with patch.object(limiter, "_add_script", side_effect=add_during_a_flap):
-        await flush_usage(redis, session_factory, limiter)
+        await flush_usage(limiter, session_factory)
     assert (await _counters(redis, user_id, clock.now))[2] == 4
     # Not sent yet, so not forgotten
     assert limiter.local.users == {user_id}
     assert limiter.local.unsent(user_id, Windows.at(clock.now)) == [1, 1, 1]
 
     # The next flush writes it to Postgres, then adds it
-    await flush_usage(redis, session_factory, limiter)
+    await flush_usage(limiter, session_factory)
     assert (await _counters(redis, user_id, clock.now))[2] == 5
     assert limiter.local.users == set()
 
@@ -441,13 +441,13 @@ async def test_counters_stay_when_the_write_fails_and_the_next_flush_finishes(
         AsyncMock(side_effect=[True, OSError("db down")]),
     ):
         with pytest.raises(OSError):
-            await flush_usage(redis, session_factory, limiter)
+            await flush_usage(limiter, session_factory)
     # Not added before the outage calls are in Postgres
     assert (await _counters(redis, user_id, clock.now))[2] == 2
     assert limiter.local.users == {user_id}
 
     with patch.object(usage_flush, "write_usage", real_write):
-        await flush_usage(redis, session_factory, limiter)
+        await flush_usage(limiter, session_factory)
     assert (await _counters(redis, user_id, clock.now))[2] == 4
     assert await _stored_total(async_session, user_id) == 2
 
@@ -457,9 +457,7 @@ async def test_the_flusher_wakes_when_redis_comes_back():
     limiter = SimpleNamespace(recovered=asyncio.Event())
     flush = AsyncMock(return_value=0)
     with patch.object(usage_flush, "flush_usage", flush):
-        task = asyncio.create_task(
-            usage_flush.run_usage_flusher(None, None, 3600, limiter)
-        )
+        task = asyncio.create_task(usage_flush.run_usage_flusher(limiter, None, 3600))
         await asyncio.sleep(0.01)
         flush.assert_not_awaited()
 

@@ -112,10 +112,7 @@ async def lifespan(app: FastAPI):
         # APScheduler job: the scheduler starts only after the dataset rebuilds.
         flusher = asyncio.create_task(
             run_usage_flusher(
-                app.state.redis,
-                asyncSessionLocal,
-                settings.usage_flush_seconds,
-                app.state.rate_limiter,
+                app.state.rate_limiter, asyncSessionLocal, settings.usage_flush_seconds
             ),
             name="usage-flusher",
         )
@@ -152,9 +149,7 @@ async def lifespan(app: FastAPI):
 
 async def _final_usage_flush(app: FastAPI) -> None:
     try:
-        written = await flush_usage(
-            app.state.redis, asyncSessionLocal, app.state.rate_limiter
-        )
+        written = await flush_usage(app.state.rate_limiter, asyncSessionLocal)
         log.info(f"Final usage flush wrote {written} request(s)")
     except Exception as e:
         # Only what Redis holds survives the restart.

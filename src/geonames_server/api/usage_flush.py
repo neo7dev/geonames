@@ -10,9 +10,9 @@ whose write failed stays in Redis for the next flush; one that was written but
 not deleted is found in usage_flushes and only deleted, so nothing counts twice.
 
 While Redis is down, the rate limiter counts in memory; each flush writes
-those counts too, recorded as a batch the same way. Once Redis answers again and the outage usage is in
-Postgres, the flush adds the outage users' in-memory requests to their Redis
-counters (RateLimiter.reconcile).
+those counts too, recorded as a batch the same way. Once Redis answers again
+and the outage usage is in Postgres, the flush adds the outage users'
+in-memory requests to their Redis counters (RateLimiter.reconcile).
 """
 
 from __future__ import annotations
@@ -164,9 +164,7 @@ async def _reconcile(limiter: RateLimiter) -> None:
         log.info(f"Added the outage requests of {users} user(s) to Redis")
 
 
-async def flush_usage(
-    redis: Redis, session_factory: SessionFactory, limiter: RateLimiter | None = None
-) -> int:
+async def flush_usage(limiter: RateLimiter, session_factory: SessionFactory) -> int:
     """Write the pending usage to Postgres; return the requests written.
 
     Redis's usage first, then the limiter's in-memory usage (written even with
@@ -175,38 +173,31 @@ async def flush_usage(
     """
     redis_error: Exception | None = None
     try:
-        written = await _flush_redis(redis, session_factory)
+        written = await _flush_redis(limiter.redis, session_factory)
     except (RedisError, OSError) as e:
         redis_error, written = e, 0
-    if limiter is not None:
-        written += await _flush_local(limiter, session_factory)
-        limiter.local.prune(rate_limit._now())
-        if redis_error is None and not limiter.outage:
-            await _reconcile(limiter)
+    written += await _flush_local(limiter, session_factory)
+    limiter.local.prune(rate_limit._now())
+    if redis_error is None and not limiter.outage:
+        await _reconcile(limiter)
     if redis_error is not None:
         raise redis_error
     return written
 
 
 async def run_usage_flusher(
-    redis: Redis,
-    session_factory: SessionFactory,
-    interval: float,
-    limiter: RateLimiter | None = None,
+    limiter: RateLimiter, session_factory: SessionFactory, interval: float
 ) -> None:
     """Flush every interval seconds until cancelled; failures are retried next time.
 
     Redis coming back after an outage wakes it at once, to reconcile.
     """
     while True:
-        if limiter is None:
-            await asyncio.sleep(interval)
-        else:
-            with suppress(TimeoutError):
-                await asyncio.wait_for(limiter.recovered.wait(), interval)
-            limiter.recovered.clear()
+        with suppress(TimeoutError):
+            await asyncio.wait_for(limiter.recovered.wait(), interval)
+        limiter.recovered.clear()
         try:
-            written = await flush_usage(redis, session_factory, limiter)
+            written = await flush_usage(limiter, session_factory)
             log.debug(f"Usage flush wrote {written} request(s)")
         except Exception as e:
             log.warning(f"Usage flush failed, retrying in {interval} s: {e!r}")
