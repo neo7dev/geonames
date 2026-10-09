@@ -270,6 +270,24 @@ class TestKeys:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", ["a\x00b", "line\nbreak", "tab\there", "del\x7f"])
+    async def test_name_rejects_control_characters(self, auth_client, login, name):
+        _, headers = await login()
+
+        resp = await _create_key(auth_client, headers, name=name)
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_name_keeps_unicode(self, auth_client, login):
+        _, headers = await login()
+
+        resp = await _create_key(auth_client, headers, name="Clé de test 🔑")
+
+        assert resp.status_code == 201
+        assert resp.json()["name"] == "Clé de test 🔑"
+
+    @pytest.mark.asyncio
     async def test_list_is_newest_first(self, auth_client, async_session, login):
         _, headers = await login("dev")
         first = (await _create_key(auth_client, headers, "first")).json()

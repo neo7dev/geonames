@@ -2648,6 +2648,7 @@ components:
           type: string
           maxLength: 64
           minLength: 1
+          pattern: ^[^\x00-\x1f\x7f]*$
           title: Name
       type: object
       required:

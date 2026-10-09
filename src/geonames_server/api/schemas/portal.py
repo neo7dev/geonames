@@ -23,8 +23,16 @@ class MeResponse(BaseModel):
 
 
 class CreateApiKeyRequest(BaseModel):
+    # No control characters: Postgres text cannot store NUL, and the rest only
+    # garble key lists.
     name: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[^\x00-\x1f\x7f]*$",
+        ),
     ]
 
 
