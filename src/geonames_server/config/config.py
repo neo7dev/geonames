@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     postgres_host: str = Field(default="postgres", description="PostgreSQL host")
     postgres_port: int = Field(default=5432, description="PostgreSQL port")
     postgres_db: str = Field(default="devdb", description="PostgreSQL database name")
+    postgres_schema: str = Field(
+        default="geonames",
+        description="Schema holding the geonames tables, kept out of Supabase's public schema",
+    )
 
     enabled_datasets: Annotated[list[str], NoDecode] = Field(
         default=[
@@ -88,6 +92,15 @@ class Settings(BaseSettings):
     def postges_url(self) -> str:
         return f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         # return f"postgresql://{self.postges_user}:{self.postges_password}@{self.postges_host}:{self.postges_port}/{self.postges_db}"
+
+    @property
+    def postgres_options(self) -> str:
+        """libpq ``options`` that resolve unqualified table names in ``postgres_schema``.
+
+        Every connection (SQLAlchemy engines and raw psycopg2) must pass this, or
+        unqualified SQL would read and write Supabase's ``public`` schema instead.
+        """
+        return f"-c search_path={self.postgres_schema}"
 
     @computed_field
     @property

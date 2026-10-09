@@ -13,17 +13,34 @@ _alembic_ini = settings.alembic_ini
 
 
 def _drop_all_tables() -> None:
-    """Drop all known tables and the Alembic version table."""
+    """Drop the app's schema, plus any tables left in public by older versions.
+
+    Dropping the schema removes every table and the Alembic version table, and
+    cannot touch anything outside it (Supabase auth, other apps' tables). The
+    legacy public tables go too, or migrations would move them back in.
+    """
     import geonames_server.database.models  # noqa: F401 — ensure all models are registered
 
-    log.warning("Force rebuild: dropping all tables")
-    Base.metadata.drop_all(bind=sync_engine)
-    log.info("All model tables dropped")
-
-    # Drop Alembic's version tracking table so migrations start fresh
+    log.warning(f"Force rebuild: dropping schema {settings.postgres_schema}")
     with sync_engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS alembic_version"))
-    log.info("Alembic version table dropped")
+        quote = conn.dialect.identifier_preparer.quote
+        conn.execute(
+            text(f"DROP SCHEMA IF EXISTS {quote(settings.postgres_schema)} CASCADE")
+        )
+        for name in [*Base.metadata.tables, "alembic_version"]:
+            conn.execute(text(f"DROP TABLE IF EXISTS public.{quote(name)}"))
+    log.info("All tables dropped")
+
+
+def _check_search_path() -> None:
+    """Fail fast if app connections do not resolve tables in the app's schema."""
+    with sync_engine.connect() as conn:
+        current = conn.execute(text("SELECT current_schema()")).scalar()
+    if current != settings.postgres_schema:
+        raise RuntimeError(
+            f"Database connections resolve tables in schema {current!r}, "
+            f"expected {settings.postgres_schema!r}"
+        )
 
 
 def db_migrations(force: bool = False) -> None:
@@ -44,6 +61,7 @@ def db_migrations(force: bool = False) -> None:
         alembic_cfg = Config(str(_alembic_ini))
         alembic_cfg.set_main_option("sqlalchemy.url", settings.postges_url)
         command.upgrade(alembic_cfg, "head")
+        _check_search_path()
         log.info("Database migrations complete")
     except Exception as e:
         log.exception("Database migrations failed")

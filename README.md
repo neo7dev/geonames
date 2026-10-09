@@ -255,6 +255,7 @@ Main runtime settings (environment variables):
 - `POSTGRES_HOST`
 - `POSTGRES_PORT`
 - `POSTGRES_DB`
+- `POSTGRES_SCHEMA` (default `geonames`)
 - `GEONAMES_URL`
 - `ENABLED_DATASETS`
 - `MAX_RESULTS`
@@ -264,7 +265,8 @@ Main runtime settings (environment variables):
 
 Notes:
 - `MAX_RESULTS` caps list/filter endpoint page size.
-- `FORCE_REBUILD=true` forces a full rebuild on next startup.
+- `FORCE_REBUILD=true` forces a full rebuild on next startup. It drops the `POSTGRES_SCHEMA` schema, so it never touches Supabase's own tables.
+- All geonames tables, including `alembic_version`, live in the `POSTGRES_SCHEMA` schema, not Supabase's `public` schema. Supabase grants its API roles (`anon`, `authenticated`) access to every table in `public`, which is what Studio's security advisor flags. Databases from older versions are moved into the schema automatically on the next startup.
 - `SYNC_SCHEDULE_HOURS` is interpreted in UTC.
 
 ## Data Source Attribution

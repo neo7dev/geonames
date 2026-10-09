@@ -11,11 +11,16 @@ from geonames_server.config.config import settings
 # sqlalchemy.engine logger level is controlled in logger_config.json
 # and can be overridden to DEBUG via settings.debug.
 
+# Unqualified table names resolve in settings.postgres_schema, not public.
+_connect_args = {"options": settings.postgres_options}
+
 # sync engine for sync sessions / repositories
-sync_engine = create_engine(settings.postges_url, echo=False)
+sync_engine = create_engine(settings.postges_url, echo=False, connect_args=_connect_args)
 
 # async engine for async sessions
-async_engine = create_async_engine(settings.postges_url, echo=False)
+async_engine = create_async_engine(
+    settings.postges_url, echo=False, connect_args=_connect_args
+)
 
 # Match third-party logger levels to the application's LOG_LEVEL setting
 

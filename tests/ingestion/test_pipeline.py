@@ -69,6 +69,7 @@ class TestGetConnParams:
             mock_settings.postgres_host = "h"
             mock_settings.postgres_port = 1234
             mock_settings.postgres_db = "d"
+            mock_settings.postgres_options = "-c search_path=s"
             params = _get_conn_params()
         assert params == {
             "user": "u",
@@ -76,6 +77,7 @@ class TestGetConnParams:
             "host": "h",
             "port": 1234,
             "dbname": "d",
+            "options": "-c search_path=s",
         }
 
 

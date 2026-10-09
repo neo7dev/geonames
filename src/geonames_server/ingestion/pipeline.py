@@ -31,6 +31,7 @@ def _get_conn_params() -> dict:
         "host": settings.postgres_host,
         "port": settings.postgres_port,
         "dbname": settings.postgres_db,
+        "options": settings.postgres_options,
     }
 
 

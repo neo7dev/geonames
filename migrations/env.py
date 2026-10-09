@@ -1,5 +1,5 @@
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 from sqlalchemy.engine import Connection
 
 # ensure all models are imported so Base.metadata is fully populated
@@ -13,8 +13,13 @@ from geonames_server.database.models.base import Base
 # access to the values within the .ini file in use.
 config = context.config
 
-# override sqlalchemy.url from application settings
-config.set_main_option("sqlalchemy.url", settings.postges_url)
+# use the application's database unless the caller supplied a URL
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", settings.postges_url)
+
+# Every table, including alembic_version, lives in this schema rather than Supabase's
+# public schema, where anon/authenticated get access to every new table.
+schema = settings.postgres_schema
 
 # Always use the application's logging setup (Rich console + JSON file)
 # instead of alembic.ini's basic fileConfig.  setup_logging() is
@@ -50,14 +55,50 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table_schema=schema,
     )
 
     with context.begin_transaction():
         context.run_migrations()
 
 
+def _adopt_public_tables(connection: Connection, quoted_schema: str) -> None:
+    """Move tables created before the schema split from public into the schema.
+
+    Older versions created every table, alembic_version included, in public.
+    Moving alembic_version along keeps the migration history, so Alembic carries
+    on from the recorded revision instead of creating empty tables. Only this
+    app's tables are moved; data, indexes and owned sequences move with them.
+    """
+    legacy = connection.execute(text("SELECT to_regclass('public.alembic_version')"))
+    current = connection.execute(
+        text("SELECT to_regclass(:name)"), {"name": f"{quoted_schema}.alembic_version"}
+    )
+    if legacy.scalar() is None or current.scalar() is not None:
+        return
+
+    quote = connection.dialect.identifier_preparer.quote
+    for name in [*target_metadata.tables, "alembic_version"]:
+        connection.execute(
+            text(
+                f"ALTER TABLE IF EXISTS public.{quote(name)} SET SCHEMA {quoted_schema}"
+            )
+        )
+
+
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    quoted_schema = connection.dialect.identifier_preparer.quote(schema)
+    connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {quoted_schema}"))
+    _adopt_public_tables(connection, quoted_schema)
+    # Unqualified names in migrations resolve in the schema, as they do in the app.
+    connection.execute(text(f"SET search_path TO {quoted_schema}"))
+    connection.commit()
+
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        version_table_schema=schema,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
