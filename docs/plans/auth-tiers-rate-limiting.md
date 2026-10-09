@@ -275,19 +275,37 @@ Branch `phase-6-frontend` from `main`.
 | `/keys` | Active keys from `/portal/keys`: name, prefix, created, last used ("never"; up to 5 minutes behind, said in a hint). Create dialog: name (1-64, the same rule as the API), then the key once with a copy button and "you will not see this again"; closing the dialog drops it from memory. Create is disabled with the tier's message at `max_keys`; a 409 from the API shows the same. Revoke asks for confirmation, then `DELETE` |
 | `/usage` | The three current windows; a bar chart of daily requests with 7 / 30 / 90 days (`?days=`); the per-key table for this month (revoked keys marked). `live: false` shows a note that live counts are unavailable and the minute as "—" |
 
-- **Header.** App name, nav (Overview, Keys, Usage), the user's email with a menu: API docs, sign out (`auth.signOut({scope: 'local'})`, then `/login`). Light and dark follow the system.
+- **Navigation.** A left sidebar: app name, then Overview, API keys, Usage; at the bottom API docs (`/docs`, new tab), the theme switch, and the user's email with a menu holding sign out (`auth.signOut({scope: 'local'})`, then `/login`). Below 768 px the sidebar collapses behind a menu button.
 - **API client** (`src/api/client.ts`): reads the current access token from supabase-js for each call and sends it as `Authorization: Bearer`. A 401 signs out and goes to `/login?next=...`. A 403 (suspended or no profile) shows a full-page "account suspended, ask an admin" with sign out. Other errors show the API's `detail` in a toast. 422 details map to form fields where there is one.
 - **Numbers.** Null limits show as "Unlimited"; counts use `Intl.NumberFormat`; `resets_at` shows as relative time ("in 42 s", "in 3 days") with the UTC time in a tooltip. Days on the chart are UTC days, labelled as such.
 - **Passwords of 8 or more characters.** GoTrue's default minimum is 6; Supabase advises against anything under 8. `PASSWORD_MIN_LENGTH = 8` in every env file feeds GoTrue (`GOTRUE_PASSWORD_MIN_LENGTH`, default 8 in the compose file) and the app, which passes it to the UI in `config.json`, so the form and the server agree. No character-class rules (length matters more) and no leaked-password check (`GOTRUE_PASSWORD_HIBP_ENABLED` sends hash prefixes to an outside service; not for now). The dev seed password, `dev-password`, is 12 characters.
 - **Email and password only for now.** GitHub and Google login come later in this phase (below), so the first cut ships without needing OAuth apps.
 - **Not in phase 6:** account deletion (GoTrue only lets the service role delete users), email change, MFA, admin pages (Studio stays the admin UI), per-key usage charts, i18n, end-to-end browser tests in CI (the smoke test covers them by hand), `X-RateLimit-*` headers.
 
+### Design
+
+Clean and minimal, green, light and dark. References from Mobbin (web):
+
+- Layout and key table: [OpenAI Platform API keys](https://mobbin.com/screens/ee609751-3afe-401a-a0e4-ad1feed88da5), [Grok API keys](https://mobbin.com/screens/a2e768a3-1fa5-456e-8bb4-025f6ed4f12e), [WorkOS API keys](https://mobbin.com/screens/b940f15e-51bd-487e-832e-4adf74259f1b): sidebar nav, page title with a one-line description and the primary action on the right, a flat bordered table.
+- Key shown once: [Gamma](https://mobbin.com/screens/3762fc5a-915b-4783-a48b-01f01c95c49a), [WRITER](https://mobbin.com/screens/a6e00feb-6a83-45cb-b57b-43ca3ef31b0a): a warning callout, the key in a monospace field with a copy button, one "Done" button.
+- Usage: [Exa usage](https://mobbin.com/screens/6d75dd84-e20f-49e8-a4fd-3f6521787e20), [Grok usage explorer](https://mobbin.com/screens/1bc2df4c-3505-4cad-95f9-16db8bf921a1), [OpenAI usage](https://mobbin.com/screens/2bf4f941-a9a7-4308-aa0c-864135823830) (its thin budget bar for the limit meters): a row of stats, a solid bar chart with dashed gridlines, a breakdown table below, "times are UTC" said once.
+- Login: [Cloudflare login](https://mobbin.com/screens/8870c93e-de0a-49f8-88f5-54da78fe620d): a centered card, labels above inputs, "Forgot password?" beside the password label, a full-width primary button, the signup link underneath.
+
+Rules:
+
+- **Color.** shadcn's CSS variables in OKLCH, neutral (zinc) grays plus one green for `--primary`, `--ring` and `--chart-1`. Light: primary green-700 (`oklch(0.527 0.154 150.069)`) with white text, 5:1 contrast, where green-600 would fall below AA. Dark: primary green-500 (`oklch(0.723 0.219 149.579)`) with green-950 text. Red (`--destructive`) only for revoke and errors; amber only for the key-shown-once warning. Every text and background pair meets WCAG AA in both themes.
+- **No gradients, no decorative shadows.** Surfaces are flat fills separated by 1 px borders; only dialogs and menus get a small shadow so they read as floating. No background images, no glass, no illustrations.
+- **Type.** Geist and Geist Mono, self-hosted through `@fontsource-variable` (no font CDN, which the CSP would block anyway). Mono for keys, prefixes and the curl example. Numbers in tables and stats use `tabular-nums`.
+- **Density.** 14 px base text, 8 px spacing grid, 0.5 rem radius, content up to 1100 px wide.
+- **Light and dark.** `.dark` on `<html>`. The first visit follows `prefers-color-scheme`; the switch (sun / moon icon button in the sidebar, `aria-label` "Switch to dark mode" / "Switch to light mode") stores `light` or `dark` in `localStorage` and wins from then on. Switching is instant: the class flips with every CSS transition turned off for that frame (a `no-transitions` class removed after the next animation frame), so nothing fades or slides. A blocking `/ui/theme-init.js` in `<head>` sets the class before the first paint, so a reload in dark mode never flashes light; it is a file, not an inline script, because the CSP allows scripts from `'self'` only.
+- **Motion.** No entrance animations or page transitions anywhere; shadcn's dialog and menu animation classes are removed. The only movement is the spinner on a pending button.
+
 ### Code
 
 - `config.py`: `supabase_public_url: str | None` (reads `SUPABASE_PUBLIC_URL`, already in every env file), `anon_key: str | None` (`ANON_KEY`), `password_min_length: int = 8` (`PASSWORD_MIN_LENGTH`, `ge=6`), `ui_dir: Path` (default `<root_dir>/frontend/dist`). `config.json` answers 503 `UI is not configured: set SUPABASE_PUBLIC_URL and ANON_KEY` while either is unset.
 - `api/routers/ui.py`: the `/ui` routes, the root redirect and the headers above. Included in `api/app.py` without auth, `include_in_schema=False`, so `openapi.yaml` does not change.
 - `.env.example` / `.env.dev` / `.env.prod` / `.devcontainer/.env`: `SITE_URL = http://localhost:9500/ui/`, with the comments above.
-- `frontend/`: `package.json` + `package-lock.json` (committed), `.nvmrc` (24), `vite.config.ts` (base, proxy, Tailwind, `@` alias), `tsconfig*.json`, `eslint.config.js`, `components.json` (shadcn), `index.html`, `src/` (`main.tsx`, `routes/`, `pages/`, `components/` incl. `ui/`, `api/client.ts` + generated `api/schema.d.ts`, `lib/supabase.ts`, `lib/format.ts`). Scripts: `dev`, `build` (`tsc -b && vite build`), `lint`, `test` (Vitest), `gen:api` (`openapi-typescript ../openapi.yaml -o src/api/schema.d.ts`).
+- `frontend/`: `package.json` + `package-lock.json` (committed), `.nvmrc` (24), `vite.config.ts` (base, proxy, Tailwind, `@` alias), `tsconfig*.json`, `eslint.config.js`, `components.json` (shadcn), `index.html`, `public/theme-init.js`, `src/` (`main.tsx`, `routes/`, `pages/`, `components/` incl. `ui/`, `theme.ts`, `api/client.ts` + generated `api/schema.d.ts`, `lib/supabase.ts`, `lib/format.ts`). Scripts: `dev`, `build` (`tsc -b && vite build`), `lint`, `test` (Vitest), `gen:api` (`openapi-typescript ../openapi.yaml -o src/api/schema.d.ts`).
 - `.gitignore`: `frontend/node_modules/`, `frontend/dist/`. `.dockerignore`: the same, so the build context stays small and the image always builds the UI fresh.
 - `Dockerfile`: a first stage `FROM node:24-slim AS ui` runs `npm ci` (package files copied first, for the layer cache), then `npm run build`. The Python stage copies `--from=ui /ui/dist /app/ui` and sets `ENV UI_DIR=/app/ui`.
 - `.devcontainer/devcontainer.json`: the `ghcr.io/devcontainers/features/node` feature (version 24); `postCreateCommand` also runs `npm ci --prefix frontend`; forward 5173. `.devcontainer/docker-compose.yml`: publish `5173:5173` next to 9500.
@@ -308,6 +326,7 @@ Branch `phase-6-frontend` from `main`.
   - Keys: the created key is shown once and gone after the dialog closes; create is disabled at `max_keys` with the tier message; a 409 shows the API's message; a name of 65 characters is refused before sending; revoke asks first.
   - Usage: "Unlimited" for null limits, "—" for a null minute with the not-live note, the chart gets every day the API returns, the days switch changes `?days=`.
   - Format helpers: numbers, relative reset times, UTC day labels.
+  - Theme: the first load follows `prefers-color-scheme`; the switch flips `.dark` on `<html>`, stores the choice and a reload keeps it; the `no-transitions` class is set during the flip and removed after.
 - Existing Python tests are unchanged (no `index.html` in the test `UI_DIR`).
 
 ### Docs
