@@ -95,6 +95,28 @@ def _human_readable_bytes(num: int | None) -> str:
     return f"{size:.2f} PB"
 
 
+def _parse_last_modified(raw: str | None) -> datetime | None:
+    """Parse a Last-Modified header, or return None if it is missing or malformed."""
+    if not raw:
+        return None
+    try:
+        return rfc2822_to_datetime(raw)
+    except (TypeError, ValueError):
+        log.warning(f"Ignoring malformed Last-Modified header: {raw!r}")
+        return None
+
+
+def _parse_length(raw: str | None) -> int | None:
+    """Parse a Content-Length header, or return None if it is missing or malformed."""
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        log.warning(f"Ignoring malformed Content-Length header: {raw!r}")
+        return None
+
+
 def _unlink(path: Path) -> None:
     path.unlink(missing_ok=True)
 
@@ -205,8 +227,8 @@ class Downloader:
 
         A match means the same size and an mtime equal to the remote
         Last-Modified (set by ``_finalize``). Returns ``None`` when they differ,
-        the server sends neither header, or the HEAD fails: the caller then
-        downloads, which has its own retries.
+        either header is missing or malformed, or the HEAD fails: the caller
+        then downloads, which has its own retries.
         """
         try:
             resp = self._session.head(url, timeout=TIMEOUT, allow_redirects=True)
@@ -216,14 +238,13 @@ class Downloader:
         if resp.status_code != 200:
             return None
 
-        length = resp.headers.get("Content-Length")
-        raw_lm = resp.headers.get("Last-Modified")
-        if not length or not raw_lm:
+        length = _parse_length(resp.headers.get("Content-Length"))
+        last_modified = _parse_last_modified(resp.headers.get("Last-Modified"))
+        if length is None or last_modified is None:
             return None
 
-        last_modified = rfc2822_to_datetime(raw_lm)
         stat = dest.stat()
-        if int(length) != stat.st_size or int(stat.st_mtime) != int(
+        if length != stat.st_size or int(stat.st_mtime) != int(
             last_modified.timestamp()
         ):
             return None
@@ -292,8 +313,7 @@ class Downloader:
                 total = int(m.group(2)) if m.group(2) != "*" else None
                 mode = "ab"
             else:
-                length = resp.headers.get("content-length")
-                total = int(length) if length else None
+                total = _parse_length(resp.headers.get("content-length"))
                 offset = 0
                 mode = "wb"
 
@@ -346,8 +366,7 @@ class Downloader:
     def _finalize(part: Path, meta: Path, dest: Path, info: dict) -> DownloadResult:
         _atomic_move(part, dest)
         _unlink(meta)
-        raw_lm = info.get("last_modified")
-        last_modified = rfc2822_to_datetime(raw_lm) if raw_lm else None
+        last_modified = _parse_last_modified(info.get("last_modified"))
         if last_modified is not None:
             # Lets a later forced download recognise this file as current.
             ts = last_modified.timestamp()

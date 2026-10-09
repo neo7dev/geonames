@@ -464,6 +464,29 @@ class TestReusesCurrentCopy:
 
         assert result.path.read_bytes() == b"HELLO"
 
+    @pytest.mark.parametrize(
+        "head",
+        [_head(length="5, 5"), _head(last_modified="yesterday")],
+        ids=["bad-content-length", "bad-last-modified"],
+    )
+    def test_force_downloads_when_head_headers_malformed(self, dirs, head):
+        _seed_dest(dirs)
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"HELLO"])], force=True)
+        dl._session.head.return_value = head
+
+        result = dl.download(URL, "test.txt")
+
+        assert result.path.read_bytes() == b"HELLO"
+
+    def test_malformed_get_headers_do_not_fail_download(self, dirs):
+        headers = {"content-length": "5, 5", "Last-Modified": "yesterday"}
+        dl = _dl(dirs, [_resp(200, headers, [b"hello"])])
+
+        result = dl.download(URL, "test.txt")
+
+        assert result.path.read_bytes() == b"hello"
+        assert result.last_modified is None
+
     def test_force_replaces_unreadable_file(self, dirs):
         dest = _seed_dest(dirs)
         dest.chmod(0o000)
