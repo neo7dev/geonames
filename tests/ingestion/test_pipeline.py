@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import psycopg2
 import pytest
@@ -623,10 +623,13 @@ class TestLoadAndSwap:
 
     @staticmethod
     def _conn(counts=(5, 5), copy_error=None):
+        """*counts* is (rows loaded after dedup, live row estimate)."""
         conn, cur = MagicMock(), MagicMock()
         conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
         conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        cur.fetchone.side_effect = [(counts[0],), (counts[1],), ("cities15000_pkey",)]
+        # rowcount after COPY, then after the duplicate DELETE
+        type(cur).rowcount = PropertyMock(side_effect=[counts[0] + 1, 1])
+        cur.fetchone.side_effect = [(counts[1],), ("cities15000_pkey",)]
         cur.fetchall.return_value = []
         if copy_error:
             cur.copy_expert.side_effect = copy_error
@@ -662,7 +665,10 @@ class TestLoadAndSwap:
             next(i for i, q in enumerate(statements) if needle in q)
             for needle in (
                 "CREATE TABLE",
+                "DELETE FROM",
+                "reltuples",
                 "ADD PRIMARY KEY",
+                "ANALYZE",
                 "lock_timeout",
                 "RENAME TO",
                 "DROP TABLE",
@@ -672,6 +678,7 @@ class TestLoadAndSwap:
         assert order == sorted(order)
         assert 'COPY "cities15000_new"' in cur.copy_expert.call_args[0][0]
         assert not any("TRUNCATE" in q for q in statements)
+        assert not any("COUNT(*) FROM" in q for q in statements)
         assert conn.autocommit is False
         conn.commit.assert_called_once()
         conn.close.assert_called_once()

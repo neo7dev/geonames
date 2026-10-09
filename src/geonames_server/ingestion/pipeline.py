@@ -222,7 +222,17 @@ SWAP_LOCK_TIMEOUT = "30s"
 _INDEXDEF = re.compile(r"^(CREATE (?:UNIQUE )?INDEX )\S+ ON \S+ (.*)$", re.DOTALL)
 
 
-def _count(cur, table: str) -> int:
+def _live_rows(cur, table: str) -> int:
+    """Planner row estimate for *table*, avoiding a full scan.
+
+    Falls back to an exact count if the table was never analysed.
+    """
+    cur.execute(
+        "SELECT reltuples::bigint FROM pg_class WHERE oid = to_regclass(%s)", (table,)
+    )
+    estimate = cur.fetchone()[0]
+    if estimate >= 0:
+        return estimate
     cur.execute(sql.SQL("SELECT COUNT(*) FROM {t}").format(t=sql.Identifier(table)))
     return cur.fetchone()[0]
 
@@ -321,6 +331,7 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                     )
                 )
                 cur.copy_expert(copy_sql, wrapper)
+                copied = cur.rowcount
 
                 # Keys that appear more than once are dropped entirely.
                 cur.execute(
@@ -331,7 +342,8 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                 )
 
                 # Checked after deduplication: that is what would be swapped in.
-                new_rows, live_rows = _count(cur, staged), _count(cur, table_name)
+                new_rows = copied - cur.rowcount
+                live_rows = _live_rows(cur, table_name)
                 if new_rows == 0 or new_rows < live_rows * MIN_ROW_RATIO:
                     raise RowCountError(
                         f"{table_name}: loaded {new_rows} rows vs {live_rows} live; "
@@ -352,6 +364,8 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                 row = cur.fetchone()
                 pk_name = row[0] if row else None
                 index_renames = _clone_indexes(cur, table_name, staged, pk_name)
+                # Fresh planner statistics, so queries plan well right after the swap.
+                cur.execute(sql.SQL("ANALYZE {s}").format(s=ident(staged)))
 
                 cur.execute(f"SET LOCAL lock_timeout = '{SWAP_LOCK_TIMEOUT}'")
                 cur.execute(

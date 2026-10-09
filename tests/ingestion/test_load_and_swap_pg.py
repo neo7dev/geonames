@@ -74,6 +74,11 @@ def test_replaces_contents_and_keeps_schema(conn, tmp_path):
     assert _scalar(conn, "SELECT to_regclass('cities500_old') IS NULL")
 
 
+def test_swapped_table_is_analysed(conn, tmp_path):
+    _run(_file(tmp_path, [_row(i) for i in range(1, 6)]))
+    assert _scalar(conn, "SELECT reltuples FROM pg_class WHERE oid = 'cities500'::regclass") == 5
+
+
 def test_duplicate_keys_are_dropped(conn, tmp_path):
     _run(_file(tmp_path, [_row(1), _row(1), _row(2)]))
     assert _scalar(conn, f"SELECT array_agg(geonameid) FROM {TABLE}") == [2]
