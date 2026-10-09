@@ -431,21 +431,28 @@ def _stage_day(
 # ---------------------------------------------------------------------------
 
 
+def out_of_sync_enabled_names() -> set[str]:
+    """Names of datasets that are out of sync and enabled in settings."""
+    with get_session() as session:
+        out_of_sync = {
+            r.dataset for r in DatasetMetaDataRepository(session).get_out_of_sync()
+        }
+    return out_of_sync & enabled_names(settings.enabled_datasets)
+
+
 def apply_daily_updates(
     datasets: list[DatasetInfo],
     out_of_sync_names: set[str],
     on_step: Callable[[SyncStep], None] = lambda _s: None,
     on_dataset: Callable[[str, DatasetSyncStatus], None] = lambda _n, _s: None,
 ) -> None:
-    """Replay pending daily files for the out-of-sync, enabled datasets.
+    """Replay pending daily files for the datasets in *out_of_sync_names*.
 
-    Disabled datasets are never touched. Raises :class:`DailyUpdateError` if a day's files cannot be staged.
+    Pass :func:`out_of_sync_enabled_names` so disabled datasets are never
+    touched. Raises :class:`DailyUpdateError` if a day's files cannot be staged.
     """
     yesterday = _yesterday()
-    enabled = enabled_names(settings.enabled_datasets)
-    targets = [
-        ds for ds in datasets if ds.name in out_of_sync_names and ds.name in enabled
-    ]
+    targets = [ds for ds in datasets if ds.name in out_of_sync_names]
     pending: dict[str, set[date]] = {}
     for name, last in _load_last_applied([ds.name for ds in targets]).items():
         days = _pending_days(last, yesterday)
@@ -525,11 +532,7 @@ def check_and_apply_daily_updates() -> None:
 
     check_remote_metadata(all_datasets)
 
-    with get_session() as session:
-        out_of_sync_names = {
-            r.dataset for r in DatasetMetaDataRepository(session).get_out_of_sync()
-        } & enabled_names(settings.enabled_datasets)
-
+    out_of_sync_names = out_of_sync_enabled_names()
     if not out_of_sync_names:
         log.info("All datasets are in sync — nothing to do")
         return

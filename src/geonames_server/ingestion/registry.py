@@ -55,9 +55,14 @@ ALL_DATASETS: dict[str, DatasetInfo] = {
 }
 
 
+def _normalise(name: str) -> str:
+    """Configured dataset names are case and whitespace insensitive."""
+    return name.strip().lower()
+
+
 def enabled_names(names: list[str]) -> set[str]:
-    """Normalise configured dataset names (case and whitespace insensitive)."""
-    return {n.strip().lower() for n in names}
+    """Normalise configured dataset names."""
+    return {_normalise(n) for n in names}
 
 
 def get_enabled_datasets(enabled_names: list[str]) -> list[DatasetInfo]:
@@ -67,7 +72,7 @@ def get_enabled_datasets(enabled_names: list[str]) -> list[DatasetInfo]:
     """
     result = []
     for name in enabled_names:
-        key = name.strip().lower()
+        key = _normalise(name)
         if key not in ALL_DATASETS:
             raise ValueError(
                 f"Unknown dataset '{name}'. Available: {', '.join(ALL_DATASETS.keys())}"

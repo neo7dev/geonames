@@ -36,6 +36,7 @@ from geonames_server.ingestion.daily_update import (
     _upsert_modifications,
     _yesterday,
     check_and_apply_daily_updates,
+    out_of_sync_enabled_names,
 )
 from geonames_server.ingestion.pipeline import check_remote_metadata
 from geonames_server.ingestion.sync_tracker import DatasetSyncStatus
@@ -722,24 +723,23 @@ class TestApplyDailyUpdates:
         engine["_sync_metadata"].assert_called_once_with([c])
 
 
-class TestDisabledDatasets:
-    def test_disabled_dataset_is_never_loaded_staged_or_synced(self, engine):
-        on, off = _make_dataset_info("cities500"), _make_dataset_info("cities1000")
-        engine["_load_last_applied"].return_value = {"cities500": Y - timedelta(days=1)}
+class TestOutOfSyncEnabledNames:
+    def _names(self, out_of_sync, enabled):
+        with (
+            patch(f"{MODULE}.get_session"),
+            patch(f"{MODULE}.DatasetMetaDataRepository") as repo,
+            patch(f"{MODULE}.settings.enabled_datasets", enabled),
+        ):
+            repo.return_value.get_out_of_sync.return_value = [
+                _make_metadata_record(n) for n in out_of_sync
+            ]
+            return out_of_sync_enabled_names()
 
-        apply_daily_updates([on, off], {"cities500", "cities1000"})
+    def test_disabled_datasets_are_excluded(self):
+        assert self._names(["cities500", "cities1000"], ["cities500"]) == {"cities500"}
 
-        engine["_load_last_applied"].assert_called_once_with(["cities500"])
-        tables = [c.args[1] for c in engine["_upsert_modifications"].call_args_list]
-        assert tables == ["cities500"]
-        engine["_sync_metadata"].assert_called_once_with([on])
-
-    def test_enabled_names_are_case_and_space_insensitive(self, engine):
-        ds = _make_dataset_info("cities500")
-        engine["_load_last_applied"].return_value = {"cities500": Y}
-        with patch(f"{MODULE}.settings.enabled_datasets", [" Cities500 "]):
-            apply_daily_updates([ds], {"cities500"})
-        engine["_sync_metadata"].assert_called_once_with([ds])
+    def test_enabled_names_are_case_and_space_insensitive(self):
+        assert self._names(["cities500"], [" Cities500 "]) == {"cities500"}
 
 
 class TestStageDay:
