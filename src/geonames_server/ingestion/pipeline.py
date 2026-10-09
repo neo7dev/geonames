@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -111,8 +112,7 @@ def check_remote_metadata(datasets: list[DatasetInfo]) -> None:
 def build_dataset(dataset_info: DatasetInfo, force: bool = False) -> None:
     """Builds a single dataset.
 
-    Full download -> extract -> truncate -> ingest pipeline for one dataset.
-    TRUNCATE + COPY run in a single psycopg2 transaction for atomicity.
+    Full download -> extract -> load into a staging table -> atomic swap.
     """
     name = dataset_info.name
     zip_file = dataset_info.zip_file
@@ -144,14 +144,14 @@ def build_dataset(dataset_info: DatasetInfo, force: bool = False) -> None:
             log.exception(f"[{name}] Extraction failed")
             raise
 
-    # --- Truncate + Ingest (single transaction) ---
+    # --- Load + swap (single transaction) ---
     txt_path = settings.data_dir / txt_file
     if not txt_path.exists():
         log.error(f"[{name}] Extracted file not found: {txt_path}")
         raise FileNotFoundError(f"Extracted file not found: {txt_path}")
 
     try:
-        _truncate_and_ingest(model, table_name, txt_path)
+        _load_and_swap(model, table_name, txt_path)
     except Exception:
         log.exception(f"[{name}] Ingestion failed")
         raise
@@ -177,53 +177,94 @@ def build_dataset(dataset_info: DatasetInfo, force: bool = False) -> None:
     log.info(f"[{name}] Dataset sync complete")
 
 
-def _truncate_and_ingest(model, table_name: str, txt_path: Path) -> None:
-    """TRUNCATE + COPY in a single transaction for atomicity.
+class RowCountError(Exception):
+    """The freshly loaded table is empty or implausibly smaller than the live one."""
 
-    Readers see old data until the new load commits.
+
+# Refuse to swap in a load with fewer than this fraction of the live row count.
+MIN_ROW_RATIO = 0.9
+# Fail the swap instead of queueing behind long-running readers.
+SWAP_LOCK_TIMEOUT = "30s"
+
+_INDEXDEF = re.compile(r"^(CREATE (?:UNIQUE )?INDEX )\S+ ON \S+ (.*)$", re.DOTALL)
+
+
+def _count(cur, table: str) -> int:
+    cur.execute(sql.SQL("SELECT COUNT(*) FROM {t}").format(t=sql.Identifier(table)))
+    return cur.fetchone()[0]
+
+
+def _clone_indexes(cur, table: str, staged: str, pk_name: str | None) -> list[tuple[str, str]]:
+    """Recreate *table*'s secondary indexes on *staged* under temporary names.
+
+    Returns ``(temporary_name, final_name)`` pairs to rename after the swap.
     """
-    conn_params = _get_conn_params()
+    cur.execute(
+        "SELECT indexname, indexdef FROM pg_indexes "
+        "WHERE schemaname = current_schema() AND tablename = %s",
+        (table,),
+    )
+    renames = []
+    for name, definition in cur.fetchall():
+        if name == pk_name:
+            continue
+        m = _INDEXDEF.match(definition)
+        if m is None:
+            raise RuntimeError(f"Cannot parse index definition: {definition}")
+        tmp = f"{name}_new"
+        cur.execute(
+            sql.SQL(m.group(1))
+            + sql.Identifier(tmp)
+            + sql.SQL(" ON ")
+            + sql.Identifier(staged)
+            + sql.SQL(" " + m.group(2))
+        )
+        renames.append((tmp, name))
+    return renames
+
+
+def _transfer_sequences(cur, old: str, table: str) -> None:
+    """Re-own sequences of *old*'s columns to *table* so dropping *old* keeps them.
+
+    The staged table copies column defaults (``nextval(...)``), which point at the
+    old table's sequences.
+    """
+    cur.execute(
+        "SELECT s.relname, a.attname FROM pg_class s "
+        "JOIN pg_depend d ON d.objid = s.oid AND d.deptype = 'a' "
+        "JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid "
+        "WHERE s.relkind = 'S' AND d.refobjid = to_regclass(%s)",
+        (old,),
+    )
+    for seq, column in cur.fetchall():
+        cur.execute(
+            sql.SQL("ALTER SEQUENCE {s} OWNED BY {t}.{c}").format(
+                s=sql.Identifier(seq),
+                t=sql.Identifier(table),
+                c=sql.Identifier(column),
+            )
+        )
+
+
+def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
+    """Load *txt_path* into a staging table, then swap it in atomically.
+
+    Everything runs in one transaction. The live table keeps serving reads
+    during the load; only the final renames take a brief exclusive lock. The
+    swap is refused if the new table is empty or much smaller than the live one.
+    """
     column_names = [c.name for c in model.__table__.columns]
-    conflict_columns = ["geonameid"] if "geonameid" in column_names else [column_names[0]]
-    update_columns = [c for c in column_names if c not in set(conflict_columns)]
-    temp_table = f"tmp_{table_name}_rebuild_stage"
+    key = ["geonameid"] if "geonameid" in column_names else [column_names[0]]
+    staged = f"{table_name}_new"
+    old = f"{table_name}_old"
 
-    truncate_sql = sql.SQL("TRUNCATE TABLE {table} CASCADE").format(
-        table=sql.Identifier(table_name),
-    )
-
-    create_temp_sql = sql.SQL(
-        "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
-    ).format(
-        temp=sql.Identifier(temp_table),
-        target=sql.Identifier(table_name),
-    )
-
+    ident = sql.Identifier
+    keys = sql.SQL(", ").join(map(ident, key))
     quoted_columns = ", ".join(f'"{col}"' for col in column_names)
     copy_sql = (
-        f'COPY "{temp_table}" ({quoted_columns}) '
+        f'COPY "{staged}" ({quoted_columns}) '
         "FROM STDIN "
         "WITH (FORMAT csv, DELIMITER E'\\t', NULL '', QUOTE E'\\b', ESCAPE E'\\b')"
-    )
-
-    merge_sql = sql.SQL(
-        "WITH staged AS ("
-        "  SELECT {columns}, "
-        "         COUNT(*) OVER (PARTITION BY {conflict_columns}) AS duplicate_count "
-        "  FROM {temp}"
-        ") "
-        "INSERT INTO {target} ({columns}) "
-        "SELECT {columns} FROM staged WHERE duplicate_count = 1 "
-        "ON CONFLICT ({conflict_columns}) DO UPDATE SET {updates}"
-    ).format(
-        temp=sql.Identifier(temp_table),
-        target=sql.Identifier(table_name),
-        columns=sql.SQL(", ").join(map(sql.Identifier, column_names)),
-        conflict_columns=sql.SQL(", ").join(map(sql.Identifier, conflict_columns)),
-        updates=sql.SQL(", ").join(
-            sql.SQL("{col} = EXCLUDED.{col}").format(col=sql.Identifier(c))
-            for c in update_columns
-        ),
     )
 
     from geonames_server.rich_console.ingestion_progressbar import (
@@ -235,20 +276,86 @@ def _truncate_and_ingest(model, table_name: str, txt_path: Path) -> None:
 
     with IngestionProgressBar(total_bytes, f"Ingesting {txt_path.name}") as pb:
         wrapper = _ProgressFileWrapper(txt_path, pb)
+        conn = None
         try:
-            with psycopg2.connect(**conn_params) as conn:
-                conn.autocommit = False
-                with conn.cursor() as cur:
-                    cur.execute(truncate_sql)
-                    cur.execute(create_temp_sql)
-                    cur.copy_expert(copy_sql, wrapper)
-                    cur.execute(merge_sql)
-                conn.commit()
+            conn = psycopg2.connect(**_get_conn_params())
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                # No indexes yet: bulk load is faster, indexes are built after.
+                cur.execute(
+                    sql.SQL("CREATE TABLE {s} (LIKE {t} INCLUDING DEFAULTS)").format(
+                        s=ident(staged), t=ident(table_name)
+                    )
+                )
+                cur.copy_expert(copy_sql, wrapper)
+
+                new_rows, live_rows = _count(cur, staged), _count(cur, table_name)
+                if new_rows == 0 or new_rows < live_rows * MIN_ROW_RATIO:
+                    raise RowCountError(
+                        f"{table_name}: loaded {new_rows} rows vs {live_rows} live; "
+                        "refusing to swap"
+                    )
+
+                # Keys that appear more than once are dropped entirely.
+                cur.execute(
+                    sql.SQL(
+                        "DELETE FROM {s} WHERE ({k}) IN "
+                        "(SELECT {k} FROM {s} GROUP BY {k} HAVING COUNT(*) > 1)"
+                    ).format(s=ident(staged), k=keys)
+                )
+                cur.execute(
+                    sql.SQL("ALTER TABLE {s} ADD PRIMARY KEY ({k})").format(
+                        s=ident(staged), k=keys
+                    )
+                )
+
+                cur.execute(
+                    "SELECT conname FROM pg_constraint "
+                    "WHERE conrelid = to_regclass(%s) AND contype = 'p'",
+                    (table_name,),
+                )
+                row = cur.fetchone()
+                pk_name = row[0] if row else None
+                index_renames = _clone_indexes(cur, table_name, staged, pk_name)
+
+                cur.execute(f"SET LOCAL lock_timeout = '{SWAP_LOCK_TIMEOUT}'")
+                cur.execute(
+                    sql.SQL("ALTER TABLE {t} RENAME TO {o}").format(
+                        t=ident(table_name), o=ident(old)
+                    )
+                )
+                cur.execute(
+                    sql.SQL("ALTER TABLE {s} RENAME TO {t}").format(
+                        s=ident(staged), t=ident(table_name)
+                    )
+                )
+                _transfer_sequences(cur, old, table_name)
+                cur.execute(sql.SQL("DROP TABLE {o}").format(o=ident(old)))
+                if pk_name:
+                    cur.execute(
+                        sql.SQL(
+                            "ALTER TABLE {t} RENAME CONSTRAINT {s} TO {p}"
+                        ).format(
+                            t=ident(table_name),
+                            s=ident(f"{staged}_pkey"),
+                            p=ident(pk_name),
+                        )
+                    )
+                for tmp, final in index_renames:
+                    cur.execute(
+                        sql.SQL("ALTER INDEX {a} RENAME TO {b}").format(
+                            a=ident(tmp), b=ident(final)
+                        )
+                    )
+            conn.commit()
         except Exception:
-            conn.rollback()
+            if conn is not None:
+                conn.rollback()
             raise
         finally:
             wrapper.close()
+            if conn is not None:
+                conn.close()
 
 
 def build_all_datasets() -> None:

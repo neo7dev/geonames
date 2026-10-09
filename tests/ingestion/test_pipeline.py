@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import psycopg2
 import pytest
 
 from geonames_server.database.models.cities15000 import Cities15000
@@ -13,7 +14,8 @@ from geonames_server.database.models.dataset_metadata import DatasetMetaData
 from geonames_server.ingestion.downloader import DownloadResult
 from geonames_server.ingestion.pipeline import (
     _get_conn_params,
-    _truncate_and_ingest,
+    RowCountError,
+    _load_and_swap,
     build_all_datasets,
     build_dataset,
     check_remote_metadata,
@@ -299,7 +301,7 @@ class TestCheckRemoteMetadata:
 class TestBuildDataset:
     @patch("geonames_server.ingestion.pipeline.DatasetMetaDataRepository")
     @patch("geonames_server.ingestion.pipeline.get_session")
-    @patch("geonames_server.ingestion.pipeline._truncate_and_ingest")
+    @patch("geonames_server.ingestion.pipeline._load_and_swap")
     @patch("geonames_server.ingestion.pipeline.Extractor")
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
@@ -354,7 +356,7 @@ class TestBuildDataset:
 
     @patch("geonames_server.ingestion.pipeline.DatasetMetaDataRepository")
     @patch("geonames_server.ingestion.pipeline.get_session")
-    @patch("geonames_server.ingestion.pipeline._truncate_and_ingest")
+    @patch("geonames_server.ingestion.pipeline._load_and_swap")
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_no_extraction_for_txt_only(
@@ -425,7 +427,7 @@ class TestBuildDataset:
         with pytest.raises(RuntimeError, match="bad zip"):
             build_dataset(ds)
 
-    @patch("geonames_server.ingestion.pipeline._truncate_and_ingest")
+    @patch("geonames_server.ingestion.pipeline._load_and_swap")
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_raises_when_txt_file_missing(self, mock_settings, mock_dl_cls, mock_ingest):
@@ -443,7 +445,7 @@ class TestBuildDataset:
             with pytest.raises(FileNotFoundError, match="Extracted file not found"):
                 build_dataset(ds)
 
-    @patch("geonames_server.ingestion.pipeline._truncate_and_ingest")
+    @patch("geonames_server.ingestion.pipeline._load_and_swap")
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_raises_on_ingest_failure(self, mock_settings, mock_dl_cls, mock_ingest):
@@ -605,70 +607,103 @@ class TestBuildAllDatasets:
 # _truncate_and_ingest
 # ---------------------------------------------------------------------------
 
-class TestTruncateAndIngest:
-    @patch("geonames_server.rich_console.ingestion_progressbar._ProgressFileWrapper")
-    @patch("geonames_server.rich_console.ingestion_progressbar.IngestionProgressBar", new_callable=lambda: _MockProgressBarClass)
-    @patch("geonames_server.ingestion.pipeline._get_conn_params", return_value={"dbname": "testdb"})
-    @patch("geonames_server.ingestion.pipeline.psycopg2.connect")
-    def test_executes_truncate_then_copy(
-        self, mock_connect, mock_params, mock_pb_cls, mock_wrapper_cls, tmp_path
-    ):
+class TestLoadAndSwap:
+    PB = "geonames_server.rich_console.ingestion_progressbar"
+
+    @staticmethod
+    def _conn(counts=(5, 5), copy_error=None):
+        conn, cur = MagicMock(), MagicMock()
+        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
+        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        cur.fetchone.side_effect = [(counts[0],), (counts[1],), ("cities15000_pkey",)]
+        cur.fetchall.return_value = []
+        if copy_error:
+            cur.copy_expert.side_effect = copy_error
+        return conn, cur
+
+    @staticmethod
+    def _sql(cur):
+        return [
+            c.args[0] if isinstance(c.args[0], str) else repr(c.args[0])
+            for c in cur.execute.call_args_list
+        ]
+
+    def _run(self, conn, tmp_path):
         txt = tmp_path / "test.txt"
         txt.write_text("1\tTestCity\n")
+        with (
+            patch(f"{self.PB}._ProgressFileWrapper") as wrapper_cls,
+            patch(f"{self.PB}.IngestionProgressBar", new=_MockProgressBarClass),
+            patch("geonames_server.ingestion.pipeline._get_conn_params", return_value={}),
+            patch("geonames_server.ingestion.pipeline.psycopg2.connect", return_value=conn),
+        ):
+            try:
+                _load_and_swap(Cities15000, "cities15000", txt)
+            finally:
+                self.wrapper = wrapper_cls.return_value
 
-        mock_conn = MagicMock()
-        mock_conn.autocommit = None
-        mock_cur = MagicMock()
-        mock_connect.return_value = mock_conn
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
-        mock_conn.cursor.return_value = mock_cur
-        mock_cur.__enter__ = MagicMock(return_value=mock_cur)
-        mock_cur.__exit__ = MagicMock(return_value=False)
+    def test_loads_into_staging_then_swaps_in_order(self, tmp_path):
+        conn, cur = self._conn()
+        self._run(conn, tmp_path)
 
-        mock_wrapper = MagicMock()
-        mock_wrapper_cls.return_value = mock_wrapper
+        statements = self._sql(cur)
+        order = [
+            next(i for i, q in enumerate(statements) if needle in q)
+            for needle in (
+                "CREATE TABLE",
+                "ADD PRIMARY KEY",
+                "lock_timeout",
+                "RENAME TO",
+                "DROP TABLE",
+                "RENAME CONSTRAINT",
+            )
+        ]
+        assert order == sorted(order)
+        assert 'COPY "cities15000_new"' in cur.copy_expert.call_args[0][0]
+        assert not any("TRUNCATE" in q for q in statements)
+        assert conn.autocommit is False
+        conn.commit.assert_called_once()
+        conn.close.assert_called_once()
+        self.wrapper.close.assert_called_once()
 
-        _truncate_and_ingest(Cities15000, "cities15000", txt)
+    def test_refuses_swap_when_load_is_too_small(self, tmp_path):
+        conn, cur = self._conn(counts=(10, 100))
+        with pytest.raises(RowCountError):
+            self._run(conn, tmp_path)
 
-        assert mock_conn.autocommit is False
-        # truncate + create temp + merge
-        assert mock_cur.execute.call_count == 3
-        assert mock_cur.copy_expert.call_count == 1
-        copy_sql = mock_cur.copy_expert.call_args[0][0]
-        assert 'COPY "tmp_cities15000_rebuild_stage"' in copy_sql
-        mock_conn.commit.assert_called_once()
-        mock_wrapper.close.assert_called_once()
+        assert not any("RENAME" in q for q in self._sql(cur))
+        conn.rollback.assert_called_once()
+        conn.commit.assert_not_called()
+        conn.close.assert_called_once()
 
-    @patch("geonames_server.rich_console.ingestion_progressbar._ProgressFileWrapper")
-    @patch("geonames_server.rich_console.ingestion_progressbar.IngestionProgressBar", new_callable=lambda: _MockProgressBarClass)
-    @patch("geonames_server.ingestion.pipeline._get_conn_params", return_value={"dbname": "testdb"})
-    @patch("geonames_server.ingestion.pipeline.psycopg2.connect")
-    def test_rollback_on_error(
-        self, mock_connect, mock_params, mock_pb_cls, mock_wrapper_cls, tmp_path
-    ):
-        txt = tmp_path / "test.txt"
-        txt.write_text("data\n")
+    def test_refuses_swap_when_load_is_empty(self, tmp_path):
+        conn, _ = self._conn(counts=(0, 0))
+        with pytest.raises(RowCountError):
+            self._run(conn, tmp_path)
 
-        mock_conn = MagicMock()
-        mock_conn.autocommit = None
-        mock_cur = MagicMock()
-        mock_cur.copy_expert.side_effect = RuntimeError("copy failed")
-        mock_connect.return_value = mock_conn
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
-        mock_conn.cursor.return_value = mock_cur
-        mock_cur.__enter__ = MagicMock(return_value=mock_cur)
-        mock_cur.__exit__ = MagicMock(return_value=False)
-
-        mock_wrapper = MagicMock()
-        mock_wrapper_cls.return_value = mock_wrapper
-
+    def test_rollback_and_close_on_error(self, tmp_path):
+        conn, _ = self._conn(copy_error=RuntimeError("copy failed"))
         with pytest.raises(RuntimeError, match="copy failed"):
-            _truncate_and_ingest(Cities15000, "cities15000", txt)
+            self._run(conn, tmp_path)
 
-        mock_conn.rollback.assert_called_once()
-        mock_wrapper.close.assert_called_once()
+        conn.rollback.assert_called_once()
+        conn.close.assert_called_once()
+        self.wrapper.close.assert_called_once()
+
+    def test_connect_failure_propagates_original_error(self, tmp_path):
+        txt = tmp_path / "test.txt"
+        txt.write_text("x\n")
+        with (
+            patch(f"{self.PB}._ProgressFileWrapper"),
+            patch(f"{self.PB}.IngestionProgressBar", new=_MockProgressBarClass),
+            patch("geonames_server.ingestion.pipeline._get_conn_params", return_value={}),
+            patch(
+                "geonames_server.ingestion.pipeline.psycopg2.connect",
+                side_effect=psycopg2.OperationalError("down"),
+            ),
+        ):
+            with pytest.raises(psycopg2.OperationalError, match="down"):
+                _load_and_swap(Cities15000, "cities15000", txt)
 
 
 # ---------------------------------------------------------------------------
