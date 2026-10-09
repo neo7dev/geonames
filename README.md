@@ -183,7 +183,18 @@ Every signup gets the `free` role. Roles map to tiers, and each tier caps how ma
 
 Tiers, roles and the role -> tier mapping are rows in the `app` schema (`app.tiers`, `app.roles`), editable in Studio. Admin access (`/sync`) comes from `app.roles.is_admin`. To change a user's role, edit their row in `app.profiles` in Studio; it applies on their next request. To make the first admin, sign up, then set that profile's `role` to `admin`.
 
-Until the web UI lands, get a key with curl. `ANON_KEY` is in `.env`; Kong requires it on the Auth API:
+In the devcontainer, `make seed-users` (also run on every container start) creates one confirmed user per tier, all with password `dev-password`, each with a real API key kept in `.env.dev` (and so in `.env` after `make switch2dev`):
+
+| User | Role / tier | API key in `.env` |
+|---|---|---|
+| `free@geonames.local` | free / basic | `DEV_API_KEY_FREE` |
+| `tester@geonames.local` | tester / plus | `DEV_API_KEY_TESTER` |
+| `dev@geonames.local` | dev / pro | `DEV_API_KEY_DEV` |
+| `admin@geonames.local` | admin / max (can sync) | `DEV_API_KEY_ADMIN` |
+
+Rerunning it restores their roles and keys. It refuses unless `DEV_SEED_USERS=true`, which only `.env.dev` sets: never enable it or the keys on a deployed server. The seed key fills the free user's only key slot.
+
+Outside the devcontainer, get a key with curl. `ANON_KEY` is in `.env`; Kong requires it on the Auth API:
 
 ```bash
 # 1. Sign up, then open the confirmation email (Mailpit at http://localhost:8025 in dev) and follow its link

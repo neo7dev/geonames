@@ -65,10 +65,14 @@ def hash_api_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
+def display_prefix(key: str) -> str:
+    return key[:_DISPLAY_PREFIX_LENGTH]
+
+
 def generate_api_key() -> tuple[str, str, str]:
     """Return a new key, its display prefix and its hash."""
     key = API_KEY_PREFIX + secrets.token_urlsafe(32)
-    return key, key[:_DISPLAY_PREFIX_LENGTH], hash_api_key(key)
+    return key, display_prefix(key), hash_api_key(key)
 
 
 def _principal_select(*columns) -> Select:

@@ -104,6 +104,11 @@ class Settings(BaseSettings):
         description="Supabase Auth JWT secret, used to verify login tokens on /portal. Required at startup",
     )
 
+    dev_seed_users: bool = Field(
+        default=False,
+        description="Allow `make seed-users` to create dev users with known passwords and API keys. Dev only",
+    )
+
     enabled_datasets: Annotated[list[str], NoDecode] = Field(
         default=[
             "allcountries",

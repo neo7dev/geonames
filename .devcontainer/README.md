@@ -23,6 +23,15 @@ Supabase config (Kong routes, db init scripts) lives in `supabase/` at the repo 
 
 All secrets in `.devcontainer/.env` are dev-only throwaway values.
 
+## Dev users
+
+On every start the container runs `make seed-users`, which creates four confirmed users with password `dev-password`: `free@`, `tester@`, `dev@` and `admin@geonames.local`, one per tier. Their API keys are `DEV_API_KEY_FREE`, `_TESTER`, `_DEV` and `_ADMIN` in `.env.dev` / `.env`; only the admin can run `/sync`. Rerun it to restore their roles and keys. It needs `DEV_SEED_USERS=true` (set in `.env.dev`).
+
+```sh
+KEY=$(sed -n 's/^DEV_API_KEY_FREE *= *//p' .env)
+curl -H "X-API-Key: $KEY" "http://localhost:9500/cities15000/?limit=5"
+```
+
 ## OAuth (optional)
 
 Create a GitHub and/or Google OAuth app with callback URL `http://localhost:8000/auth/v1/callback`, put the client id and secret in `.devcontainer/.env`, set `GITHUB_ENABLED` / `GOOGLE_ENABLED` to `true`, then recreate the `auth` service.

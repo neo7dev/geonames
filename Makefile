@@ -164,6 +164,10 @@ db-app-upgrade:
 db-app-downgrade:
 	alembic -n app downgrade -1
 
+## Create one dev user per tier with known passwords and API keys (needs DEV_SEED_USERS=true)
+seed-users:
+	$(UV) run python -m geonames_server.scripts.seed_dev_users
+
 ##@ GeoNames data
 
 ## Set slow-download-server speed (interactive)
@@ -203,4 +207,4 @@ push-image: push-image-version
 push-image-version:
 	docker push ghcr.io/neo7dev/$(APP_NAME):$(VERSION)
 
-.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade build-image build-image-version push-image push-image-version
+.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users build-image build-image-version push-image push-image-version
