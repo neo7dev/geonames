@@ -285,6 +285,10 @@ class LocalLimiter:
     def all_written(self) -> bool:
         return not (self.usage or self.unwritten)
 
+    def unwritten_total(self) -> int:
+        """Requests counted here and not yet in Postgres."""
+        return self.usage.total() + (self.unwritten[1].total() if self.unwritten else 0)
+
     def mark_sent(self, user_id, windows: Windows, sent: list[int]) -> None:
         """Note that sent (from unsent) reached the user's Redis counters.
 

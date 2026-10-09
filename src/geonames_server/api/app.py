@@ -157,7 +157,12 @@ async def _final_usage_flush(app: FastAPI) -> None:
         )
         log.info(f"Final usage flush wrote {written} request(s)")
     except Exception as e:
-        log.warning(f"Final usage flush failed; the next start flushes it: {e!r}")
+        # Only what Redis holds survives the restart.
+        lost = app.state.rate_limiter.local.unwritten_total()
+        log.warning(
+            f"Final usage flush failed ({e!r}); the next start flushes what Redis "
+            f"holds, {lost} request(s) counted in memory are lost"
+        )
 
 
 def _prepare_datasets(

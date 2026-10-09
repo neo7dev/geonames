@@ -176,3 +176,19 @@ async def test_startup_fails_without_jwt_secret(startup_mocks):
             pass
 
     startup_mocks["build"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_final_flush_reports_the_in_memory_requests_lost():
+    app = FastAPI()
+    app.state.redis = MagicMock()
+    app.state.rate_limiter = MagicMock()
+    app.state.rate_limiter.local.unwritten_total.return_value = 3
+
+    with (
+        patch(f"{MODULE}.flush_usage", AsyncMock(side_effect=OSError("db down"))),
+        patch.object(app_module.log, "warning") as warning,
+    ):
+        await app_module._final_usage_flush(app)
+
+    assert "3 request(s) counted in memory are lost" in warning.call_args.args[0]
