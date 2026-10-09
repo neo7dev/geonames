@@ -6,9 +6,10 @@ At startup, the app:
 1. Verifies database connectivity.
 2. Runs migrations.
 3. Seeds dataset metadata rows.
-4. Checks remote GeoNames metadata (etag/last-modified).
-5. Rebuilds datasets that need a full refresh.
-6. Starts a scheduler for daily sync checks.
+4. Starts serving requests. The remaining steps run in the background; `GET /health` reports their progress.
+5. Checks remote GeoNames metadata (etag/last-modified).
+6. Rebuilds datasets that need a full refresh.
+7. Starts a scheduler for daily sync checks.
 
 ## What Data This Service Hosts
 
@@ -214,10 +215,19 @@ This starts:
 - `db` (Supabase Postgres 17, internal network). Holds geonames data and Supabase auth
 - `auth` (Supabase Auth: signup, login, OAuth), `meta` and `studio`
 - `kong` on port `8000`: Supabase Studio admin dashboard at `/` (basic auth `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`) and the Auth API at `/auth/v1`
+- `redis` (internal network) for rate limiting and quotas
 
 Supabase config (Kong routes, db init scripts) lives in `supabase/`. It is a trimmed copy of the upstream self-hosted stack; PostgREST, Realtime, Storage, Edge Functions and Analytics are not deployed.
 
 ### 3) Verify Service Health
+
+The API answers as soon as migrations finish; datasets download and load in the background. Check progress with:
+
+```bash
+curl "http://localhost:9500/health"
+```
+
+`status` is `ok` once every enabled dataset is built, `degraded` while datasets are still building (listed in `datasets.pending`), if the background startup failed, or if Redis is unreachable, and `error` (HTTP 503) only when the database is unreachable. The container's healthcheck uses this endpoint, so it stays healthy while a large dataset such as `allcountries` loads.
 
 Open:
 - `http://localhost:9500/docs`
@@ -256,6 +266,7 @@ Main runtime settings (environment variables):
 - `POSTGRES_PORT`
 - `POSTGRES_DB`
 - `POSTGRES_SCHEMA` (default `geonames`)
+- `REDIS_URL` (e.g. `redis://redis:6379/0`; reported by `/health` when set)
 - `GEONAMES_URL`
 - `ENABLED_DATASETS`
 - `MAX_RESULTS`

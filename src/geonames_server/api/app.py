@@ -1,8 +1,8 @@
 """GeoNames Server entry point.
 
-Runs database setup, checks remote metadata, rebuilds datasets that need it
-(blocking), starts AsyncIOScheduler for daily updates, then serves the
-FastAPI application.
+Runs database setup, then serves the FastAPI application while a background
+thread checks remote metadata, rebuilds datasets that need it and finally
+starts the AsyncIOScheduler for daily updates. /health reports progress.
 """
 
 from __future__ import annotations
@@ -10,11 +10,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from geonames_server.api.routers import dataset_metadata, deletions, modifications, sync
+from geonames_server.api.routers import (
+    dataset_metadata,
+    deletions,
+    health,
+    modifications,
+    sync,
+)
 from geonames_server.api.routers.geonames import create_geoname_router
 from geonames_server.config.config import settings
 from geonames_server.database.connection.connection import Connection
@@ -78,38 +85,75 @@ async def lifespan(app: FastAPI):
     seed_dataset_metadata(all_datasets)
     log.info("Dataset metadata seeded")
 
-    # 4. HEAD-check all datasets to refresh remote metadata
-    #    Event listeners auto-compute needs_rebuild / out_of_sync
-    log.info("Checking remote metadata for all datasets")
-    await asyncio.get_event_loop().run_in_executor(
-        None, check_remote_metadata, all_datasets
-    )
-    log.info("Remote metadata check complete")
-
-    # 5. Rebuild enabled datasets that need it (blocks API until done)
-    log.info("Checking for datasets that need rebuilding")
-    loop = asyncio.get_event_loop()
-    try:
-        await loop.run_in_executor(None, build_all_datasets)
-    except Exception:
-        log.exception("Dataset rebuild failed")
-    log.info("Dataset rebuild step complete")
-
-    # 6. Start the scheduler for daily updates
-    log.info("Starting AsyncIOScheduler for daily updates")
-    start_scheduler()
-    log.info("Scheduler started")
+    # 4-6. Remote check, rebuilds and scheduler run in the background, so the API
+    #      (and /health) answer while large datasets download and load.
+    app.state.dataset_startup = "pending"
+    stopping = threading.Event()
+    threading.Thread(
+        target=_prepare_datasets,
+        args=(app, all_datasets, asyncio.get_running_loop(), stopping),
+        name="dataset-startup",
+        # A daemon thread does not hold up shutdown; an interrupted load rolls
+        # back because each dataset is loaded and swapped in one transaction.
+        daemon=True,
+    ).start()
 
     log.info("GeoNames Server ready — API is now accepting requests")
     try:
         yield
     finally:
         log.info("Shutting down GeoNames Server")
+        stopping.set()
         stop_scheduler()
         log.info("Scheduler stopped — shutdown complete")
 
 
+def _prepare_datasets(
+    app: FastAPI,
+    all_datasets: list,
+    loop: asyncio.AbstractEventLoop,
+    stopping: threading.Event,
+) -> None:
+    """Refresh remote metadata, rebuild datasets that need it, start the scheduler.
+
+    The scheduler starts only after the rebuilds, so its startup daily update
+    does not race a rebuild. It also starts if the rebuild failed: daily updates
+    and the rebuild flags still need to run.
+    """
+    app.state.dataset_startup = "running"
+    try:
+        # 4. HEAD-check all datasets to refresh remote metadata
+        #    Event listeners auto-compute needs_rebuild / out_of_sync
+        log.info("Checking remote metadata for all datasets")
+        check_remote_metadata(all_datasets)
+        log.info("Remote metadata check complete")
+
+        # 5. Rebuild enabled datasets that need it
+        log.info("Checking for datasets that need rebuilding")
+        build_all_datasets()
+        log.info("Dataset rebuild step complete")
+        app.state.dataset_startup = "done"
+    except Exception:
+        log.exception("Dataset startup preparation failed")
+        app.state.dataset_startup = "failed"
+
+    # 6. Start the scheduler for daily updates. It must start on the event loop's
+    #    thread; checking `stopping` there orders it against shutdown's stop_scheduler.
+    def _start() -> None:
+        if not stopping.is_set():
+            log.info("Starting AsyncIOScheduler for daily updates")
+            start_scheduler()
+
+    try:
+        loop.call_soon_threadsafe(_start)
+    except RuntimeError:
+        log.info("Event loop closed before the scheduler could start")
+
+
 app = FastAPI(title="GeoNames Server", version=settings.app_version, lifespan=lifespan)
+
+# Health router
+app.include_router(health.router, prefix="/health")
 
 # Geo dataset routers
 for _model, _tag, _name in [

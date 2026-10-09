@@ -66,6 +66,11 @@ class Settings(BaseSettings):
         description="Schema holding the geonames tables, kept out of Supabase's public schema",
     )
 
+    redis_url: str | None = Field(
+        default=None,
+        description="Redis URL, e.g. redis://redis:6379/0. Reported by /health when set",
+    )
+
     enabled_datasets: Annotated[list[str], NoDecode] = Field(
         default=[
             "allcountries",

@@ -2,7 +2,7 @@
 # Supabase config (Kong routes, db init scripts) is shared with the devcontainer in ./supabase.
 # Generate secrets with `make supabase-keys` and put them in .env before the first start.
 #
-#   API:            http://localhost:9500
+#   API:            http://localhost:9500 (health: /health)
 #   Studio + Auth:  http://localhost:8000 (basic auth DASHBOARD_USERNAME / DASHBOARD_PASSWORD)
 
 services:
@@ -16,6 +16,8 @@ services:
     stdin_open: true
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - geonames
@@ -230,10 +232,27 @@ services:
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
     entrypoint: ["/bin/sh", "/home/kong/kong-entrypoint.sh"]
 
+# Rate limiting, quotas and caching. Append-only file so counters survive restarts.
+  redis:
+    image: redis:7
+    hostname: redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - geonames
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 networks:
   geonames:
 
 volumes:
+  redis-data:
   supabase-db-data:
   supabase-db-config:
   supabase-studio-snippets:
