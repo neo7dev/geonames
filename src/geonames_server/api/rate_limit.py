@@ -163,7 +163,9 @@ def _may_have_run(error: Exception) -> bool:
     """Whether Redis may have run the command despite error: the reply timed out.
 
     redis-py raises its TimeoutError for a connect timeout too, when nothing
-    was sent; only its message tells the two apart.
+    was sent; only its message tells the two apart (redis-py 7.1; recheck
+    after an upgrade). A read timeout after which Redis had not run the
+    command leaves the request uncounted.
     """
     return isinstance(error, RedisTimeoutError) and not str(error).startswith(
         "Timeout connecting"
@@ -386,7 +388,8 @@ class RateLimiter:
 
         When the backoff ends, the request that sees it first tries Redis and
         the others stay in memory meanwhile, so they do not each wait for a
-        timeout.
+        timeout. Requests already in flight when Redis first fails still each
+        wait: nothing is known to be down yet.
         """
         if now < self._down_until:
             return True
@@ -468,6 +471,10 @@ class RateLimiter:
                     if month_set:
                         self.local.mark_sent(user_id, windows, unsent)
                     return True
+        # Without the lock, so rebuilds at the start of a month do not queue.
+        # Narrow race left: if Redis fails for another request of this user
+        # while this one reads Postgres, and that request is flushed before the
+        # read, the reconcile adds it a second time.
         stored = await self._stored_usage(user_id, windows)
         if stored is None:
             return False

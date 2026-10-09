@@ -344,7 +344,7 @@ Built as scoped above, on `phase-5-rate-limits`, one commit per step: usage tabl
 - Changed from the scope:
   - `require_admin` still depends on `require_api_key`. `/sync` takes `[require_admin, enforce_rate_limit]` instead (FastAPI runs the key lookup once), which avoids an import cycle and means a non-admin's refused `/sync` does not count.
   - `Usage` (the per-key, per-hour counts) lives in `api/rate_limit.py`, shared by the outage limiter and the flush.
-  - If the rebuild query fails, the request goes through uncounted and the next request tries again.
+  - If the rebuild query fails, the request goes through uncounted and the next request tries again. (Changed by the review fixes below: it is counted in memory.)
   - Regenerating `openapi.yaml` also picked up `per_minute` being nullable, which the snapshot had missed since `9a4d2b6e1c8f`.
 - Tests: 774 pass with `TEST_PG_DSN` and `TEST_REDIS_URL` set (`make tests-pg`). They use database 15 of the devcontainer Redis.
 - Smoke test (2026-10-09, devcontainer, `uvicorn` on 9500, seeded dev users):
@@ -353,10 +353,32 @@ Built as scoped above, on `phase-5-rate-limits`, one commit per step: usage tabl
   - Redis stopped: 10 × 200 then 429 from memory, `/health` degraded, one warning. Redis started: the next call logged "Redis is back", the flush woke at once, wrote 12 requests and deleted the free user's counters; the next call rebuilt the month counter to 48 (47 flushed + 1). `FLUSHALL`: the next call rebuilt it from Postgres, dropping the one unflushed call, as designed.
   - `app.monthly_usage` and `last_used_at` showed every dev user's flushed calls. Shutdown logged the final flush.
 
+#### Review fixes (`069990a`..`035cff5`, branch `phase-5-rate-limit-fixes`)
+
+A `/code-review` of phase 5 found 15 issues; each fix is one commit.
+
+- Recovery no longer deletes counters. `LocalLimiter` tracks, per counter, the requests Redis lacks. `RateLimiter.reconcile()` adds them with `INCRBY` (minute, hour and month; nothing if the month counter is missing, which the next request then rebuilds from Postgres). A rebuild for a user who still has outage requests to send sets the counters from the in-memory counts instead of Postgres. A lock (`RateLimiter._moving`) makes the rebuild and the reconcile exclusive, so a user's outage requests are added once. This replaces the "Recovery" design above, which lost requests three ways: a rebuild racing the `DEL`, requests counted between the `RENAME` and the `DEL`, and the minute counter.
+- The reconcile runs only once all in-memory usage is in Postgres, and subtracts only what it sent; requests counted meanwhile keep their user for the next round.
+- A failed rebuild counts the request in memory instead of letting it through uncounted.
+- A key lookup is cached only if no `forget_api_key` ran while it was in flight (a counter, `auth._revocations`), so a revoke during the lookup applies at once.
+- In-memory usage is written as a named batch (`local:{uuid}`, recorded in `app.usage_flushes`) and kept under that name until written, so a retry after a commit whose reply was lost adds nothing.
+- A Redis read or write timeout starts the backoff but lets the request through without counting it in memory; only a connect timeout (nothing sent) counts it in memory.
+- `/portal/usage` shows `hour.used = 0`, not null, for an hour without requests.
+- Flush batches are listed in the Redis set `usage:batches` (a script renames `usage:pending` and adds the name in one step) instead of found with `SCAN`.
+- When the backoff ends, the first request pushes it back 30 s and tries Redis; the others stay in memory.
+- `flush_usage(limiter, session_factory)` and `run_usage_flusher(limiter, session_factory, interval)` take only the limiter. `rate_limit.flushed_counts` is the shared Postgres fallback for `/portal/usage`.
+- Tests: the lifespan tests no longer reach the dev Redis or Postgres, and `TEST_REDIS_URL` is empty (Redis tests skip) without `REDIS_URL` in `.env`. 787 pass with `make tests-pg`.
+- Known limits left:
+  - Requests in flight when Redis first fails each wait out the 1 s timeout; only the retries every 30 s are single.
+  - A read timeout after which Redis had not run the script leaves that request uncounted. Telling it from a connect timeout relies on redis-py's message (see Risks).
+  - A rebuild from Postgres for a user who is not an outage user can, in a narrow race, count a request twice: Redis fails for the user's other request while the rebuild reads Postgres, and that request is flushed before the read. Closing it would need the lock around every rebuild, which would queue all users' rebuilds at the start of a month.
+  - In-memory counts are lost if the process stops before they reach Postgres.
+
 ## Risks
 
 - A connection without the schema's `search_path` would read and write `public` without any error. Mitigated in phase 2: one setting feeds every connection, and startup asserts it.
 - In the supabase/postgres image, `postgres` is not a superuser. `roles.sql` must run. The phase 4 trigger and FK on `auth.users` need TRIGGER and REFERENCES, which `postgres` has in 17.6.1.136 (checked 2026-10-09). Recheck after an image upgrade.
+- `rate_limit._may_have_run` tells a connect timeout from a read timeout by redis-py's message ("Timeout connecting to server", redis-py 7.1). If an upgrade changes it, connect timeouts would let requests through uncounted instead of counting them in memory. Recheck after a redis-py upgrade.
 - If GoTrue moves to asymmetric JWT signing keys, `require_user` has to verify against `/auth/v1/.well-known/jwks.json` instead of `JWT_SECRET`.
 - In production, GoTrue needs SMTP to send confirmation emails. Dev uses Mailpit, which catches all outgoing mail. `.env.dev` points SMTP at `mailpit`, which only exists in the devcontainer stack.
 - Run one app instance with one uvicorn worker (README "Docker Quickstart"). A second would run APScheduler jobs twice and, from phase 5, keep using revoked keys for up to 60 s and allow each process the full limit during a Redis outage.

@@ -234,6 +234,10 @@ Retry-After: 34
 - **Fixed windows:** the counters reset at the start of each minute, hour and month, so a client can make up to twice the per-minute limit across a minute boundary.
 - **Redis and Postgres:** Redis holds the live counters. Every `USAGE_FLUSH_SECONDS` (5 minutes) the request counts per key and hour are copied to `app.api_key_usage`, along with each key's `last_used_at`. If Redis loses its data, each user's hour and month counters are rebuilt from there on their next request, so at most the last few minutes of usage are lost. Prod Redis also appends to disk every second.
 - **Redis down:** requests keep being limited and counted in the app's memory, starting from each user's stored usage, and the counts still reach Postgres. When Redis is back, the outage requests are added to the affected users' Redis counters. `/health` reports Redis as `error` meanwhile. Without `REDIS_URL`, nothing is limited or counted (startup logs a warning).
+  - Requests in flight when Redis first fails each wait up to 1 s (`socket_connect_timeout`). After that, Redis is retried every 30 s by one request while the others stay in memory.
+  - A request whose Redis reply times out (Redis slow, not gone) is let through without being counted in memory, since Redis has most likely counted it already. If it had not, that request is missing from the counts.
+  - The in-memory counts live only in the process. If the app stops while Postgres is also unreachable, they are lost; the shutdown warning says how many.
+  - A request whose counter rebuild fails (Postgres unreachable) is also counted in memory and reaches Postgres at a later flush.
 - **Studio:** the view `app.monthly_usage` shows each user's requests per month next to their monthly quota. It is up to one flush behind.
 
 `GET /portal/usage` (login token) shows the signed-in user's usage:
