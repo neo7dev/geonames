@@ -5,7 +5,6 @@ Needs TEST_REDIS_URL and the Supabase database the other API tests use.
 
 import asyncio
 import uuid
-from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
@@ -18,17 +17,6 @@ from geonames_server.api.usage_flush import FLUSHING_PREFIX, flush_usage
 from geonames_server.database.models.accounts import ApiKey, ApiKeyUsage, UsageFlush
 
 PATH = "/metadata/"
-
-
-@pytest.fixture
-def session_factory(async_session):
-    """Hands out the test's session, so flushed rows roll back with the test."""
-
-    @asynccontextmanager
-    async def factory():
-        yield async_session
-
-    return factory
 
 
 async def _key(make_user, make_key, async_session) -> tuple[str, uuid.UUID]:

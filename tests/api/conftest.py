@@ -1,5 +1,6 @@
 import os
 import uuid
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -134,10 +135,21 @@ def clock():
         yield Clock
 
 
+@pytest.fixture
+def session_factory(async_session):
+    """Hands out the test's session, so rows written roll back with the test."""
+
+    @asynccontextmanager
+    async def factory():
+        yield async_session
+
+    return factory
+
+
 @pytest_asyncio.fixture
-async def limiter(auth_client, redis, clock):
+async def limiter(auth_client, redis, clock, session_factory):
     """Turn rate limiting on for the app, against the test Redis."""
-    app.state.rate_limiter = rate_limit.RateLimiter(redis)
+    app.state.rate_limiter = rate_limit.RateLimiter(redis, session_factory)
     yield app.state.rate_limiter
     del app.state.rate_limiter
 

@@ -107,7 +107,7 @@ async def lifespan(app: FastAPI):
         log.warning("REDIS_URL is not set — rate limits are off, usage is not counted")
         app.state.rate_limiter = None
     else:
-        app.state.rate_limiter = RateLimiter(app.state.redis)
+        app.state.rate_limiter = RateLimiter(app.state.redis, asyncSessionLocal)
         # Copies the request counts to Postgres every USAGE_FLUSH_SECONDS. Not an
         # APScheduler job: the scheduler starts only after the dataset rebuilds.
         flusher = asyncio.create_task(

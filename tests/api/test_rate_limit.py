@@ -5,16 +5,17 @@ database the other API tests use.
 """
 
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from redis.asyncio import Redis
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 
 from geonames_server.api import auth, dependencies, rate_limit
 from geonames_server.api.app import app
 from geonames_server.api.rate_limit import USAGE_PENDING, RateLimiter, Windows
-from geonames_server.database.models.accounts import Profile
+from geonames_server.database.models.accounts import ApiKey, ApiKeyUsage, Profile
 
 PATH = "/metadata/"
 
@@ -234,7 +235,7 @@ async def test_while_redis_is_down_requests_pass_and_redis_is_skipped(
     auth_client, make_user, make_key, clock
 ):
     down = Redis.from_url("redis://127.0.0.1:1/0", socket_connect_timeout=1)
-    limiter = RateLimiter(down)
+    limiter = RateLimiter(down, None)
     app.state.rate_limiter = limiter
     key = await make_key(await make_user("free"))
     try:
@@ -275,3 +276,125 @@ async def test_a_role_change_lifts_the_limit_within_the_cache_time(
 
         cache_time[0] += 61
         assert await _calls(auth_client, key, 1) == [200]
+
+
+async def _stored(async_session, user_id, *usage: tuple[datetime, int]) -> None:
+    """Flushed usage rows for the user's (first) key."""
+    key_id = await async_session.scalar(
+        select(ApiKey.id).where(ApiKey.user_id == user_id)
+    )
+    async_session.add_all(
+        ApiKeyUsage(key_id=key_id, hour=hour, requests=n) for hour, n in usage
+    )
+    await async_session.commit()
+
+
+def _hour_of(now: float, hours_later: int = 0) -> datetime:
+    return datetime.fromtimestamp((int(now) // 3600 + hours_later) * 3600, timezone.utc)
+
+
+class TestRebuildFromPostgres:
+    @pytest.mark.asyncio
+    async def test_the_month_count_is_rebuilt(
+        self, auth_client, limiter, async_session, make_user, make_key, clock
+    ):
+        user_id = await make_user("free")
+        key = await make_key(user_id)
+        # Earlier this month, in two different hours
+        await _stored(
+            async_session,
+            user_id,
+            (_hour_of(clock.now, -48), 4000),
+            (_hour_of(clock.now, -2), 995),
+        )
+
+        statuses = await _calls(auth_client, key, 6)
+
+        assert statuses == [200] * 5 + [429]
+        resp = await auth_client.get(PATH, headers=_headers(key))
+        assert "per month" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_the_hour_count_is_rebuilt(
+        self, auth_client, limiter, async_session, make_user, make_key, clock
+    ):
+        user_id = await make_user("free")
+        key = await make_key(user_id)
+        await _stored(async_session, user_id, (_hour_of(clock.now), 100))
+
+        resp = await auth_client.get(PATH, headers=_headers(key))
+
+        assert resp.status_code == 429
+        assert "per hour" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_revoked_keys_count(
+        self, auth_client, limiter, async_session, make_user, make_key, clock
+    ):
+        user_id = await make_user("tester")  # plus: 500 an hour
+        await make_key(user_id, "old")
+        await _stored(async_session, user_id, (_hour_of(clock.now), 500))
+        await async_session.execute(
+            update(ApiKey)
+            .where(ApiKey.user_id == user_id)
+            .values(revoked_at=func.now())
+        )
+        await async_session.commit()
+        key = await make_key(user_id, "new")
+
+        assert await _calls(auth_client, key, 1) == [429]
+
+    @pytest.mark.asyncio
+    async def test_a_new_month_starts_at_zero(
+        self, auth_client, limiter, redis, async_session, make_user, make_key, clock
+    ):
+        user_id = await make_user("free")
+        key = await make_key(user_id)
+        # Last month's usage only
+        await _stored(
+            async_session,
+            user_id,
+            (datetime(2026, 9, 30, 23, tzinfo=timezone.utc), 5000),
+        )
+
+        assert await _calls(auth_client, key, 1) == [200]
+        assert await _counter(redis, user_id, clock, 2) == 1
+
+    @pytest.mark.asyncio
+    async def test_counters_in_redis_are_not_overwritten(
+        self, auth_client, limiter, redis, async_session, make_user, make_key, clock
+    ):
+        user_id = await make_user("free")
+        key = await make_key(user_id)
+        await _stored(async_session, user_id, (_hour_of(clock.now, -2), 4999))
+        await _preset(redis, user_id, clock, 2, 3)
+
+        assert await _calls(auth_client, key, 1) == [200]
+        assert await _counter(redis, user_id, clock, 2) == 4
+
+    @pytest.mark.asyncio
+    async def test_a_failed_rebuild_lets_the_request_through(
+        self, auth_client, limiter, redis, make_user, make_key, clock
+    ):
+        key = await make_key(await make_user("free"))
+
+        with (
+            patch.object(
+                rate_limit, "stored_usage", AsyncMock(side_effect=OSError("db down"))
+            ),
+            patch.object(rate_limit.log, "warning") as warning,
+        ):
+            assert await _calls(auth_client, key, 1) == [200]
+
+        warning.assert_called_once()
+        # Nothing was counted, so the next request rebuilds
+        assert await redis.dbsize() == 0
+
+    @pytest.mark.asyncio
+    async def test_a_counter_missing_twice_lets_the_request_through(
+        self, auth_client, limiter, make_user, make_key, clock
+    ):
+        key = await make_key(await make_user("free"))
+
+        with patch.object(limiter, "_rebuild", AsyncMock(return_value=True)):
+            assert await _calls(auth_client, key, 1) == [200]
