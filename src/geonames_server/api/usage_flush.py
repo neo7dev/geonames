@@ -8,7 +8,7 @@ whose write failed stays in Redis for the next flush; one that was written but
 not deleted is found in usage_flushes and only deleted, so nothing counts twice.
 
 While Redis is down, the rate limiter counts in memory; each flush writes
-those counts too. Once Redis answers again and the outage usage is in
+those counts too, recorded as a batch the same way. Once Redis answers again and the outage usage is in
 Postgres, the flush adds the outage users' in-memory requests to their Redis
 counters (RateLimiter.reconcile).
 """
@@ -131,16 +131,18 @@ async def _flush_redis(redis: Redis, session_factory: SessionFactory) -> int:
 
 
 async def _flush_local(limiter: RateLimiter, session_factory: SessionFactory) -> int:
-    usage = limiter.local.take_usage()
-    if not usage:
-        return 0
-    try:
+    written = 0
+    # A batch a failed flush left behind, then the usage counted since
+    for _ in range(2):
+        batch = limiter.local.take_usage()
+        if batch is None:
+            break
+        name, usage = batch
         async with session_factory() as session:
-            await write_usage(session, usage)
-    except BaseException:
-        limiter.local.restore_usage(usage)
-        raise
-    return usage.total()
+            if await write_usage(session, usage, batch=name):
+                written += usage.total()
+        limiter.local.written()
+    return written
 
 
 async def _reconcile(limiter: RateLimiter) -> None:

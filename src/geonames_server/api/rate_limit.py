@@ -182,12 +182,6 @@ class Usage:
     def total(self) -> int:
         return sum(self.requests.values())
 
-    def add(self, other: Usage) -> None:
-        for slot, n in other.requests.items():
-            self.requests[slot] = self.requests.get(slot, 0) + n
-        for key_id, at in other.last_used.items():
-            self.last_used[key_id] = max(at, self.last_used.get(key_id, at))
-
     @classmethod
     def from_hash(cls, fields: dict[bytes, bytes]) -> Usage:
         """Parse a USAGE_PENDING hash: n:{key_id}:{epoch hour} and t:{key_id}."""
@@ -216,6 +210,8 @@ class LocalLimiter:
         # counted here that are not in the Redis counter yet]
         self._counts: dict[str, list[int]] = {}
         self.usage = Usage()
+        # Usage taken for a write that has not succeeded yet, with its batch name
+        self.unwritten: tuple[str, Usage] | None = None
         # Users counted here, whose requests must be added to Redis afterwards
         self.users: set[uuid.UUID] = set()
 
@@ -260,13 +256,22 @@ class LocalLimiter:
         for key in [k for k, (_, end, _) in self._counts.items() if end <= now]:
             del self._counts[key]
 
-    def take_usage(self) -> Usage:
-        usage, self.usage = self.usage, Usage()
-        return usage
+    def take_usage(self) -> tuple[str, Usage] | None:
+        """The usage to write next, under a batch name; the same until written.
 
-    def restore_usage(self, usage: Usage) -> None:
-        """Put back usage that could not be written."""
-        self.usage.add(usage)
+        A retried write keeps the name, so Postgres can tell whether it already
+        went in (see usage_flush.write_usage).
+        """
+        if self.unwritten is None and self.usage:
+            self.unwritten = (f"local:{uuid.uuid4()}", self.usage)
+            self.usage = Usage()
+        return self.unwritten
+
+    def written(self) -> None:
+        self.unwritten = None
+
+    def all_written(self) -> bool:
+        return not (self.usage or self.unwritten)
 
     def mark_sent(self, user_id, windows: Windows, sent: list[int]) -> None:
         """Note that sent (from unsent) reached the user's Redis counters.
@@ -440,7 +445,7 @@ class RateLimiter:
         next request. Returns the users reconciled.
         """
         async with self._moving:
-            if not self.local.users or self.local.usage:
+            if not self.local.users or not self.local.all_written():
                 return 0
             now = _now()
             windows = Windows.at(now)

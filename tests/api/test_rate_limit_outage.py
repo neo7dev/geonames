@@ -143,7 +143,7 @@ async def test_outage_calls_are_flushed_with_redis_still_down(
         await flush_usage(down_limiter.redis, session_factory, down_limiter)
 
     assert await _stored_total(async_session, user_id) == 3
-    assert not down_limiter.local.usage
+    assert down_limiter.local.all_written()
     last_used = await async_session.scalar(
         select(ApiKey.last_used_at).where(ApiKey.user_id == user_id)
     )
@@ -168,7 +168,7 @@ async def test_with_postgres_down_too_counts_wait_in_memory(
 
     with pytest.raises(OSError):
         await flush_usage(down_limiter.redis, broken_factory, down_limiter)
-    assert down_limiter.local.usage.total() == 10
+    assert down_limiter.local.unwritten[1].total() == 10
 
     with pytest.raises(RedisConnectionError):
         await flush_usage(down_limiter.redis, session_factory, down_limiter)
@@ -180,6 +180,34 @@ async def _counters(redis, user_id, now: float) -> list[int | None]:
         None if value is None else int(value)
         for value in await redis.mget(Windows.at(now).counter_keys(user_id))
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_write_that_failed_after_committing_is_not_repeated(
+    auth_client, down_limiter, async_session, session_factory, make_user, make_key
+):
+    user_id = await make_user("free")
+    key = await make_key(user_id)
+    await _calls(auth_client, key, 3)
+
+    real_write = usage_flush.write_usage
+
+    async def lost_reply(*args, **kwargs):
+        await real_write(*args, **kwargs)
+        raise OSError("connection lost after the commit")
+
+    with (
+        patch.object(usage_flush, "write_usage", lost_reply),
+        pytest.raises(OSError),
+    ):
+        await flush_usage(down_limiter.redis, session_factory, down_limiter)
+    await _calls(auth_client, key, 2)
+
+    with pytest.raises(RedisConnectionError):
+        await flush_usage(down_limiter.redis, session_factory, down_limiter)
+
+    assert await _stored_total(async_session, user_id) == 5
+    assert down_limiter.local.all_written()
 
 
 @pytest.mark.asyncio
