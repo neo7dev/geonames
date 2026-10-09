@@ -196,7 +196,7 @@ Create `.env` from example:
 cp .env.example .env
 ```
 
-Generate the Supabase secrets and replace every `replace-with-make-supabase-keys` value in `.env` with the output (run it once; the anon and service keys are signed with that run's `JWT_SECRET`):
+Generate the Supabase secrets and fill in the empty secret values in `.env` with the output. Run it once: the anon and service keys are signed with that run's `JWT_SECRET`. `docker compose` refuses to start while any secret is empty.
 
 ```bash
 make supabase-keys
