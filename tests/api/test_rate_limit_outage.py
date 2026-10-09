@@ -116,6 +116,23 @@ async def test_a_reply_that_timed_out_is_not_counted_again_in_memory(
 
 
 @pytest.mark.asyncio
+async def test_after_the_backoff_one_request_tries_redis(
+    auth_client, down_limiter, make_user, make_key, clock
+):
+    key = await make_key(await make_user("free"))
+    await _calls(auth_client, key, 1)
+    clock.now += BACKOFF_SECONDS
+
+    with patch.object(down_limiter, "_script", wraps=down_limiter._script) as script:
+        statuses = await asyncio.gather(
+            *(_calls(auth_client, key, 1) for _ in range(3))
+        )
+
+    assert statuses == [[200]] * 3
+    script.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_429_in_memory_has_retry_after(
     auth_client, down_limiter, make_user, make_key, clock
 ):

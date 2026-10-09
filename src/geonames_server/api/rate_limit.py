@@ -369,7 +369,21 @@ class RateLimiter:
         if self.outage:
             log.info("Redis is back; rate limit counters move back to Redis")
             self.outage = False
+            self._down_until = 0.0
             self.recovered.set()
+
+    def _skip_redis(self, now: float) -> bool:
+        """Whether to count in memory without trying Redis.
+
+        When the backoff ends, the request that sees it first tries Redis and
+        the others stay in memory meanwhile, so they do not each wait for a
+        timeout.
+        """
+        if now < self._down_until:
+            return True
+        if self.outage:
+            self._down_until = now + BACKOFF_SECONDS
+        return False
 
     async def _stored_usage(
         self, user_id: uuid.UUID, windows: Windows
@@ -398,7 +412,7 @@ class RateLimiter:
         Live counts come from Redis. Otherwise the in-memory outage counts, or
         failing that the flushed usage, with no minute count.
         """
-        if now >= self._down_until:
+        if not self._skip_redis(now):
             try:
                 minute, hour, month = await self.redis.mget(
                     windows.counter_keys(user_id)
@@ -485,7 +499,7 @@ class RateLimiter:
     async def hit(self, principal: Principal, now: float) -> int | None:
         """Count a request; return the exhausted window (0-2) instead if any."""
         windows = Windows.at(now)
-        if now < self._down_until:
+        if self._skip_redis(now):
             return await self._hit_locally(principal, windows, now)
         usage_field, last_used_field = usage_fields(principal.key_id, windows.hour)
         keys = [*windows.counter_keys(principal.user_id), USAGE_PENDING]
