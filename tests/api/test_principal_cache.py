@@ -150,6 +150,27 @@ async def test_a_portal_revoke_applies_on_the_next_request(
 
 
 @pytest.mark.asyncio
+async def test_a_lookup_overtaken_by_a_revoke_is_not_cached(
+    auth_client, async_session, make_user, make_key, clock
+):
+    key = await make_key(await make_user())
+    execute = async_session.execute
+
+    async def revoked_during_the_lookup(*args, **kwargs):
+        result = await execute(*args, **kwargs)
+        # The revoke commits after this lookup read the key as active
+        auth.forget_api_key(uuid.uuid4())
+        return result
+
+    with patch.object(async_session, "execute", revoked_during_the_lookup):
+        assert (
+            await auth_client.get("/metadata/", headers=_headers(key))
+        ).status_code == 200
+
+    assert auth._principal_cache == {}
+
+
+@pytest.mark.asyncio
 async def test_unknown_keys_are_not_cached(auth_client, clock):
     await auth_client.get("/metadata/", headers=_headers("gn_unknown"))
 

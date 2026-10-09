@@ -84,6 +84,9 @@ _MAX_CACHED_KEYS = 10_000
 # key hash -> (expiry, principal). Every entry lives equally long, so insertion
 # order is also expiry order and the first entry is the oldest.
 _principal_cache: dict[str, tuple[float, Principal]] = {}
+# Bumped by every forget_api_key. A lookup that started before a revoke may have
+# read the key as active, so it is cached only if no revoke happened meanwhile.
+_revocations = 0
 
 
 def _monotonic() -> float:
@@ -121,6 +124,8 @@ def _cache_put(key_hash: str, principal: Principal) -> None:
 
 def forget_api_key(key_id: uuid.UUID) -> None:
     """Drop a key from the lookup cache, so its revocation applies at once."""
+    global _revocations
+    _revocations += 1
     for key_hash in [h for h, (_, p) in _principal_cache.items() if p.key_id == key_id]:
         del _principal_cache[key_hash]
 
@@ -176,6 +181,7 @@ async def require_api_key(
     key_hash = hash_api_key(key)
     principal = _cache_get(key_hash)
     if principal is None:
+        revocations = _revocations
         row = (
             await session.execute(
                 _principal_select(ApiKey.id.label("key_id"))
@@ -186,7 +192,8 @@ async def require_api_key(
         if row is None:
             raise _unauthorized("Invalid or revoked API key", "ApiKey")
         principal = Principal(**row._mapping)
-        _cache_put(key_hash, principal)
+        if revocations == _revocations:
+            _cache_put(key_hash, principal)
     request.state.principal = principal
     return principal
 
