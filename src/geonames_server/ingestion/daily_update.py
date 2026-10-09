@@ -12,8 +12,9 @@ Applying a day is idempotent (upsert / delete by key), so replays are safe.
    ``last_applied_date`` advances only after a day is applied to a dataset.
 3. Datasets caught up to yesterday get their local etag / last-modified synced
    with the remote ones, which clears ``out_of_sync``. Failed or lagging
-   datasets stay out of sync and are retried on the next run. Datasets more
-   than ``MAX_CATCHUP_DAYS`` behind are marked for a full rebuild instead.
+   datasets stay out of sync and are retried on the next run. Datasets never
+   built or more than ``MAX_CATCHUP_DAYS`` behind are marked for a full rebuild
+   instead.
 """
 
 from __future__ import annotations
@@ -83,11 +84,12 @@ def _yesterday() -> date:
 def _pending_days(last_applied: date | None, yesterday: date) -> list[date] | None:
     """Days after *last_applied* up to *yesterday*, oldest first.
 
-    Returns ``None`` if the gap exceeds ``MAX_CATCHUP_DAYS``: daily files cannot
-    close it, so the dataset needs a full rebuild.
+    Returns ``None`` if *last_applied* is unknown (the dataset was never built)
+    or the gap exceeds ``MAX_CATCHUP_DAYS``: daily files cannot close it, so the
+    dataset needs a full rebuild.
     """
     if last_applied is None:
-        last_applied = yesterday - timedelta(days=1)
+        return None
     gap = (yesterday - last_applied).days
     if gap > MAX_CATCHUP_DAYS:
         return None
@@ -444,10 +446,12 @@ def apply_daily_updates(
     for name, last in _load_last_applied([ds.name for ds in targets]).items():
         days = _pending_days(last, yesterday)
         if days is None:
-            log.warning(
-                f"[{name}] Last applied {last} is over {MAX_CATCHUP_DAYS} days ago "
-                "— marking for a full rebuild"
+            reason = (
+                "never built"
+                if last is None
+                else f"last applied {last}, over {MAX_CATCHUP_DAYS} days ago"
             )
+            log.warning(f"[{name}] {reason} — marking for a full rebuild")
             _require_rebuild(name)
             on_dataset(name, DatasetSyncStatus.FAILED)
             continue

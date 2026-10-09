@@ -515,8 +515,8 @@ class TestSyncMetadata:
 class TestPendingDays:
     Y = date(2026, 3, 18)
 
-    def test_none_means_only_yesterday(self):
-        assert _pending_days(None, self.Y) == [self.Y]
+    def test_never_built_needs_rebuild(self):
+        assert _pending_days(None, self.Y) is None
 
     def test_caught_up_is_empty(self):
         assert _pending_days(self.Y, self.Y) == []
@@ -668,6 +668,16 @@ class TestApplyDailyUpdates:
         tables = [c.args[1] for c in engine["_upsert_modifications"].call_args_list]
         assert tables == ["cities500"]
         engine["_sync_metadata"].assert_called_once_with([ok])
+
+    def test_never_built_dataset_marks_rebuild(self, engine):
+        ds = _make_dataset_info("cities500")
+        engine["_load_last_applied"].return_value = {"cities500": None}
+
+        apply_daily_updates([ds], {"cities500"})
+
+        engine["_require_rebuild"].assert_called_once_with("cities500")
+        engine["_stage_day"].assert_not_called()
+        engine["_sync_metadata"].assert_called_once_with([])
 
     def test_already_caught_up_dataset_is_just_synced(self, engine):
         ds = _make_dataset_info()
