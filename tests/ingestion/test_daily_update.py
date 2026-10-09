@@ -617,9 +617,13 @@ class TestApplyDailyUpdates:
         ds = _make_dataset_info()
         engine["_load_last_applied"].return_value = {"allcountries": Y - timedelta(days=1)}
         engine["_stage_day"].return_value = False
+        seen = []
 
-        apply_daily_updates([ds], {"allcountries"})
+        apply_daily_updates(
+            [ds], {"allcountries"}, on_dataset=lambda n, s: seen.append((n, s))
+        )
 
+        assert seen == [("allcountries", DatasetSyncStatus.WAITING)]
         engine["_set_last_applied"].assert_not_called()
         engine["_upsert_modifications"].assert_not_called()
         engine["_sync_metadata"].assert_called_once_with([])

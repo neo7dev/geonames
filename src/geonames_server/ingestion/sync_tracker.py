@@ -49,6 +49,8 @@ class DatasetSyncStatus(str, Enum):
     APPLYING_MODIFICATIONS = "applying_modifications"
     APPLYING_DELETES = "applying_deletes"
     SYNCED = "synced"
+    # Not caught up yet: a day's files are not published; retried next run.
+    WAITING = "waiting"
     SKIPPED = "skipped"
     FAILED = "failed"
 

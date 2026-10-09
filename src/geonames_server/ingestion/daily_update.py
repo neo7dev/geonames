@@ -501,8 +501,15 @@ def apply_daily_updates(
     synced = [ds for ds in targets if ds.name in caught_up and ds.name not in failed]
     on_step(SyncStep.SYNCING_METADATA)
     _sync_metadata(synced)
-    for ds in synced:
-        on_dataset(ds.name, DatasetSyncStatus.SYNCED)
+    for ds in targets:
+        if ds.name in failed:
+            continue
+        status = (
+            DatasetSyncStatus.SYNCED
+            if ds.name in caught_up
+            else DatasetSyncStatus.WAITING
+        )
+        on_dataset(ds.name, status)
 
 
 def check_and_apply_daily_updates() -> None:
