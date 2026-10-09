@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 
 import pytest
 
@@ -6,7 +5,6 @@ from geonames_server.ingestion.sync_tracker import (
     DatasetStatus,
     DatasetSyncStatus,
     OverallStatus,
-    SyncStatus,
     SyncStep,
     clear,
     complete_sync,

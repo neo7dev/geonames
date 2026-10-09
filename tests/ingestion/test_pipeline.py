@@ -14,8 +14,8 @@ from geonames_server.database.models.cities15000 import Cities15000
 from geonames_server.database.models.dataset_metadata import DatasetMetaData
 from geonames_server.ingestion.downloader import DownloadResult
 from geonames_server.ingestion.pipeline import (
-    _get_conn_params,
     RowCountError,
+    _get_conn_params,
     _load_and_swap,
     build_all_datasets,
     build_dataset,
@@ -24,7 +24,6 @@ from geonames_server.ingestion.pipeline import (
     truncate_table,
 )
 from geonames_server.ingestion.registry import DatasetInfo
-from geonames_server.ingestion.remote import RemoteFileMeta
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -337,7 +336,6 @@ class TestBuildDataset:
         mock_ext_cls.return_value = mock_extractor
 
         # Make the txt file appear to exist
-        txt_path = Path("/tmp/data/cities15000.txt")
         with patch.object(Path, "exists", return_value=True):
             mock_session = MagicMock()
             mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)

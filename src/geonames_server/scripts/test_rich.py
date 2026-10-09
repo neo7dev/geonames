@@ -1,9 +1,9 @@
+from geonames_server.config.config import settings  # noqa: F401
 from geonames_server.rich_console.rich_console import (
     debug_variables_table,
     log_variables,  # noqa: F401
     verbose_debug,
 )
-from geonames_server.config.config import settings  # noqa: F401
 
 
 @verbose_debug

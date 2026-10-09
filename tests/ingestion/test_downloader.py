@@ -9,8 +9,8 @@ import pytest
 import requests
 
 from geonames_server.ingestion.downloader import (
-    DownloadResult,
     Downloader,
+    DownloadResult,
     _create_directory,
     _has_read_access,
     _has_write_access,

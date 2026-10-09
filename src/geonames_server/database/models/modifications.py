@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from geonames_server.database.models.geobase import GeoBase
 
+
 # ! Thing with SQLAlchemy models is that the rows are mapped to the class variables in the order they are defined in the class.
 # ! And if I want to override the default order of the columns, I can have 3 options:
 # ! 1. Don't redeclare the geonameid column, just override the geonameid since I am not even changing anything, I have it here for clarity

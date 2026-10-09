@@ -25,23 +25,23 @@ from geonames_server.ingestion.daily_update import (
     MAX_CATCHUP_DAYS,
     POPULATION_THRESHOLDS,
     DailyUpdateError,
-    _pending_days,
-    _stage_day,
-    apply_daily_updates,
     _delete_from_dataset,
     _download_daily_file,
     _ingest_daily_file,
     _ingest_deletions_file,
+    _pending_days,
+    _stage_day,
     _sync_metadata,
     _upsert_modifications,
     _yesterday,
+    apply_daily_updates,
     check_and_apply_daily_updates,
     out_of_sync_enabled_names,
 )
 from geonames_server.ingestion.pipeline import check_remote_metadata
+from geonames_server.ingestion.registry import DatasetInfo
 from geonames_server.ingestion.sync_tracker import DatasetSyncStatus
 from geonames_server.utils.utils import current_utc_date
-from geonames_server.ingestion.registry import DatasetInfo
 
 if _orig_datasets:
     os.environ["ENABLED_DATASETS"] = _orig_datasets

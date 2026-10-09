@@ -1,6 +1,7 @@
 from rich.traceback import install
-from geonames_server.log.mylogger import get_logger
+
 from geonames_server.config.config import settings
+from geonames_server.log.mylogger import get_logger
 
 install(show_locals=True, extra_lines=3)
 

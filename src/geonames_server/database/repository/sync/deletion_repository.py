@@ -4,8 +4,8 @@ from sqlalchemy import and_, desc, select
 from sqlalchemy.orm import Session
 
 from geonames_server.database.models.deletions import Deletions
-from geonames_server.database.repository.sync.base_repository import BaseRepository
 from geonames_server.database.repository.filters.deletion_filter import DeletionFilter
+from geonames_server.database.repository.sync.base_repository import BaseRepository
 
 
 class DeletionRepository(BaseRepository[Deletions]):

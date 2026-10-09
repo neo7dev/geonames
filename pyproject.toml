@@ -65,4 +65,18 @@ test = "pytest tests/"
 dev = [
     "poethepoet>=0.42.1",
     "pyapp>=4.16.1",
+    "ruff>=0.16.10",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = ["data", "logs", "gostatic"]
+
+[tool.ruff.lint]
+# Ruff's classic defaults (pyflakes and the pycodestyle errors) plus import sorting.
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Rewrites ENABLED_DATASETS before the app modules read settings on import
+"tests/ingestion/test_daily_update.py" = ["E402"]

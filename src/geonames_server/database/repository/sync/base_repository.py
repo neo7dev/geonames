@@ -1,7 +1,8 @@
-from typing import Type, TypeVar, Generic, List, Optional, Iterable
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
+from typing import Generic, Iterable, List, Optional, Type, TypeVar
+
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 T = TypeVar("T")
 

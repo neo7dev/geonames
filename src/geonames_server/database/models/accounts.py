@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from geonames_server.database.models.app_base import APP_SCHEMA, AppBase
 
+
 class Tier(AppBase):
     """Request limits for a group of roles. NULL means unlimited."""
 
