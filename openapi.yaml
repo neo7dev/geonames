@@ -56,6 +56,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response List Geonames Allcountries  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -318,6 +320,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response Filter Geonames Allcountries Filter Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -346,6 +350,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GeoNameResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -388,6 +394,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response List Geonames Cities500  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -650,6 +658,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response Filter Geonames Cities500 Filter Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -678,6 +688,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GeoNameResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -720,6 +732,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response List Geonames Cities1000  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -982,6 +996,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response Filter Geonames Cities1000 Filter Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1010,6 +1026,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GeoNameResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1052,6 +1070,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response List Geonames Cities5000  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1314,6 +1334,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response Filter Geonames Cities5000 Filter Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1342,6 +1364,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GeoNameResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1384,6 +1408,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response List Geonames Cities15000  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1646,6 +1672,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response Filter Geonames Cities15000 Filter Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1674,6 +1702,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GeoNameResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1716,6 +1746,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response List Modifications Modifications  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -1978,6 +2010,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response Filter Modifications Modifications Filter Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2026,6 +2060,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response Get Modifications By Geonameid Modifications  Geonameid  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2076,6 +2112,8 @@ paths:
                   $ref: '#/components/schemas/GeoNameResponse'
                 title: Response Get Modifications By Date Modifications Date  Modification
                   Date  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2118,6 +2156,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/DeletionResponse'
                 title: Response List Deletions Deletions  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2200,6 +2240,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/DeletionResponse'
                 title: Response Filter Deletions Deletions Filter Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2228,6 +2270,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeletionResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2270,6 +2314,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/DatasetMetaDataResponse'
                 title: Response List Metadata Metadata  Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2292,6 +2338,8 @@ paths:
                   $ref: '#/components/schemas/DatasetMetaDataResponse'
                 type: array
                 title: Response Get Out Of Sync Metadata Out Of Sync Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
       security:
       - APIKeyHeader: []
   /metadata/needs-rebuild:
@@ -2310,6 +2358,8 @@ paths:
                   $ref: '#/components/schemas/DatasetMetaDataResponse'
                 type: array
                 title: Response Get Needs Rebuild Metadata Needs Rebuild Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
       security:
       - APIKeyHeader: []
   /metadata/filter:
@@ -2449,6 +2499,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/DatasetMetaDataResponse'
                 title: Response Filter Metadata Metadata Filter Get
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2477,6 +2529,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DatasetMetaDataResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2496,6 +2550,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SyncAcceptedResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
       security:
       - APIKeyHeader: []
   /sync/{sync_id}:
@@ -2520,6 +2576,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SyncStatusResponse'
+        '429':
+          description: Rate limit exceeded; retry after Retry-After seconds
         '422':
           description: Validation Error
           content:
@@ -2610,6 +2668,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /portal/usage:
+    get:
+      tags:
+      - Portal
+      summary: Usage
+      description: 'Current minute, hour and month against the tier''s limits, plus
+        history.
+
+
+        The current counts are live from Redis. The daily history and per-key
+
+        totals come from Postgres, so they are up to USAGE_FLUSH_SECONDS behind.'
+      operationId: usage_portal_usage_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 90
+          minimum: 1
+          description: Days of history
+          default: 30
+          title: Days
+        description: Days of history
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     ApiKeyResponse:
@@ -2688,6 +2786,34 @@ components:
       - last_used_at
       - key
       title: CreatedApiKeyResponse
+    CurrentUsage:
+      properties:
+        minute:
+          $ref: '#/components/schemas/UsageWindow'
+        hour:
+          $ref: '#/components/schemas/UsageWindow'
+        month:
+          $ref: '#/components/schemas/UsageWindow'
+      type: object
+      required:
+      - minute
+      - hour
+      - month
+      title: CurrentUsage
+    DailyUsage:
+      properties:
+        date:
+          type: string
+          format: date
+          title: Date
+        requests:
+          type: integer
+          title: Requests
+      type: object
+      required:
+      - date
+      - requests
+      title: DailyUsage
     DatasetMetaDataOrderBy:
       type: string
       enum:
@@ -3009,10 +3135,38 @@ components:
       - redis
       - datasets
       title: HealthResponse
+    KeyUsage:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        prefix:
+          type: string
+          title: Prefix
+        revoked:
+          type: boolean
+          title: Revoked
+        requests_this_month:
+          type: integer
+          title: Requests This Month
+      type: object
+      required:
+      - id
+      - name
+      - prefix
+      - revoked
+      - requests_this_month
+      title: KeyUsage
     Limits:
       properties:
         per_minute:
-          type: integer
+          anyOf:
+          - type: integer
+          - type: 'null'
           title: Per Minute
         per_hour:
           anyOf:
@@ -3119,6 +3273,56 @@ components:
       - current_step
       - started_at
       title: SyncStatusResponse
+    UsageResponse:
+      properties:
+        tier:
+          type: string
+          title: Tier
+        live:
+          type: boolean
+          title: Live
+        current:
+          $ref: '#/components/schemas/CurrentUsage'
+        daily:
+          items:
+            $ref: '#/components/schemas/DailyUsage'
+          type: array
+          title: Daily
+        keys:
+          items:
+            $ref: '#/components/schemas/KeyUsage'
+          type: array
+          title: Keys
+      type: object
+      required:
+      - tier
+      - live
+      - current
+      - daily
+      - keys
+      title: UsageResponse
+    UsageWindow:
+      properties:
+        used:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Used
+        limit:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
+        resets_at:
+          type: string
+          format: date-time
+          title: Resets At
+      type: object
+      required:
+      - used
+      - limit
+      - resets_at
+      title: UsageWindow
     ValidationError:
       properties:
         loc:

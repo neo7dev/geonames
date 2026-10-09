@@ -172,16 +172,16 @@ Accounts live in Supabase Auth; the API checks two kinds of credential:
 - **API keys** (`X-API-Key` header) for the data endpoints and `/sync`.
 - **Login tokens** (`Authorization: Bearer <access_token>` from Supabase Auth) for `/portal`, where users manage their keys.
 
-Every signup gets the default role: the one marked `is_default` in `app.roles`, `free` to start with. Exactly one role must be marked, so to change the default, unmark the old one and mark the new one in the same transaction. Roles map to tiers, and each tier caps how many active API keys a user can hold:
+Every signup gets the default role: the one marked `is_default` in `app.roles`, `free` to start with. Exactly one role must be marked, so to change the default, unmark the old one and mark the new one in the same transaction. Roles map to tiers, and each tier sets the user's request limits (see [Rate limits](#rate-limits)) and caps how many active API keys they can hold:
 
-| Tier | Roles | Active API keys |
-|---|---|---|
-| basic | free (default) | 1 |
-| plus | tester | 3 |
-| pro | dev | 5 |
-| max | sr_dev, admin | unlimited |
+| Tier | Roles | /minute | /hour | /month (UTC) | Active API keys |
+|---|---|---|---|---|---|
+| basic | free (default) | 10 | 100 | 5,000 | 1 |
+| plus | tester | 30 | 500 | 50,000 | 3 |
+| pro | dev | 120 | 2,500 | 500,000 | 5 |
+| max | sr_dev, admin | unlimited | unlimited | unlimited | unlimited |
 
-Tiers, roles and the role -> tier mapping are rows in the `app` schema (`app.tiers`, `app.roles`), editable in Studio. The read-only view `app.user_tiers` shows every user's role, tier, limits (empty = unlimited) and active/revoked key counts in one table (Studio: Table Editor, schema `app`). Admin access (`/sync`) comes from `app.roles.is_admin`. To change a user's role, edit their row in `app.profiles` in Studio; it applies on their next request. To make the first admin, sign up, then set that profile's `role` to `admin`.
+Tiers, roles and the role -> tier mapping are rows in the `app` schema (`app.tiers`, `app.roles`), editable in Studio. The read-only view `app.user_tiers` shows every user's role, tier, limits (empty = unlimited) and active/revoked key counts in one table (Studio: Table Editor, schema `app`). Admin access (`/sync`) comes from `app.roles.is_admin`. To change a user's role, edit their row in `app.profiles` in Studio; it applies within `AUTH_CACHE_SECONDS` (60 s), as do changes to a tier's limits, bans and revoking a key in Studio. To make the first admin, sign up, then set that profile's `role` to `admin`.
 
 In the devcontainer, `make seed-users` (also run on every container start) creates one confirmed user per tier, all with password `dev-password`, each with a real API key kept in `.env.dev` (and so in `.env` after `make switch2dev`):
 
@@ -215,8 +215,33 @@ Portal endpoints (login token):
 - `GET /portal/keys`: active keys (name, prefix, created date); never the key itself.
 - `POST /portal/keys` (`{"name": "..."}`, 1-64 characters): `201` with the key, `409` when the tier's key limit is reached.
 - `DELETE /portal/keys/{id}`: revokes the key (`204`); it stops working on the next request.
+- `GET /portal/usage?days=30`: see [Rate limits](#rate-limits).
 
-Deleting a user in Studio deletes their profile and keys. Banning a user, or soft-deleting them through the Auth admin API, keeps the rows but refuses their keys and login tokens until the ban ends.
+Deleting a user in Studio deletes their profile and keys. Banning a user, or soft-deleting them through the Auth admin API, keeps the rows but refuses their keys and login tokens (within `AUTH_CACHE_SECONDS`) until the ban ends.
+
+## Rate limits
+
+Every request with an API key counts against its user's limits for the current UTC minute, hour and calendar month (see the tier table above). All of a user's keys share one set of limits. Over a limit, the API answers `429` with a `Retry-After` header: the seconds until that window resets (when several limits are used up, the longest wait). For example:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 34
+
+{"detail": "Rate limit exceeded: 10 requests per minute on the basic tier"}
+```
+
+- **What counts:** every request on the data endpoints, `/modifications`, `/deletions`, `/metadata` and `/sync` that passes the key check, whatever its status (a `404`, `422` or dataset-building `503` counts). Refused (`429`) requests, unknown keys, a non-admin's refused `/sync`, `/portal` and `/health` do not count. Unlimited tiers are counted but never refused.
+- **Fixed windows:** the counters reset at the start of each minute, hour and month, so a client can make up to twice the per-minute limit across a minute boundary.
+- **Redis and Postgres:** Redis holds the live counters. Every `USAGE_FLUSH_SECONDS` (5 minutes) the request counts per key and hour are copied to `app.api_key_usage`, along with each key's `last_used_at`. If Redis loses its data, each user's hour and month counters are rebuilt from there on their next request, so at most the last few minutes of usage are lost. Prod Redis also appends to disk every second.
+- **Redis down:** requests keep being limited and counted in the app's memory, starting from each user's stored usage, and the counts still reach Postgres. When Redis is back, the affected users' counters are rebuilt to include the outage. `/health` reports Redis as `error` meanwhile. Without `REDIS_URL`, nothing is limited or counted (startup logs a warning).
+- **Studio:** the view `app.monthly_usage` shows each user's requests per month next to their monthly quota. It is up to one flush behind.
+
+`GET /portal/usage` (login token) shows the signed-in user's usage:
+- `current`: `minute`, `hour` and `month`, each with `used`, `limit` (null = unlimited) and `resets_at`. Live from Redis; with Redis down `live` is `false` and the counts come from memory or Postgres (`minute.used` may be null).
+- `daily`: requests per UTC day for the last `days` days (1-90, default 30), zero-filled, oldest first.
+- `keys`: active keys, and revoked keys used this month, with `requests_this_month`.
+
+`daily` and `keys` come from Postgres, so they are up to one flush behind.
 
 ## Daily Sync and Update Logic
 
@@ -271,7 +296,7 @@ This starts:
 - `kong` on port `8000`: Supabase Studio admin dashboard at `/` (basic auth `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`) and the Auth API at `/auth/v1`
 - `redis` (internal network) for rate limiting and quotas
 
-**Run one app instance only.** Keep a single `app` container with the image's single uvicorn worker: no `--workers`, no `docker compose up --scale app=N`, no second replica against the same database. The daily-update scheduler runs inside the process, so a second instance would run every sync twice. Upcoming rate limiting (phase 5) also keeps its API key cache and its fallback counters for Redis outages in process memory, so a second instance would let revoked keys work for up to 60 s longer and double the limits during a Redis outage.
+**Run one app instance only.** Keep a single `app` container with the image's single uvicorn worker: no `--workers`, no `docker compose up --scale app=N`, no second replica against the same database. The daily-update scheduler runs inside the process, so a second instance would run every sync twice. Rate limiting also keeps its API key cache and its fallback counters for Redis outages in process memory, so a second instance would let a key revoked on `/portal` keep working for up to `AUTH_CACHE_SECONDS` (60 s) longer and double the limits during a Redis outage.
 
 Supabase config (Kong routes, db init scripts) lives in `supabase/`. It is a trimmed copy of the upstream self-hosted stack; PostgREST, Realtime, Storage, Edge Functions and Analytics are not deployed.
 
@@ -324,7 +349,9 @@ Main runtime settings (environment variables):
 - `POSTGRES_PORT`
 - `POSTGRES_DB`
 - `POSTGRES_SCHEMA` (default `geonames`)
-- `REDIS_URL` (e.g. `redis://redis:6379/0`; reported by `/health` when set)
+- `REDIS_URL` (e.g. `redis://redis:6379/0`; rate limits and usage counting, reported by `/health`. Unset: nothing is limited)
+- `AUTH_CACHE_SECONDS` (default `60`; how long an API key lookup is cached, so role, tier, ban and Studio revoke changes apply within it; `0` turns the cache off)
+- `USAGE_FLUSH_SECONDS` (default `300`; how often request counts are copied from Redis to Postgres)
 - `JWT_SECRET` (Supabase Auth's JWT secret; required, used to verify login tokens on `/portal`)
 - `GEONAMES_URL`
 - `ENABLED_DATASETS`

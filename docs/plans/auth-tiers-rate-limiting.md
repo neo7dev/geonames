@@ -25,7 +25,7 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | 2. Schema split | Done | Geonames tables move to a `geonames` schema, kept separate from user data and Supabase's own tables | Tests show the tables in `geonames` and nothing left in `public` |
 | 3. Deploy image + compose | Done | Prod Dockerfile; root compose with the same services as dev, plus Redis; startup no longer waits for data loads; public `/health` | `docker compose up` brings it all up, `/health` returns 200, Studio opens |
 | 4. Auth + API keys | Done (merged to `main` 2026-10-09) | Tiers, roles and user tables; new signups get the default role (free); login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
-| 5. Rate limits + quota | Scoped (see Phase 5 scope) | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
+| 5. Rate limits + quota | Done (branch `phase-5-rate-limits`, not merged) | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
 | 6. Frontend | Not started | React + Vite + Tailwind + shadcn at `/ui`: signup/login (email, GitHub, Google), key management, usage page | Sign up, create a key, call the API, see the usage update |
 | 7. Ops (later) | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry | Image published to ghcr |
 
@@ -336,6 +336,22 @@ Built as scoped above, on `phase-4-auth`.
   - Tests only write rows they created (`a4494e2`); portal and Makefile cleanups (`f6e42da`, `70e7bc1`).
 - Ruff added as a dev dependency with pinned rules, codebase formatted, and `make predeploy` (lint, format, lockfile, all tests with Postgres) plus `make image-check` added (`159b52f`, `6c13f14`, `281b64c`).
 - Tests: 703 pass with `TEST_PG_DSN` set (`make tests-pg`). `make image-check` passes.
+
+### Phase 5: Rate limits + quota (`561c06a`..`5a5738e`)
+
+Built as scoped above, on `phase-5-rate-limits`, one commit per step: usage tables and view (`561c06a`), key lookup cache (`e1908a4`), Redis limiter (`e8870d7`), usage flush (`de4c8cd`), counter rebuild (`bab272f`), in-memory outage limiter (`e4ee8b6`), `/portal/usage` (`5a5738e`).
+
+- Changed from the scope:
+  - `require_admin` still depends on `require_api_key`. `/sync` takes `[require_admin, enforce_rate_limit]` instead (FastAPI runs the key lookup once), which avoids an import cycle and means a non-admin's refused `/sync` does not count.
+  - `Usage` (the per-key, per-hour counts) lives in `api/rate_limit.py`, shared by the outage limiter and the flush.
+  - If the rebuild query fails, the request goes through uncounted and the next request tries again.
+  - Regenerating `openapi.yaml` also picked up `per_minute` being nullable, which the snapshot had missed since `9a4d2b6e1c8f`.
+- Tests: 774 pass with `TEST_PG_DSN` and `TEST_REDIS_URL` set (`make tests-pg`). They use database 15 of the devcontainer Redis.
+- Smoke test (2026-10-09, devcontainer, `uvicorn` on 9500, seeded dev users):
+  - `DEV_API_KEY_FREE`: 10 × 200, then 429 with `Retry-After: 58` and the per-minute message. `/portal/usage` showed `minute.used = 10`, live.
+  - Role change: the cache's 60 s matches the minute window, so a free → dev change cannot be told apart from the minute resetting. Checked with free → admin on `GET /sync/{id}` instead: 403 until 60 s after the cached lookup, then 404.
+  - Redis stopped: 10 × 200 then 429 from memory, `/health` degraded, one warning. Redis started: the next call logged "Redis is back", the flush woke at once, wrote 12 requests and deleted the free user's counters; the next call rebuilt the month counter to 48 (47 flushed + 1). `FLUSHALL`: the next call rebuilt it from Postgres, dropping the one unflushed call, as designed.
+  - `app.monthly_usage` and `last_used_at` showed every dev user's flushed calls. Shutdown logged the final flush.
 
 ## Risks
 
