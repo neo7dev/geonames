@@ -286,7 +286,8 @@ services:
       - "3002:8043"
 
 # NGINX server to simulate slow downloads for testing the downloader's retry and timeout logic
-# Change download speed in nginx.conf (e.g. limit_rate 10m;) to simulate different network conditions
+# Change download speed with `make download-speed` (limit_rate in nginx.conf). nginx reloads
+# within 2 seconds of nginx.conf changing.
   slow-download-server:
     image: nginx:latest
     hostname: slow-download-server
@@ -298,6 +299,22 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
     ports:
       - "3003:80"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        conf=/etc/nginx/conf.d/default.conf
+        (
+          last=$$(md5sum $$conf)
+          while sleep 2; do
+            now=$$(md5sum $$conf)
+            if [ "$$now" != "$$last" ]; then
+              last=$$now
+              nginx -t -q && nginx -s reload
+            fi
+          done
+        ) &
+        exec nginx -g 'daemon off;'
 
 volumes:
   supabase-db-data:
