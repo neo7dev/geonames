@@ -293,7 +293,7 @@ Clean and minimal, green, light and dark. References from Mobbin (web):
 
 Rules:
 
-- **Color.** shadcn's CSS variables in OKLCH, neutral (zinc) grays plus one green for `--primary`, `--ring` and `--chart-1`. Light: primary green-700 (`oklch(0.527 0.154 150.069)`) with white text, 5:1 contrast, where green-600 would fall below AA. Dark: primary green-500 (`oklch(0.723 0.219 149.579)`) with green-950 text. Red (`--destructive`) only for revoke and errors; amber only for the key-shown-once warning. Every text and background pair meets WCAG AA in both themes.
+- **Color.** shadcn's CSS variables in OKLCH, shadcn's neutral grays plus one green for `--primary`, `--ring` and `--chart-1`. Light: primary green-700 (`oklch(0.527 0.154 150.069)`) with white text, 4.7:1 contrast, where green-600 would fall below AA. Dark: primary green-500 (`oklch(0.723 0.219 149.579)`) with green-950 text. Red (`--destructive`) only for revoke and errors; amber only for the key-shown-once warning. Every text and background pair meets WCAG AA in both themes.
 - **No gradients, no decorative shadows.** Surfaces are flat fills separated by 1 px borders; only dialogs and menus get a small shadow so they read as floating. No background images, no glass, no illustrations.
 - **Type.** Geist and Geist Mono, self-hosted through `@fontsource-variable` (no font CDN, which the CSP would block anyway). Mono for keys, prefixes and the curl example. Numbers in tables and stats use `tabular-nums`.
 - **Density.** 14 px base text, 8 px spacing grid, 0.5 rem radius, content up to 1100 px wide.

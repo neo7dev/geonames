@@ -105,6 +105,10 @@ build: tests sync
 run:
 	$(UV) run uvicorn geonames_server.api.app:app --host 0.0.0.0 --port 9500
 
+## Regenerate openapi.yaml from the app's routes (then make ui-types)
+openapi:
+	$(UV) run python -m geonames_server.scripts.openapi
+
 ## Run the test suite (the *_pg.py tests skip without TEST_PG_DSN, the Redis tests
 ## without TEST_REDIS_URL; see tests-pg)
 tests: sync-dev
@@ -150,9 +154,10 @@ format-check:
 lock-check:
 	$(UV) lock --check
 
-## Run every check before deploying: lint, formatting, lockfile and all tests.
-## Run it in the devcontainer, then `make image-check` where Docker runs.
-predeploy: lint-check format-check lock-check tests-pg
+## Run every check before deploying: lint, formatting, lockfile and all tests,
+## for the API and the web UI. Run it in the devcontainer, then `make image-check`
+## where Docker runs.
+predeploy: lint-check format-check lock-check tests-pg ui-lint ui-test ui-types-check
 	@echo "predeploy: all checks passed"
 
 ## Remove caches and build artifacts
@@ -167,6 +172,40 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".ruff_cache" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
+
+##@ Frontend (web UI in frontend/, served at /ui)
+
+NPM = npm --prefix frontend
+
+## Install the web UI's packages from package-lock.json
+ui-install:
+	$(NPM) ci
+
+## Start the Vite dev server on 5173 (hot reload); it proxies the API on 9500
+ui-dev:
+	$(NPM) run dev
+
+## Build the web UI into frontend/dist, which the API serves at /ui
+ui-build:
+	$(NPM) run build
+
+## Lint and type-check the web UI
+ui-lint:
+	$(NPM) run lint
+
+## Run the web UI's tests once
+ui-test:
+	$(NPM) test
+
+## Regenerate the web UI's API types from openapi.yaml (after `make openapi`)
+ui-types:
+	$(NPM) run gen:api
+
+## Fail if the web UI's API types are out of date with openapi.yaml
+ui-types-check:
+	@cd frontend && npx openapi-typescript ../openapi.yaml -o node_modules/.tmp/schema.d.ts >/dev/null \
+		&& cmp -s node_modules/.tmp/schema.d.ts src/api/schema.d.ts \
+		|| { echo "ui-types-check: src/api/schema.d.ts is stale, run make ui-types"; exit 1; }
 
 ##@ Database
 
@@ -283,4 +322,4 @@ push-image: push-image-version
 push-image-version:
 	docker push $(IMAGE):$(VERSION)
 
-.PHONY: install install-dev help run tests tests-pg build lint lint-check format format-check lock-check predeploy clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version
+.PHONY: install install-dev help run tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version
