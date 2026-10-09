@@ -44,6 +44,10 @@ switch2prod:
 	@cp .env.prod .env
 	@echo "PRODUCTION ENVIRONMENT ACTIVE. Copied .env.prod to .env. Remember to set the appropriate environment variables in .env.prod."
 
+## Print fresh Supabase secrets (passwords, JWT secret, anon/service keys) for .env
+supabase-keys:
+	@$(PYTHON) supabase/generate-keys.py
+
 ## Copy .env.dev to .env
 switch2dev:
 	@cp .env.dev .env
@@ -183,4 +187,4 @@ push-image: push-image-version
 push-image-version:
 	docker push ghcr.io/neo7dev/$(APP_NAME):$(VERSION)
 
-.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade build-image build-image-version push-image push-image-version
+.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade build-image build-image-version push-image push-image-version

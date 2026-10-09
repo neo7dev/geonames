@@ -195,21 +195,13 @@ Create `.env` from example:
 cp .env.example .env
 ```
 
-Minimum variables to verify in `.env`:
+Generate the Supabase secrets and replace every `replace-with-make-supabase-keys` value in `.env` with the output (run it once; the anon and service keys are signed with that run's `JWT_SECRET`):
 
-```dotenv
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_DB=geonames
-GEONAMES_URL=https://download.geonames.org/export/dump/
-ENABLED_DATASETS=cities15000,cities5000,cities1000,cities500,allcountries
-MAX_RESULTS=1000
-SYNC_SCHEDULE_HOURS=3,15
-FORCE_REBUILD=false
-LOG_LEVEL=INFO
+```bash
+make supabase-keys
 ```
+
+Also set the public URLs (`SUPABASE_PUBLIC_URL`, `API_EXTERNAL_URL`, `SITE_URL`) and the SMTP settings for confirmation emails. Keep `POSTGRES_USER=postgres`, `POSTGRES_HOST=db` and `POSTGRES_DB=postgres`: Supabase expects that database name.
 
 ### 2) Build and Start
 
@@ -219,7 +211,11 @@ docker compose up --build
 
 This starts:
 - `app` (FastAPI on port `9500`)
-- `postgres` (internal network)
+- `db` (Supabase Postgres 17, internal network). Holds geonames data and Supabase auth
+- `auth` (Supabase Auth: signup, login, OAuth), `meta` and `studio`
+- `kong` on port `8000`: Supabase Studio admin dashboard at `/` (basic auth `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`) and the Auth API at `/auth/v1`
+
+Supabase config (Kong routes, db init scripts) lives in `supabase/`. It is a trimmed copy of the upstream self-hosted stack; PostgREST, Realtime, Storage, Edge Functions and Analytics are not deployed.
 
 ### 3) Verify Service Health
 
@@ -245,7 +241,7 @@ docker compose logs -f app
 docker compose down
 ```
 
-Remove volumes too (deletes local DB/data/log volumes):
+Remove volumes too (deletes the database, including Supabase auth users, plus data/log volumes):
 
 ```bash
 docker compose down -v
