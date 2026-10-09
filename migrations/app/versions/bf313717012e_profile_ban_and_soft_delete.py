@@ -64,16 +64,25 @@ FOR EACH ROW EXECUTE FUNCTION app.sync_profile_from_auth_user()
 """
 
 
-def _has_signup_trigger() -> bool:
-    return (
-        op.get_bind().scalar(
-            sa.text(
-                "SELECT count(*) FROM pg_trigger WHERE tgname = 'app_sync_profile' "
-                "AND tgrelid = to_regclass('auth.users')"
-            )
-        )
-        > 0
-    )
+# Only where the signup trigger is installed; without it, startup installs the
+# current one once auth.users exists. Checked by the server, so offline (--sql)
+# scripts work too.
+def _if_signup_trigger(*statements: str) -> str:
+    body = "\n".join(f"EXECUTE {_literal(sql)};" for sql in statements)
+    return f"""
+    DO $do$ BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_trigger
+            WHERE tgname = 'app_sync_profile' AND tgrelid = to_regclass('auth.users')
+        ) THEN
+            {body}
+        END IF;
+    END $do$
+    """
+
+
+def _literal(sql: str) -> str:
+    return "'" + sql.replace("'", "''") + "'"
 
 
 def upgrade() -> None:
@@ -83,19 +92,17 @@ def upgrade() -> None:
     op.add_column(
         "profiles", sa.Column("deleted_at", sa.DateTime(timezone=True)), schema=SCHEMA
     )
-    # Without auth.users, startup installs the trigger once it exists.
-    if _has_signup_trigger():
-        op.execute(SYNC_PROFILE_FUNCTION)
-        op.execute(SYNC_PROFILE_TRIGGER)
-        op.execute(
+    op.execute(
+        _if_signup_trigger(
+            SYNC_PROFILE_FUNCTION,
+            SYNC_PROFILE_TRIGGER,
             "UPDATE app.profiles p SET banned_until = u.banned_until, "
-            "deleted_at = u.deleted_at FROM auth.users u WHERE u.id = p.id"
+            "deleted_at = u.deleted_at FROM auth.users u WHERE u.id = p.id",
         )
+    )
 
 
 def downgrade() -> None:
-    if _has_signup_trigger():
-        op.execute(OLD_SYNC_PROFILE_TRIGGER)
-        op.execute(OLD_SYNC_PROFILE_FUNCTION)
+    op.execute(_if_signup_trigger(OLD_SYNC_PROFILE_TRIGGER, OLD_SYNC_PROFILE_FUNCTION))
     op.drop_column("profiles", "deleted_at", schema=SCHEMA)
     op.drop_column("profiles", "banned_until", schema=SCHEMA)

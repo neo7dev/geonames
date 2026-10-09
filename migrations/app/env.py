@@ -54,6 +54,7 @@ def run_migrations_offline() -> None:
     )
 
     with context.begin_transaction():
+        context.execute(f"CREATE SCHEMA IF NOT EXISTS {APP_SCHEMA}")
         context.run_migrations()
 
 

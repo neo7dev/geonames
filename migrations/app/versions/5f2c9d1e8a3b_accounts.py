@@ -17,7 +17,7 @@ Create Date: 2026-10-09 22:00:00.000000
 from typing import Sequence, Union
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 from geonames_server.log.mylogger import get_logger
 
@@ -69,6 +69,10 @@ FOR EACH ROW EXECUTE FUNCTION app.sync_profile_from_auth_user()
 
 
 def _has_auth_users() -> bool:
+    # An offline (--sql) script cannot ask; server startup links profiles once
+    # auth.users exists (database/auth_link.py).
+    if context.is_offline_mode():
+        return False
     return op.get_bind().scalar(sa.text("SELECT to_regclass('auth.users')")) is not None
 
 
@@ -190,8 +194,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if _has_auth_users():
-        op.execute("DROP TRIGGER IF EXISTS app_sync_profile ON auth.users")
+    # Decided by the server, so offline (--sql) scripts drop the trigger too.
+    op.execute(
+        """
+        DO $$ BEGIN
+            IF to_regclass('auth.users') IS NOT NULL THEN
+                DROP TRIGGER IF EXISTS app_sync_profile ON auth.users;
+            END IF;
+        END $$
+        """
+    )
     op.execute("DROP FUNCTION IF EXISTS app.sync_profile_from_auth_user()")
     op.drop_table("api_keys", schema=SCHEMA)
     op.drop_table("profiles", schema=SCHEMA)

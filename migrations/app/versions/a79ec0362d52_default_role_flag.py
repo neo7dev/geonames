@@ -80,14 +80,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Back to a fixed default: whichever role is the default now.
-    default_role = op.get_bind().scalar(sa.text("SELECT app.default_role()"))
-    op.alter_column(
-        "profiles",
-        "role",
-        existing_type=sa.Text(),
-        server_default=default_role,
-        schema=SCHEMA,
+    # Back to a fixed default: whichever role is the default now. Looked up by
+    # the server, so offline (--sql) scripts work too.
+    op.execute(
+        """
+        DO $$ BEGIN
+            EXECUTE format(
+                'ALTER TABLE app.profiles ALTER COLUMN role SET DEFAULT %L',
+                app.default_role()
+            );
+        END $$
+        """
     )
     op.execute("DROP TRIGGER IF EXISTS roles_one_default ON app.roles")
     op.execute("DROP FUNCTION IF EXISTS app.check_one_default_role()")

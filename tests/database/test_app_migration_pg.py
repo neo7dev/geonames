@@ -8,6 +8,7 @@ trigger against the Supabase database.
 
 from __future__ import annotations
 
+import io
 import os
 from unittest.mock import patch
 
@@ -231,3 +232,31 @@ def test_linking_is_skipped_without_auth_users():
             assert not link_profiles_to_auth(conn)
     finally:
         engine.dispose()
+
+
+def _offline_sql(*args) -> str:
+    """The SQL script `alembic -n app upgrade/downgrade --sql` prints."""
+    cfg = _config()
+    cfg.output_buffer = io.StringIO()
+    getattr(command, args[0])(cfg, args[1], sql=True)
+    return cfg.output_buffer.getvalue()
+
+
+def _run_script(script: str) -> None:
+    conn = psycopg2.connect(DSN)
+    conn.autocommit = True  # the script has its own BEGIN / COMMIT
+    try:
+        with conn.cursor() as cur:
+            cur.execute(script)  # no parameters, so % is not a placeholder
+    finally:
+        conn.close()
+
+
+def test_offline_scripts_build_and_remove_the_schema():
+    _run_script(_offline_sql("upgrade", "head"))
+    assert _tables(APP_SCHEMA) == APP_TABLES
+    assert _query("SELECT name FROM app.roles WHERE is_default") == [("free",)]
+
+    _run_script(_offline_sql("downgrade", "head:base"))
+    # Offline downgrades to base drop the version table as well
+    assert _tables(APP_SCHEMA) == set()
