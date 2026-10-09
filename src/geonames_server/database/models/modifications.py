@@ -15,10 +15,10 @@ from geonames_server.database.models.geobase import GeoBase
 class Modifications(GeoBase):
     __tablename__ = "modifications"
 
+    # Not unique on its own: a place can be modified on several days.
     geonameid: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
-        unique=True,
         sort_order=-1,
     )
 

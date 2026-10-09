@@ -209,12 +209,6 @@ def test_city_dataset_only_gets_rows_above_its_population_threshold(engine, remo
     assert _names(engine, Cities5000) == {2: "Town"}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=daily_update.DailyUpdateError,
-    reason="modifications has UNIQUE (geonameid) and is never cleared, so a place "
-    "modified on a second day cannot be staged",
-)
 def test_missed_days_are_replayed_in_order(engine, remote):
     _seed_rows(engine, AllCountries, [_geo(1, "Original"), _geo(2, "Keep2")])
     _seed_metadata(remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=3))

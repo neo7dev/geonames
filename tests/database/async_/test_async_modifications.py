@@ -53,13 +53,14 @@ class TestAsyncModificationsCRUD:
         with pytest.raises(Exception):
             await repo.add(_make_modification())
 
-    @pytest.mark.filterwarnings("ignore::sqlalchemy.exc.SAWarning")
-    async def test_same_geonameid_different_dates_rejected_by_unique(self, async_session):
-        """GeoBase defines geonameid with unique=True."""
+    async def test_same_geonameid_different_dates_allowed(self, async_session):
+        """A place can be modified on several days; the key is (geonameid, date)."""
         repo = self._repo(async_session)
         await repo.add(_make_modification(modification_date=date(2025, 7, 1)))
-        with pytest.raises(Exception):
-            await repo.add(_make_modification(modification_date=date(2025, 7, 2)))
+        await repo.add(_make_modification(modification_date=date(2025, 7, 2)))
+
+        assert await repo.get_by_id((8000001, date(2025, 7, 1))) is not None
+        assert await repo.get_by_id((8000001, date(2025, 7, 2))) is not None
 
     async def test_different_geonameid_same_date(self, async_session):
         repo = self._repo(async_session)

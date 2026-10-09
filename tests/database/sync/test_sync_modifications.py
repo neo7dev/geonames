@@ -107,13 +107,14 @@ class TestModificationsCRUD:
         with pytest.raises(Exception):
             repo.add(_make_modification())
 
-    @pytest.mark.filterwarnings("ignore::sqlalchemy.exc.SAWarning")
-    def test_same_geonameid_different_dates_rejected_by_unique(self, sync_session):
-        """GeoBase defines geonameid with unique=True, so duplicate geonameid raises even with different dates."""
+    def test_same_geonameid_different_dates_allowed(self, sync_session):
+        """A place can be modified on several days; the key is (geonameid, date)."""
         repo = self._repo(sync_session)
         repo.add(_make_modification(modification_date=date(2025, 7, 1)))
-        with pytest.raises(Exception):
-            repo.add(_make_modification(modification_date=date(2025, 7, 2)))
+        repo.add(_make_modification(modification_date=date(2025, 7, 2)))
+
+        assert repo.get_by_id((8000001, date(2025, 7, 1))) is not None
+        assert repo.get_by_id((8000001, date(2025, 7, 2))) is not None
 
     def test_different_geonameid_same_date(self, sync_session):
         repo = self._repo(sync_session)
