@@ -27,12 +27,17 @@ declare -A FILES=(
 )
 
 # ENABLED_DATASETS from .env (or .env.dev), lowercased, used as the default selection.
+# Prints nothing if neither file sets it.
 enabled_datasets() {
-    local env_file
+    local env_file value
     for env_file in "${ROOT}/.env" "${ROOT}/.env.dev"; do
-        if [ -f "$env_file" ]; then
-            grep -iE '^[[:space:]]*ENABLED_DATASETS[[:space:]]*=' "$env_file" \
-                | head -1 | sed -E 's/^[^=]*=//' | tr -d '"[:space:]' | tr '[:upper:]' '[:lower:]'
+        [ -f "$env_file" ] || continue
+        # grep fails when the file has no ENABLED_DATASETS line; under pipefail that
+        # would end the script, so try the next file instead.
+        value="$(grep -iE '^[[:space:]]*ENABLED_DATASETS[[:space:]]*=' "$env_file" \
+            | head -1 | sed -E 's/^[^=]*=//' | tr -d '"[:space:]' | tr '[:upper:]' '[:lower:]')" || true
+        if [ -n "$value" ]; then
+            echo "$value"
             return
         fi
     done
