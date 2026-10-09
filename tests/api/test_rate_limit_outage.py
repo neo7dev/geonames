@@ -364,6 +364,37 @@ async def test_a_rebuild_and_the_reconcile_add_the_outage_calls_once(
 
 
 @pytest.mark.asyncio
+async def test_a_rebuild_that_loses_to_another_keeps_the_outage_calls_for_the_reconcile(
+    auth_client,
+    limiter,
+    break_redis,
+    redis,
+    session_factory,
+    make_user,
+    make_key,
+    clock,
+):
+    user_id = await make_user("free")
+    key = await make_key(user_id)
+    assert await _calls(auth_client, key, 3) == [200] * 3  # In memory
+    await flush_usage(limiter, session_factory)
+    # Another request rebuilt the counters first, without the outage calls
+    windows = Windows.at(clock.now)
+    _, hour_key, month_key = windows.counter_keys(user_id)
+    await redis.set(month_key, 5)
+    await redis.set(hour_key, 2)
+
+    assert await limiter._rebuild(SimpleNamespace(user_id=user_id), windows, clock.now)
+
+    assert (await _counters(redis, user_id, clock.now))[1:] == [2, 5]
+    # Not sent, so the reconcile adds them instead
+    assert limiter.local.users == {user_id}
+    assert await limiter.reconcile() == 1
+    assert (await _counters(redis, user_id, clock.now))[1:] == [5, 8]
+    assert limiter.local.users == set()
+
+
+@pytest.mark.asyncio
 async def test_calls_counted_in_memory_during_the_reconcile_are_kept(
     auth_client,
     limiter,

@@ -147,6 +147,38 @@ async def test_a_batch_written_before_is_only_deleted(
 
 
 @pytest.mark.asyncio
+async def test_a_listed_batch_that_is_gone_is_unlisted(
+    redis, session_factory, async_session
+):
+    # Its hash expired or was evicted: nothing to write, only the listing to drop
+    await redis.sadd(BATCHES, f"{FLUSHING_PREFIX}gone")
+
+    assert await _flush(redis, session_factory) == 0
+
+    assert await redis.keys("usage:*") == []
+    assert (
+        await async_session.scalar(
+            select(UsageFlush).where(UsageFlush.batch == f"{FLUSHING_PREFIX}gone")
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_counts_without_a_last_use_leave_last_used_at_alone(
+    redis, session_factory, async_session, make_user, make_key, clock
+):
+    _, key_id = await _key(make_user, make_key, async_session)
+    await redis.hset(USAGE_PENDING, f"n:{key_id}:{int(clock.now) // 3600}", 2)
+
+    assert await _flush(redis, session_factory) == 2
+
+    assert await _usage_rows(async_session, key_id) == [(_hour(clock.now), 2)]
+    key = await async_session.get(ApiKey, key_id, populate_existing=True)
+    assert key.last_used_at is None
+
+
+@pytest.mark.asyncio
 async def test_a_deleted_keys_counts_are_dropped(
     redis, session_factory, async_session, make_user, make_key, clock
 ):

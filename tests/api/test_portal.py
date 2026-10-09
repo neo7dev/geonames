@@ -3,9 +3,11 @@
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 from redis.asyncio import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import DBAPIError
 
@@ -536,6 +538,28 @@ class TestUsage:
         assert body["live"] is False
         used = [body["current"][w]["used"] for w in ("minute", "hour", "month")]
         assert used == [2, 2, 2]
+
+    @pytest.mark.asyncio
+    async def test_when_redis_fails_on_the_usage_read_the_flushed_usage_shows(
+        self, auth_client, limiter, async_session, login, make_key, clock
+    ):
+        user_id, headers = await login("free")
+        await make_key(user_id)
+        await _flushed(
+            async_session,
+            (await _key_id(async_session, user_id), _utc(2026, 10, 9, 12), 5),
+        )
+
+        with patch.object(
+            limiter.redis, "mget", side_effect=RedisConnectionError("Redis is down")
+        ):
+            body = (await _usage(auth_client, headers)).json()
+
+        assert body["live"] is False
+        used = [body["current"][w]["used"] for w in ("minute", "hour", "month")]
+        assert used == [None, 5, 5]
+        # Later reads skip Redis until the backoff ends
+        assert limiter.outage
 
     @pytest.mark.asyncio
     async def test_without_redis_the_flushed_usage_shows(
