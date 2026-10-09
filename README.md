@@ -13,14 +13,22 @@ At startup, the app:
 ## What Data This Service Hosts
 
 The API serves these datasets:
-- `allcountries`
-- `cities500`
-- `cities1000`
-- `cities5000`
-- `cities15000`
-- `modifications` (daily changed rows)
-- `deletions` (daily deleted rows)
-- dataset metadata + sync status endpoints
+
+| Dataset key | Contents | Source file |
+|---|---|---|
+| `allcountries` | Every place in GeoNames (about 13M rows, ~420 MB zipped) | https://download.geonames.org/export/dump/allCountries.zip |
+| `cities500` | Cities with population > 500, or seats of administrative divisions | https://download.geonames.org/export/dump/cities500.zip |
+| `cities1000` | Cities with population > 1,000 | https://download.geonames.org/export/dump/cities1000.zip |
+| `cities5000` | Cities with population > 5,000 | https://download.geonames.org/export/dump/cities5000.zip |
+| `cities15000` | Cities with population > 15,000 (about 34k rows) | https://download.geonames.org/export/dump/cities15000.zip |
+
+Choose which datasets to load with `ENABLED_DATASETS` (comma-separated, case-insensitive, e.g. `cities15000,cities5000,allCountries`). Dataset definitions live in `src/geonames_server/ingestion/registry.py`.
+
+Daily update files, applied to every enabled dataset:
+- `modifications` (daily changed rows): `https://download.geonames.org/export/dump/modifications-YYYY-MM-DD.txt`
+- `deletions` (daily deleted rows): `https://download.geonames.org/export/dump/deletes-YYYY-MM-DD.txt`
+
+Also exposed: dataset metadata and sync status endpoints.
 
 ## How Endpoints Work
 
@@ -283,3 +291,12 @@ Please keep proper attribution to GeoNames in downstream uses of this data and r
 - Ingestion and sync logic lives under `src/geonames_server/ingestion`.
 - Alembic migrations are under `migrations/`.
 - A generated OpenAPI snapshot is in `openapi.yaml`.
+
+### Simulated downloads in development
+
+In the devcontainer, `.env.dev` sets `GEONAMES_URL` to `http://slow-download-server:80/`, so the app does not download from geonames.org. To simulate a real download, the `slow-download-server` service (nginx) serves the local zipped files from `gostatic/` at a throttled speed:
+
+- Put the files you need in `gostatic/` using the same names as on geonames.org, e.g. `gostatic/cities15000.zip`, `gostatic/allCountries.zip`, and any `modifications-YYYY-MM-DD.txt` / `deletes-YYYY-MM-DD.txt` files you want to test daily updates with. `gostatic/` is git-ignored.
+- The download speed is set by `limit_rate` in `.devcontainer/nginx.conf` (currently `10m`, i.e. 10 MB/s per connection). Lower it to test the downloader's retry and timeout handling.
+- The same folder is also served without throttling by the `gostatic` service at http://localhost:3002.
+- To download from geonames.org instead, set `GEONAMES_URL = "https://download.geonames.org/export/dump/"` in `.env`.
