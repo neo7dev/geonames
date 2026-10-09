@@ -5,6 +5,7 @@ Needs TEST_REDIS_URL and the Supabase database the other API tests use.
 """
 
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -289,6 +290,55 @@ async def test_a_rebuild_and_the_reconcile_add_the_outage_calls_once(
     await flush_usage(redis, session_factory, limiter)
 
     assert await _counters(redis, user_id, clock.now) == [1, 4, 4]
+
+
+@pytest.mark.asyncio
+async def test_calls_counted_in_memory_during_the_reconcile_are_kept(
+    auth_client,
+    limiter,
+    break_redis,
+    redis,
+    session_factory,
+    make_user,
+    make_key,
+    clock,
+):
+    user_id = await make_user("free")
+    key = await make_key(user_id)
+    break_redis.broken = False
+    await _calls(auth_client, key, 1)  # In Redis
+    break_redis.broken = True
+    await _calls(auth_client, key, 2)  # In memory
+    break_redis.broken = False
+    clock.now += BACKOFF_SECONDS
+    await _calls(auth_client, key, 1)
+
+    # Redis flaps while the flush adds the outage calls: one more call in memory
+    real_add = limiter._add_script
+
+    async def add_during_a_flap(**kwargs):
+        windows = Windows.at(clock.now)
+        principal = SimpleNamespace(
+            user_id=user_id,
+            key_id=uuid.uuid4(),
+            per_minute=None,
+            per_hour=None,
+            per_month=None,
+        )
+        limiter.local.hit(principal, windows, clock.now)
+        return await real_add(**kwargs)
+
+    with patch.object(limiter, "_add_script", side_effect=add_during_a_flap):
+        await flush_usage(redis, session_factory, limiter)
+    assert (await _counters(redis, user_id, clock.now))[2] == 4
+    # Not sent yet, so not forgotten
+    assert limiter.local.users == {user_id}
+    assert limiter.local.unsent(user_id, Windows.at(clock.now)) == [1, 1, 1]
+
+    # The next flush writes it to Postgres, then adds it
+    await flush_usage(redis, session_factory, limiter)
+    assert (await _counters(redis, user_id, clock.now))[2] == 5
+    assert limiter.local.users == set()
 
 
 @pytest.mark.asyncio

@@ -268,11 +268,21 @@ class LocalLimiter:
         """Put back usage that could not be written."""
         self.usage.add(usage)
 
-    def forget(self, user_id) -> None:
-        """Drop a user whose requests are in Redis now.
+    def mark_sent(self, user_id, windows: Windows, sent: list[int]) -> None:
+        """Note that sent (from unsent) reached the user's Redis counters.
 
-        Their in-memory counters go too: a later outage starts again from Postgres.
+        A user with nothing more to send is forgotten, in-memory counters too:
+        a later outage starts again from Postgres. Requests counted meanwhile
+        keep the user for the next reconcile.
         """
+        keys = windows.counter_keys(user_id)
+        for key, n in zip(keys, sent):
+            if key in self._counts:
+                self._counts[key][2] -= n
+        if not any(self.unsent(user_id, windows)):
+            self._forget(user_id)
+
+    def _forget(self, user_id) -> None:
         self.users.discard(user_id)
         prefix = f"rl:{user_id}:"
         for key in [k for k in self._counts if k.startswith(prefix)]:
@@ -404,12 +414,13 @@ class RateLimiter:
                     user_id, windows
                 ):
                     counts = self.local.counts(user_id, windows)
+                    unsent = self.local.unsent(user_id, windows)
                     async with self.redis.pipeline(transaction=False) as pipe:
                         for key, count, ttl in reversed(list(zip(keys, counts, ttls))):
                             pipe.set(key, count, nx=True, ex=ttl)
                         month_set, *_ = await pipe.execute()
                     if month_set:
-                        self.local.forget(user_id)
+                        self.local.mark_sent(user_id, windows, unsent)
                     return True
         stored = await self._stored_usage(user_id, windows)
         if stored is None:
@@ -424,28 +435,28 @@ class RateLimiter:
     async def reconcile(self) -> int:
         """Add the outage users' in-memory requests to their Redis counters.
 
-        Call once their usage is in Postgres: a user whose month counter is
-        missing is only dropped, and rebuilt from Postgres on their next request.
-        Returns the users reconciled.
+        Waits until all in-memory usage is in Postgres: a user whose month
+        counter is missing is only dropped, and rebuilt from Postgres on their
+        next request. Returns the users reconciled.
         """
         async with self._moving:
-            users = list(self.local.users)
-            if not users:
+            if not self.local.users or self.local.usage:
                 return 0
             now = _now()
             windows = Windows.at(now)
             ttls = windows.ttls(now)
+            sent = {u: self.local.unsent(u, windows) for u in self.local.users}
             async with self.redis.pipeline(transaction=False) as pipe:
-                for user_id in users:
+                for user_id, unsent in sent.items():
                     await self._add_script(
                         keys=windows.counter_keys(user_id),
-                        args=[*self.local.unsent(user_id, windows), *ttls],
+                        args=[*unsent, *ttls],
                         client=pipe,
                     )
                 await pipe.execute()
-            for user_id in users:
-                self.local.forget(user_id)
-            return len(users)
+            for user_id, unsent in sent.items():
+                self.local.mark_sent(user_id, windows, unsent)
+            return len(sent)
 
     async def hit(self, principal: Principal, now: float) -> int | None:
         """Count a request; return the exhausted window (0-2) instead if any."""
