@@ -181,7 +181,7 @@ Every signup gets the `free` role. Roles map to tiers, and each tier caps how ma
 | pro | dev | 5 |
 | max | sr_dev, admin | unlimited |
 
-Tiers, roles and the role -> tier mapping are rows in the `app` schema (`app.tiers`, `app.roles`), editable in Studio. Admin access (`/sync`) comes from `app.roles.is_admin`. To change a user's role, edit their row in `app.profiles` in Studio; it applies on their next request. To make the first admin, sign up, then set that profile's `role` to `admin`.
+Tiers, roles and the role -> tier mapping are rows in the `app` schema (`app.tiers`, `app.roles`), editable in Studio. The read-only view `app.user_tiers` shows every user's role, tier, limits (empty = unlimited) and active/revoked key counts in one table (Studio: Table Editor, schema `app`). Admin access (`/sync`) comes from `app.roles.is_admin`. To change a user's role, edit their row in `app.profiles` in Studio; it applies on their next request. To make the first admin, sign up, then set that profile's `role` to `admin`.
 
 In the devcontainer, `make seed-users` (also run on every container start) creates one confirmed user per tier, all with password `dev-password`, each with a real API key kept in `.env.dev` (and so in `.env` after `make switch2dev`):
 

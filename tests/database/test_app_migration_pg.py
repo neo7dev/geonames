@@ -120,12 +120,29 @@ def test_api_roles_get_no_access():
     assert grants == []
 
 
+def test_user_tiers_view_checks_the_callers_privileges():
+    command.upgrade(_config(), "head")
+
+    assert _query(
+        "SELECT reloptions FROM pg_class WHERE oid = 'app.user_tiers'::regclass"
+    ) == [(["security_invoker=true"],)]
+    assert _query("SELECT count(*) FROM app.user_tiers") == [(0,)]
+    grants = _query(
+        "SELECT grantee FROM information_schema.role_table_grants "
+        "WHERE table_schema = %s AND table_name = 'user_tiers' AND grantee = ANY(%s)",
+        APP_SCHEMA,
+        list(API_ROLES),
+    )
+    assert grants == []
+
+
 def test_downgrade_and_upgrade_again():
     cfg = _config()
     command.upgrade(cfg, "head")
 
     command.downgrade(cfg, "base")
     assert _tables(APP_SCHEMA) == {"alembic_version"}
+    assert _query("SELECT to_regclass('app.user_tiers')") == [(None,)]
 
     command.upgrade(cfg, "head")
     assert _tables(APP_SCHEMA) == APP_TABLES
