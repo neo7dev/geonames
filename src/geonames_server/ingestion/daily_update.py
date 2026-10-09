@@ -375,8 +375,14 @@ def _set_last_applied(name: str, day: date) -> None:
             record.last_applied_date = day
 
 
-def _stage_day(day: date, on_step: Callable[[SyncStep], None]) -> bool:
-    """Download and stage *day*'s files. Returns False if neither is published."""
+def _stage_day(
+    day: date, on_step: Callable[[SyncStep], None], allow_partial: bool = False
+) -> bool:
+    """Download and stage *day*'s files.
+
+    Returns False (nothing staged) if the day is not published: neither file
+    exists, or only one does and *allow_partial* is False.
+    """
     mod_file = f"modifications-{day.isoformat()}.txt"
     del_file = f"deletes-{day.isoformat()}.txt"
 
@@ -387,6 +393,13 @@ def _stage_day(day: date, on_step: Callable[[SyncStep], None]) -> bool:
             on_step(SyncStep.DOWNLOADING_DELETES)
             del_path = _download_daily_file(client, del_file)
 
+        if mod_path is None and del_path is None:
+            return False
+        if mod_path is None or del_path is None:
+            if not allow_partial:
+                return False
+            log.warning(f"Only one daily file published for {day}; applying it alone")
+
         if mod_path is not None:
             on_step(SyncStep.INGESTING_MODIFICATIONS)
             _ingest_daily_file(mod_path, Modifications)
@@ -396,7 +409,7 @@ def _stage_day(day: date, on_step: Callable[[SyncStep], None]) -> bool:
     except Exception as e:
         raise DailyUpdateError(f"Failed to stage daily files for {day}: {e}") from e
 
-    return mod_path is not None or del_path is not None
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +444,9 @@ def apply_daily_updates(
             continue
 
         log.info(f"Applying daily files for {day} to {[d.name for d in todo]}")
-        published = _stage_day(day, on_step)
+        # Yesterday may still be mid-upload, so it needs both files; an older
+        # day missing one will not get it later.
+        published = _stage_day(day, on_step, allow_partial=day < yesterday)
         if not published:
             if day >= yesterday:
                 log.info(f"Daily files for {day} not published yet — will retry")

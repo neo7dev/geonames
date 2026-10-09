@@ -578,6 +578,8 @@ class TestApplyDailyUpdates:
 
         staged = [c.args[0] for c in engine["_stage_day"].call_args_list]
         assert staged == [date(2026, 3, 16), date(2026, 3, 17), Y]
+        partial = [c.kwargs["allow_partial"] for c in engine["_stage_day"].call_args_list]
+        assert partial == [True, True, False]
         advanced = [c.args[1] for c in engine["_set_last_applied"].call_args_list]
         assert advanced == staged
         engine["_sync_metadata"].assert_called_once_with([ds])
@@ -714,6 +716,28 @@ class TestStageDay:
     @patch(f"{MODULE}.RemoteFileClient")
     def test_returns_false_when_nothing_published(self, _rfc, _dl):
         assert _stage_day(Y, lambda _s: None) is False
+
+    @patch(f"{MODULE}._ingest_deletions_file")
+    @patch(f"{MODULE}._ingest_daily_file")
+    @patch(f"{MODULE}._download_daily_file")
+    @patch(f"{MODULE}.RemoteFileClient")
+    def test_half_published_day_is_not_staged(self, _rfc, mock_dl, mock_mod, mock_del):
+        mock_dl.side_effect = [Path("/tmp/m.txt"), None]
+        assert _stage_day(Y, lambda _s: None) is False
+        mock_mod.assert_not_called()
+        mock_del.assert_not_called()
+
+    @patch(f"{MODULE}._ingest_deletions_file")
+    @patch(f"{MODULE}._ingest_daily_file")
+    @patch(f"{MODULE}._download_daily_file")
+    @patch(f"{MODULE}.RemoteFileClient")
+    def test_half_published_day_is_staged_when_partial_allowed(
+        self, _rfc, mock_dl, mock_mod, mock_del
+    ):
+        mock_dl.side_effect = [Path("/tmp/m.txt"), None]
+        assert _stage_day(Y, lambda _s: None, allow_partial=True) is True
+        mock_mod.assert_called_once()
+        mock_del.assert_not_called()
 
     @patch(f"{MODULE}._download_daily_file", side_effect=RuntimeError("net"))
     @patch(f"{MODULE}.RemoteFileClient")
