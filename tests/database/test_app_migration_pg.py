@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import os
+import threading
 from unittest.mock import patch
 
 import psycopg2
@@ -260,3 +261,36 @@ def test_offline_scripts_build_and_remove_the_schema():
     _run_script(_offline_sql("downgrade", "head:base"))
     # Offline downgrades to base drop the version table as well
     assert _tables(APP_SCHEMA) == set()
+
+
+def test_app_migrations_wait_for_the_migration_lock():
+    engine = create_engine(
+        "postgresql+psycopg2://",
+        creator=lambda: psycopg2.connect(DSN, options=settings.postgres_options),
+    )
+    holder = psycopg2.connect(DSN)
+    try:
+        with (
+            patch.object(
+                migrations, "_alembic_config", lambda section="alembic": _config(section)
+            ),
+            patch.object(migrations, "sync_engine", engine),
+        ):
+            with holder.cursor() as cur:
+                cur.execute("SELECT pg_advisory_lock(%s)", (migrations._MIGRATION_LOCK_KEY,))
+            worker = threading.Thread(target=migrations.upgrade_app_schema)
+            worker.start()
+
+            worker.join(timeout=1)
+            assert worker.is_alive()
+            assert _tables(APP_SCHEMA) == set()
+
+            with holder.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (migrations._MIGRATION_LOCK_KEY,))
+            worker.join(timeout=10)
+            assert not worker.is_alive()
+    finally:
+        holder.close()
+        engine.dispose()
+
+    assert _tables(APP_SCHEMA) == APP_TABLES

@@ -1,3 +1,6 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Connection, text
@@ -11,6 +14,10 @@ from geonames_server.log.mylogger import get_logger
 log = get_logger()
 
 _alembic_ini = settings.alembic_ini
+
+# pg_advisory_lock key held while migrating, so the server and `make
+# seed-users` starting together do not both create the same tables.
+_MIGRATION_LOCK_KEY = 0x67656F6E616D6573  # "geonames"
 
 
 def _app_relation_names() -> set[str]:
@@ -89,12 +96,32 @@ def _alembic_config(section: str = "alembic") -> Config:
     return cfg
 
 
-def upgrade_app_schema() -> None:
-    """Migrate the app (user data) chain, then link profiles to Supabase Auth if needed."""
+@contextmanager
+def _migration_lock() -> Iterator[None]:
+    """Wait for, then hold, the database-wide migration lock."""
+    with sync_engine.connect() as conn:
+        conn.execute(text("SELECT pg_advisory_lock(:key)"), {"key": _MIGRATION_LOCK_KEY})
+        conn.commit()
+        try:
+            yield
+        finally:
+            conn.execute(
+                text("SELECT pg_advisory_unlock(:key)"), {"key": _MIGRATION_LOCK_KEY}
+            )
+            conn.commit()
+
+
+def _upgrade_app_schema() -> None:
     command.upgrade(_alembic_config("app"), "head")
     with sync_engine.begin() as conn:
         if not link_profiles_to_auth(conn):
             log.warning("auth.users not found: app.profiles is not linked to Supabase Auth")
+
+
+def upgrade_app_schema() -> None:
+    """Migrate the app (user data) chain, then link profiles to Supabase Auth if needed."""
+    with _migration_lock():
+        _upgrade_app_schema()
 
 
 def db_migrations(force: bool = False) -> None:
@@ -108,12 +135,12 @@ def db_migrations(force: bool = False) -> None:
         extra={"alembic_ini": str(_alembic_ini), "force": force},
     )
 
-    if force:
-        _drop_all_tables()
-
     try:
-        command.upgrade(_alembic_config(), "head")
-        upgrade_app_schema()
+        with _migration_lock():
+            if force:
+                _drop_all_tables()
+            command.upgrade(_alembic_config(), "head")
+            _upgrade_app_schema()
         _check_search_path()
         log.info("Database migrations complete")
     except Exception as e:
