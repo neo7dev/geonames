@@ -168,6 +168,43 @@ db-app-downgrade:
 seed-users:
 	$(UV) run python -m geonames_server.scripts.seed_dev_users
 
+API_URL ?= http://localhost:9500
+
+# Call /metadata/ (needs a key, not a built dataset) with DEV_API_KEY_<$(1)> from .env
+define check_dev_key
+	@key=$$(sed -n 's/^DEV_API_KEY_$(1) *= *//p' .env); \
+	if [ -z "$$key" ]; then echo "DEV_API_KEY_$(1): not set in .env (copy it from .env.dev)"; exit 1; fi; \
+	code=$$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $$key" "$(API_URL)/metadata/"); \
+	case $$code in \
+		200) echo "DEV_API_KEY_$(1): ok" ;; \
+		000) echo "DEV_API_KEY_$(1): API not reachable at $(API_URL) (start it with make run)"; exit 1 ;; \
+		401) echo "DEV_API_KEY_$(1): rejected (401); run make seed-users"; exit 1 ;; \
+		*) echo "DEV_API_KEY_$(1): HTTP $$code"; exit 1 ;; \
+	esac
+endef
+
+## Check the free user's dev API key against the running API
+check-key-free:
+	$(call check_dev_key,FREE)
+
+## Check the tester user's dev API key against the running API
+check-key-tester:
+	$(call check_dev_key,TESTER)
+
+## Check the dev user's dev API key against the running API
+check-key-dev:
+	$(call check_dev_key,DEV)
+
+## Check the admin user's dev API key against the running API
+check-key-admin:
+	$(call check_dev_key,ADMIN)
+
+## Check all four dev API keys against the running API (API_URL=..., default http://localhost:9500)
+check-keys:
+	@fail=0; for role in free tester dev admin; do \
+		$(MAKE) -s --no-print-directory check-key-$$role 2>/dev/null || fail=1; \
+	done; exit $$fail
+
 ##@ GeoNames data
 
 ## Set slow-download-server speed (interactive)
@@ -207,4 +244,4 @@ push-image: push-image-version
 push-image-version:
 	docker push ghcr.io/neo7dev/$(APP_NAME):$(VERSION)
 
-.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users build-image build-image-version push-image push-image-version
+.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-key-free check-key-tester check-key-dev check-key-admin check-keys build-image build-image-version push-image push-image-version

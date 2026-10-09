@@ -32,6 +32,8 @@ KEY=$(sed -n 's/^DEV_API_KEY_FREE *= *//p' .env)
 curl -H "X-API-Key: $KEY" "http://localhost:9500/cities15000/?limit=5"
 ```
 
+With the API running (`make run`), `make check-keys` calls the API with all four keys and reports each as ok, rejected (rerun `make seed-users`) or unreachable; `make check-key-free` (or `-tester`, `-dev`, `-admin`) checks one. `API_URL=...` points them elsewhere.
+
 ## OAuth (optional)
 
 Create a GitHub and/or Google OAuth app with callback URL `http://localhost:8000/auth/v1/callback`, put the client id and secret in `.devcontainer/.env`, set `GITHUB_ENABLED` / `GOOGLE_ENABLED` to `true`, then recreate the `auth` service.
