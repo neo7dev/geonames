@@ -26,7 +26,7 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | 3. Deploy image + compose | Done | Prod Dockerfile; root compose with the same services as dev, plus Redis; startup no longer waits for data loads; public `/health` | `docker compose up` brings it all up, `/health` returns 200, Studio opens |
 | 4. Auth + API keys | Done (merged to `main` 2026-10-09) | Tiers, roles and user tables; new signups get the default role (free); login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
 | 5. Rate limits + quota | Done (branch `phase-5-rate-limits`, not merged) | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
-| 6. Frontend | Not started | React + Vite + Tailwind + shadcn at `/ui`: signup/login (email, GitHub, Google), key management, usage page | Sign up, create a key, call the API, see the usage update |
+| 6. Frontend | Scoped (below) | React + Vite + Tailwind + shadcn at `/ui`: signup/login with email + password (GitHub and Google later in the phase), key management, usage page | Sign up, create a key, call the API, see the usage update |
 | 7. Ops (later) | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry | Image published to ghcr |
 
 ## Tiers
@@ -240,15 +240,111 @@ With the seeded dev users (`make seed-users`): 11 calls in a row with `DEV_API_K
 7. `/portal/usage` and its tests.
 8. Makefile, env files, README, `openapi.yaml`, plan progress.
 
-## Phase 6 notes
+## Phase 6 scope
 
-- Layout: `frontend/` at the repo root with its own `package.json`. Makefile targets `ui-dev` (Vite dev server) and `ui-build`.
-- No Node at runtime. Vite builds static files at image build time and FastAPI serves them at `/ui`.
-- Dockerfile: a Node build stage runs `npm ci && npm run build`; the existing uv-based Python image copies its `dist/`.
-- Devcontainer: add the Node feature. In dev, the Vite dev server gives hot reload and proxies `/portal` and the API routes to uvicorn on 9500.
-- shadcn copies component source (Radix + Tailwind) into `frontend/src/components/ui/`; it is our code, not a dependency. Tailwind v4 through `@tailwindcss/vite`.
-- Auth: `supabase-js` in the browser handles signup, login and OAuth with GoTrue, then sends the login token to `/portal/*`.
-- CORS: GoTrue is reached through Kong (:8000) and the UI is served by the app (:9500), so browser calls to Auth are cross-origin. Allow the UI origin in Kong's `cors` plugin (already enabled), or in production put both behind one domain (`/` to the app, `/auth/v1` to Kong) and skip CORS.
+Branch `phase-6-frontend` from `main`.
+
+### Verified first (devcontainer stack, GoTrue v2.196.0, Kong 3.9.3, 2026-10-10)
+
+- **CORS needs no change.** Kong's `cors` plugin (no config) answers a preflight from `http://localhost:5173` for `POST /auth/v1/token` with `Access-Control-Allow-Origin: *` and echoes the requested headers (`apikey`, `authorization`, `content-type`, `x-client-info`, `x-supabase-api-version`). supabase-js sends its tokens in headers, not cookies, so `*` is enough.
+- **GoTrue says which logins are on.** `GET /auth/v1/settings` (with the `apikey` header) returns `external.email`, `external.github`, `external.google` and `disable_signup`. The UI reads `disable_signup` now, and the provider flags when OAuth is added ("Later in phase 6"); the app does not need the `*_ENABLED` settings.
+- **Redirects.** A signup with `redirect_to=http://localhost:5173/ui/auth/callback` and an empty `ADDITIONAL_REDIRECT_URLS` got a confirmation link that redirected (303) to that URL with `#access_token=...&refresh_token=...&type=signup` (implicit flow, tokens in the fragment). GoTrue allows any localhost redirect. A recovery request with `redirect_to=https://geo.example.com/...` fell back to `SITE_URL`, which is `http://localhost:9500`: a page that does not exist. So `SITE_URL` has to point at the UI, and production needs the UI's URL in `SITE_URL` or `ADDITIONAL_REDIRECT_URLS`.
+- Nothing answers on `/` or `/ui` today. The probe user was deleted afterwards.
+
+### Decisions
+
+- **One SPA, served by the app.** `frontend/` at the repo root: Vite + React + TypeScript, Tailwind v4 through `@tailwindcss/vite`, shadcn components copied into `frontend/src/components/ui/` (our code, not a dependency). `base: '/ui/'`. Node 24 LTS for building only; nothing Node runs in the image.
+- **Libraries.** `@supabase/supabase-js` (auth), `react-router` (routes under `basename="/ui"`), `@tanstack/react-query` (fetching, refetching the usage), `recharts` through shadcn's `chart` component (the daily chart), `openapi-typescript` (dev only) to generate `src/api/schema.d.ts` from `openapi.yaml`, so the portal types follow the backend. Nothing else without a reason in the commit.
+- **Config at runtime, not build time.** The browser needs the Supabase URL and the anon key. Baking them in with `VITE_*` would tie the image to one deployment's keys. Instead the app serves `GET /ui/config.json` → `{supabase_url, anon_key}` from two new settings, and the SPA fetches it before creating the Supabase client. The anon key is public by design: Kong only lets it reach `/auth/v1`, and the JWT check already rejects it on `/portal` (phase 4).
+- **Implicit flow (supabase-js default), not PKCE.** Verified above. With PKCE the code verifier lives in the browser that started the signup, so a confirmation link opened on a phone or another browser fails to log in. Implicit has no such catch, and the tokens come back in the URL fragment, which never reaches a server log. `detectSessionInUrl: true` picks them up on `/ui/auth/callback`.
+- **Session in `localStorage`** (supabase-js default), refreshed by supabase-js before it expires. That makes XSS the main risk, so `/ui` responses get a strict CSP (below), the bundle loads no third-party scripts, and no user content is rendered as HTML.
+- **Serving.** `GET /ui/{path}`: a file that exists under `UI_DIR` is returned; any other path without a file extension returns `index.html` so client routes survive a reload; a missing path with an extension (`/ui/assets/gone.js`) is a 404, not `index.html`. Paths are resolved and must stay under `UI_DIR`. `index.html` and `config.json` get `Cache-Control: no-cache`; `assets/*` (hashed names) get `public, max-age=31536000, immutable`. If `UI_DIR` has no `index.html` (tests, dev without a build), `/ui` answers 404 `UI not built: run make ui-build`, and startup logs it once at info. `GET /` redirects (307) to `/ui/`. None of these appear in the OpenAPI schema.
+- **Headers on `/ui`.** `Content-Security-Policy: default-src 'self'; connect-src 'self' <SUPABASE_PUBLIC_URL>; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` (Radix sets inline styles, hence `style-src 'unsafe-inline'`; scripts stay `'self'` only), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` (the callback URL holds tokens in its fragment; fragments are never sent, but no referrer is the safe default). The email links (and OAuth, later) are navigations, not fetches, so `connect-src` will not need the providers.
+- **`SITE_URL` points at the UI.** `http://localhost:9500/ui/` in every env file, so GoTrue's fallback redirect lands on a real page. The UI passes `emailRedirectTo` / `redirectTo` = `<origin>/ui/auth/callback` (and `/ui/update-password` for recovery), so the Vite dev server on :5173 gets its own links. `.env.prod` / `.env.example` comments: set `SITE_URL` to the public UI URL; any other origin (a second domain) goes in `ADDITIONAL_REDIRECT_URLS`.
+- **Dev.** Vite on :5173 (`server.host: true`, inside the devcontainer) proxies `/ui/config.json`, `/portal`, `/docs`, `/openapi.json` and `/health` to uvicorn on 9500. Supabase is called directly on :8000 (cross-origin, verified above).
+- **Pages** (all under `/ui`; everything except the auth pages requires a session and redirects to `/ui/login?next=...` without one):
+
+| Route | What |
+|---|---|
+| `/login` | Email + password. "Email not confirmed" offers to resend the confirmation (`auth.resend`). Links to signup and reset |
+| `/signup` | Email + password (GoTrue's minimum length, 6, shown up front). Hidden when `disable_signup`. On success: "check your email" (in dev, Mailpit at :8025). If `mailer_autoconfirm` is on, goes straight in |
+| `/auth/callback` | Lands from the confirmation link (and OAuth, later); waits for the session from the fragment, then goes to `next` or `/`. Shows GoTrue's `error_description` if the fragment carries one (expired link) |
+| `/reset-password` | Sends the recovery email. Always answers "if the account exists, an email is on its way" |
+| `/update-password` | Lands from the recovery link with a session; sets a new password (`auth.updateUser`) |
+| `/` (overview) | Email, role and tier, the three limits and `max_keys` (`/portal/me`); the current minute, hour and month as meters (`/portal/usage`, refetched every 10 s while the tab is visible); a copyable `curl -H "X-API-Key: ..." <origin>/cities15000/...` example; a link to `/docs` |
+| `/keys` | Active keys from `/portal/keys`: name, prefix, created, last used ("never"; up to 5 minutes behind, said in a hint). Create dialog: name (1-64, the same rule as the API), then the key once with a copy button and "you will not see this again"; closing the dialog drops it from memory. Create is disabled with the tier's message at `max_keys`; a 409 from the API shows the same. Revoke asks for confirmation, then `DELETE` |
+| `/usage` | The three current windows; a bar chart of daily requests with 7 / 30 / 90 days (`?days=`); the per-key table for this month (revoked keys marked). `live: false` shows a note that live counts are unavailable and the minute as "—" |
+
+- **Header.** App name, nav (Overview, Keys, Usage), the user's email with a menu: API docs, sign out (`auth.signOut({scope: 'local'})`, then `/login`). Light and dark follow the system.
+- **API client** (`src/api/client.ts`): reads the current access token from supabase-js for each call and sends it as `Authorization: Bearer`. A 401 signs out and goes to `/login?next=...`. A 403 (suspended or no profile) shows a full-page "account suspended, ask an admin" with sign out. Other errors show the API's `detail` in a toast. 422 details map to form fields where there is one.
+- **Numbers.** Null limits show as "Unlimited"; counts use `Intl.NumberFormat`; `resets_at` shows as relative time ("in 42 s", "in 3 days") with the UTC time in a tooltip. Days on the chart are UTC days, labelled as such.
+- **Email and password only for now.** GitHub and Google login come later in this phase (below), so the first cut ships without needing OAuth apps.
+- **Not in phase 6:** account deletion (GoTrue only lets the service role delete users), email change, MFA, admin pages (Studio stays the admin UI), per-key usage charts, i18n, end-to-end browser tests in CI (the smoke test covers them by hand), `X-RateLimit-*` headers.
+
+### Code
+
+- `config.py`: `supabase_public_url: str | None` (reads `SUPABASE_PUBLIC_URL`, already in every env file), `anon_key: str | None` (`ANON_KEY`), `ui_dir: Path` (default `<root_dir>/frontend/dist`). `config.json` answers 503 `UI is not configured: set SUPABASE_PUBLIC_URL and ANON_KEY` while either is unset.
+- `api/routers/ui.py`: the `/ui` routes, the root redirect and the headers above. Included in `api/app.py` without auth, `include_in_schema=False`, so `openapi.yaml` does not change.
+- `.env.example` / `.env.dev` / `.env.prod` / `.devcontainer/.env`: `SITE_URL = http://localhost:9500/ui/`, with the comments above.
+- `frontend/`: `package.json` + `package-lock.json` (committed), `.nvmrc` (24), `vite.config.ts` (base, proxy, Tailwind, `@` alias), `tsconfig*.json`, `eslint.config.js`, `components.json` (shadcn), `index.html`, `src/` (`main.tsx`, `routes/`, `pages/`, `components/` incl. `ui/`, `api/client.ts` + generated `api/schema.d.ts`, `lib/supabase.ts`, `lib/format.ts`). Scripts: `dev`, `build` (`tsc -b && vite build`), `lint`, `test` (Vitest), `gen:api` (`openapi-typescript ../openapi.yaml -o src/api/schema.d.ts`).
+- `.gitignore`: `frontend/node_modules/`, `frontend/dist/`. `.dockerignore`: the same, so the build context stays small and the image always builds the UI fresh.
+- `Dockerfile`: a first stage `FROM node:24-slim AS ui` runs `npm ci` (package files copied first, for the layer cache), then `npm run build`. The Python stage copies `--from=ui /ui/dist /app/ui` and sets `ENV UI_DIR=/app/ui`.
+- `.devcontainer/devcontainer.json`: the `ghcr.io/devcontainers/features/node` feature (version 24); `postCreateCommand` also runs `npm ci --prefix frontend`; forward 5173. `.devcontainer/docker-compose.yml`: publish `5173:5173` next to 9500.
+- Makefile (new `##@ Frontend` section): `ui-install` (`npm ci`), `ui-dev` (Vite on 5173), `ui-build`, `ui-lint` (eslint + `tsc --noEmit`), `ui-test` (Vitest, run once), `ui-types` (regenerate `schema.d.ts`; `ui-types-check` fails if it differs from `openapi.yaml`). `predeploy` adds `ui-lint ui-test ui-types-check`. `image-check` also checks that `/ui/` answers 200 in the built image.
+
+### Tests
+
+- `tests/api/test_ui.py` (a `tmp_path` UI dir with `index.html`, `assets/app-abc123.js` and a `favicon.svg`):
+  - `/ui/` and `/ui` serve `index.html` with `no-cache`; `/ui/keys` and `/ui/auth/callback` serve `index.html`; the asset is served with its content type and the immutable cache header; `/ui/assets/missing.js` is 404; `/ui/%2e%2e/pyproject.toml` and an encoded traversal into a sibling directory are 404.
+  - Every `/ui` response has the CSP with `SUPABASE_PUBLIC_URL` in `connect-src`, `nosniff` and `no-referrer`.
+  - `/ui/config.json` returns both values with `no-cache`; 503 while either setting is unset.
+  - No `index.html`: `/ui/` is 404 with the build hint; `/ui/config.json` still works.
+  - `GET /` redirects to `/ui/`. `/ui` routes need no API key and are absent from `/openapi.json`.
+- `frontend` (Vitest + Testing Library, `jsdom`; Supabase and `fetch` mocked):
+  - API client: sends the bearer token; a 401 signs out and redirects with `next`; a 403 shows the suspended page; `detail` reaches the toast.
+  - Login: "Email not confirmed" offers resend. Signup is hidden when `disable_signup`.
+  - Route guard: no session goes to `/login?next=/keys`; after login, back to `/keys`.
+  - Keys: the created key is shown once and gone after the dialog closes; create is disabled at `max_keys` with the tier message; a 409 shows the API's message; a name of 65 characters is refused before sending; revoke asks first.
+  - Usage: "Unlimited" for null limits, "—" for a null minute with the not-live note, the chart gets every day the API returns, the days switch changes `?days=`.
+  - Format helpers: numbers, relative reset times, UTC day labels.
+- Existing Python tests are unchanged (no `index.html` in the test `UI_DIR`).
+
+### Docs
+
+- README: a new "Web UI" section (what each page does,, `SITE_URL` / `ADDITIONAL_REDIRECT_URLS`). "Authentication" leads with the UI; the curl steps stay as the scripted alternative. "Configuration Reference": `SUPABASE_PUBLIC_URL` (must be reachable from users' browsers), `ANON_KEY`, `UI_DIR`. "Development Notes": `make ui-dev`, `make ui-types` after changing portal schemas.
+- Update Progress and Risks here.
+
+### Smoke test (devcontainer)
+
+1. `make ui-build`, uvicorn on 9500. `http://localhost:9500/` redirects to `/ui/`, which shows the login page. Reloading `/ui/keys` keeps the route.
+2. Sign up a new email, follow the Mailpit link: it lands on `/ui/auth/callback` and then the overview, which shows free / basic, 0 of 1 keys.
+3. Create a key; copy it; close the dialog; the key is no longer shown. Create is now disabled with the basic tier's message.
+4. Call `/cities15000/...` with the key 3 times. The overview's minute meter shows 3 within 10 s. After the flush (or `USAGE_FLUSH_SECONDS=10`), `/ui/usage` shows today's bar and the key's month count.
+5. Revoke the key; the next API call gets 401.
+6. Sign out, reset the password through Mailpit, log in with the new one.
+7. Set the user's role to `admin` in Studio; after a reload the overview shows max / Unlimited. Ban the user in Studio: the next portal call shows the suspended page.
+8. `make ui-dev` on :5173: the same signup flow works and its email links come back to :5173.
+9. Root stack (`docker compose up --build`): `/ui/` loads from the image, `config.json` has the deploy's values, and login works against its Kong.
+
+### Commits
+
+1. `/ui` serving, `config.json`, root redirect, headers, settings, `SITE_URL` in env files, `test_ui.py`.
+2. Frontend scaffold: Vite, Tailwind, shadcn init, router, Supabase and API clients, generated types, Makefile `ui-*` targets, devcontainer Node, ignore files.
+3. Auth pages (login, signup, callback, reset, update password), route guard, their tests.
+4. Keys page and its tests.
+5. Overview and usage pages with the chart, and their tests.
+6. Dockerfile UI stage, `predeploy` / `image-check`, README, plan progress.
+
+### Later in phase 6: GitHub and Google login
+
+After the email and password cut is merged.
+
+- `/login` (and `/signup`) show GitHub and Google buttons when `GET /auth/v1/settings` reports `external.github` / `external.google`. A button calls `auth.signInWithOAuth({provider, options: {redirectTo: <origin>/ui/auth/callback?next=...}})`; GoTrue's own callback is `${API_EXTERNAL_URL}/callback`, already set in the compose file.
+- `/auth/callback` already handles a session in the fragment; it also shows the provider's `error_description` (consent denied).
+- An OAuth login with the same email as an existing password account is linked by GoTrue to that user (same `auth.users` row, so the same profile and keys); check it in the smoke test.
+- Tests: the buttons follow `/auth/v1/settings`; a click calls `signInWithOAuth` with the right `redirectTo`.
+- README "Web UI": creating the GitHub and Google OAuth apps with callback `${API_EXTERNAL_URL}/callback`, then `*_ENABLED`, `*_CLIENT_ID`, `*_SECRET` in `.env` and restarting `auth`.
+- Smoke test: create a GitHub OAuth app with callback `http://localhost:8000/auth/v1/callback`, set `GITHUB_*` in `.devcontainer/.env`, restart `auth`; the button appears and logs in, landing on the overview. The same for Google if an app is at hand. With a provider disabled, its button is hidden.
 
 ## Progress
 
@@ -379,6 +475,8 @@ A `/code-review` of phase 5 found 15 issues; each fix is one commit.
 - A connection without the schema's `search_path` would read and write `public` without any error. Mitigated in phase 2: one setting feeds every connection, and startup asserts it.
 - In the supabase/postgres image, `postgres` is not a superuser. `roles.sql` must run. The phase 4 trigger and FK on `auth.users` need TRIGGER and REFERENCES, which `postgres` has in 17.6.1.136 (checked 2026-10-09). Recheck after an image upgrade.
 - `rate_limit._may_have_run` tells a connect timeout from a read timeout by redis-py's message ("Timeout connecting to server", redis-py 7.1). If an upgrade changes it, connect timeouts would let requests through uncounted instead of counting them in memory. Recheck after a redis-py upgrade.
+- From phase 6 the login session lives in the browser's `localStorage`, so an XSS bug on `/ui` could steal it. The CSP allows scripts from the app only; keep it that way (no inline scripts, no third-party script tags, no rendering user input as HTML).
+- `SUPABASE_PUBLIC_URL` must be reachable from users' browsers from phase 6 on. Kong serves Studio on the same address, behind basic auth; in production consider exposing only `/auth/v1` publicly.
 - If GoTrue moves to asymmetric JWT signing keys, `require_user` has to verify against `/auth/v1/.well-known/jwks.json` instead of `JWT_SECRET`.
 - In production, GoTrue needs SMTP to send confirmation emails. Dev uses Mailpit, which catches all outgoing mail. `.env.dev` points SMTP at `mailpit`, which only exists in the devcontainer stack.
 - Run one app instance with one uvicorn worker (README "Docker Quickstart"). A second would run APScheduler jobs twice and, from phase 5, keep using revoked keys for up to 60 s and allow each process the full limit during a Redis outage.
