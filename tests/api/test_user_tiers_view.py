@@ -48,7 +48,9 @@ async def test_counts_active_and_revoked_keys(async_session, make_user, make_key
     for name in ("a", "b", "c"):
         await make_key(user_id, name)
     await async_session.execute(
-        update(ApiKey).where(ApiKey.name == "c").values(revoked_at=func.now())
+        update(ApiKey)
+        .where(ApiKey.user_id == user_id, ApiKey.name == "c")
+        .values(revoked_at=func.now())
     )
     await async_session.commit()
 

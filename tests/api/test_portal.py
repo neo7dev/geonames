@@ -172,18 +172,20 @@ class TestMe:
         [
             pytest.param(update(Role).values(is_default=False), id="no-default"),
             pytest.param(update(Role).values(is_default=True), id="two-defaults"),
-            pytest.param(delete(Role).where(Role.name == "free"), id="delete-default"),
+            pytest.param(delete(Role).where(Role.name == "test_default"), id="delete-default"),
         ],
     )
     async def test_exactly_one_role_stays_default(self, async_session, change):
-        # Free users would otherwise block deleting their role.
+        # A default role no profile uses, so deleting it touches no real users
+        async_session.add(Role(name="test_default", tier="basic"))
         await async_session.execute(
-            update(Profile).where(Profile.role == "free").values(role="tester")
+            update(Role).values(is_default=Role.name == "test_default")
         )
-        await async_session.execute(change)
+        # Checked now, so the setup passes and the change below is checked as it runs
+        await async_session.execute(text("SET CONSTRAINTS app.roles_one_default IMMEDIATE"))
 
         with pytest.raises(DBAPIError, match="exactly one default role"):
-            await async_session.execute(text("SET CONSTRAINTS app.roles_one_default IMMEDIATE"))
+            await async_session.execute(change)
 
     @pytest.mark.asyncio
     async def test_max_tier_is_unlimited(self, auth_client, login):

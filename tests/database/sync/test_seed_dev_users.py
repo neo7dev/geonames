@@ -81,7 +81,12 @@ def test_rerun_restores_roles_and_keys_without_new_users(sync_session, gotrue):
         .where(Profile.email == "seed-test-admin@example.com")
         .values(role="free")
     )
-    sync_session.execute(update(ApiKey).values(revoked_at=text("now()")))
+    test_users = select(Profile.id).where(
+        Profile.email.in_([email for _, email, _ in TEST_USERS])
+    )
+    sync_session.execute(
+        update(ApiKey).where(ApiKey.user_id.in_(test_users)).values(revoked_at=text("now()"))
+    )
     sync_session.commit()
     gotrue.calls.clear()
 

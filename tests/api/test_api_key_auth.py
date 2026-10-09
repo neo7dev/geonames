@@ -49,8 +49,11 @@ async def test_unknown_key_is_rejected(auth_client, path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", DATA_PATHS)
 async def test_revoked_key_is_rejected(auth_client, async_session, make_user, make_key, path):
-    key = await make_key(await make_user())
-    await async_session.execute(update(ApiKey).values(revoked_at=func.now()))
+    user_id = await make_user()
+    key = await make_key(user_id)
+    await async_session.execute(
+        update(ApiKey).where(ApiKey.user_id == user_id).values(revoked_at=func.now())
+    )
     await async_session.commit()
 
     resp = await auth_client.get(path, headers={"X-API-Key": key})
