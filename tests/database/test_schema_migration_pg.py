@@ -219,3 +219,46 @@ def test_force_rebuild_drops_schema_and_legacy_public_tables():
 
     assert _query("SELECT 1 FROM pg_namespace WHERE nspname = %s", SCHEMA) == []
     assert not APP_TABLES & _tables("public")
+
+
+def _drop_with_app_engine() -> None:
+    from geonames_server.database import migrations
+
+    engine = create_engine(
+        "postgresql+psycopg2://",
+        creator=lambda: psycopg2.connect(DSN, options=settings.postgres_options),
+    )
+    try:
+        with patch.object(migrations, "sync_engine", engine):
+            migrations._drop_all_tables()
+    finally:
+        engine.dispose()
+
+
+def test_force_rebuild_drops_leftover_staging_tables():
+    command.upgrade(_alembic_config(), "head")
+    _query_commit(f'CREATE TABLE "{SCHEMA}".cities500_new (id int)')
+
+    _drop_with_app_engine()
+
+    assert _query("SELECT 1 FROM pg_namespace WHERE nspname = %s", SCHEMA) == []
+
+
+def test_force_rebuild_refuses_schema_with_foreign_objects():
+    command.upgrade(_alembic_config(), "head")
+    _query_commit(f'CREATE TABLE "{SCHEMA}".someone_elses (id int)')
+
+    with pytest.raises(RuntimeError, match="someone_elses"):
+        _drop_with_app_engine()
+
+    assert APP_TABLES <= _tables(SCHEMA)
+
+
+def _query_commit(query: str) -> None:
+    conn = psycopg2.connect(DSN)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query)
+        conn.commit()
+    finally:
+        conn.close()

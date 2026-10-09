@@ -11,6 +11,29 @@ from geonames_server.log.mylogger import get_logger
 
 log = get_logger()
 
+# Schemas owned by Postgres or Supabase. postgres_schema must not be one of them.
+_RESERVED_SCHEMAS = frozenset(
+    {
+        "public",
+        "information_schema",
+        "auth",
+        "storage",
+        "extensions",
+        "graphql",
+        "graphql_public",
+        "realtime",
+        "_realtime",
+        "_analytics",
+        "vault",
+        "pgsodium",
+        "pgsodium_masks",
+        "pgbouncer",
+        "net",
+        "cron",
+        "pgmq",
+    }
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -155,6 +178,17 @@ class Settings(BaseSettings):
         raise ValueError(
             "enabled_datasets must be a comma-separated string or a list of strings"
         )
+
+    @field_validator("postgres_schema")
+    @classmethod
+    def validate_postgres_schema(cls, value: str) -> str:
+        # FORCE_REBUILD drops this schema with CASCADE, so it must belong to the app alone.
+        if value in _RESERVED_SCHEMAS or value.startswith(("pg_", "supabase_")):
+            raise ValueError(
+                f"postgres_schema {value!r} is a Postgres or Supabase schema; "
+                "use a schema owned by geonames-server alone"
+            )
+        return value
 
     @field_validator("sync_schedule_hours", mode="before")
     @classmethod

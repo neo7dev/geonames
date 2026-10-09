@@ -1,7 +1,9 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
+from geonames_server.config.config import Settings
 from geonames_server.config.validators import (
     check_read_permissions,
     check_write_permissions,
@@ -64,3 +66,16 @@ class TestFindProjectRoot:
     def test_raises_when_not_found(self, tmp_path):
         with pytest.raises(RuntimeError, match="Project root not found"):
             find_project_root(tmp_path / "deep" / "nested")
+
+
+class TestPostgresSchema:
+    @pytest.mark.parametrize(
+        "schema",
+        ["public", "auth", "storage", "extensions", "pg_catalog", "supabase_functions"],
+    )
+    def test_rejects_postgres_and_supabase_schemas(self, schema):
+        with pytest.raises(ValidationError, match="Postgres or Supabase schema"):
+            Settings(postgres_schema=schema)
+
+    def test_accepts_dedicated_schema(self):
+        assert Settings(postgres_schema="geonames").postgres_schema == "geonames"
