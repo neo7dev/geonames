@@ -273,3 +273,11 @@ def test_population_is_bigint_in_every_table():
         SCHEMA,
     )
     assert types and {data_type for _, data_type in types} == {"bigint"}
+
+
+def test_models_match_migrations():
+    cfg = _alembic_config()
+    command.upgrade(cfg, "head")
+
+    # Raises if autogenerate would emit anything, e.g. dropping alembic_version
+    command.check(cfg)

@@ -155,3 +155,10 @@ def test_force_rebuild_keeps_user_data():
 
     assert _query("SELECT email, role FROM app.profiles") == [("kept@example.com", "dev")]
     assert "dataset_metadata" in _tables(settings.postgres_schema)
+
+
+def test_models_match_migrations():
+    cfg = _config()
+    command.upgrade(cfg, "head")
+
+    command.check(cfg)

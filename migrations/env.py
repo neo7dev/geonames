@@ -37,6 +37,12 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+def include_name(name, type_, parent_names) -> bool:
+    # Autogenerate reflects the schema as the default one (schema None), where
+    # Alembic does not recognise its own version table and would drop it.
+    return not (type_ == "table" and name == "alembic_version")
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -56,6 +62,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         version_table_schema=schema,
+        include_name=include_name,
     )
 
     with context.begin_transaction():
@@ -98,6 +105,7 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         version_table_schema=schema,
+        include_name=include_name,
     )
 
     with context.begin_transaction():
