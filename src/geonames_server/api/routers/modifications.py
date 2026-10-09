@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -31,7 +32,7 @@ async def list_modifications(
 
 @router.get("/filter", response_model=list[GeoNameResponse])
 async def filter_modifications(
-    filters: GeoNamesFilter = Depends(),
+    filters: Annotated[GeoNamesFilter, Query()],
     session: AsyncSession = Depends(get_session),
 ):
     if filters.limit is None:

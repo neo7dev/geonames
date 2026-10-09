@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +29,7 @@ async def list_deletions(
 
 @router.get("/filter", response_model=list[DeletionResponse])
 async def filter_deletions(
-    filters: DeletionFilter = Depends(),
+    filters: Annotated[DeletionFilter, Query()],
     session: AsyncSession = Depends(get_session),
 ):
     if filters.limit is None:

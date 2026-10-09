@@ -43,6 +43,17 @@ class TestListMetadata:
         response = await client.get("/metadata/", params={"offset": -1})
         assert response.status_code == 422
 
+    @pytest.mark.asyncio
+    async def test_filter_last_modified_with_a_range_is_rejected(self, client):
+        response = await client.get(
+            "/metadata/filter",
+            params={
+                "last_modified": "2026-01-01T00:00:00Z",
+                "modified_after": "2025-01-01T00:00:00Z",
+            },
+        )
+        assert response.status_code == 422
+
 
 @pytest.mark.usefixtures("seed_metadata")
 class TestGetMetadataByDataset:

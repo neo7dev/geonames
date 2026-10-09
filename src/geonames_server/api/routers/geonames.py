@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +31,7 @@ def create_geoname_router(model: type, tag: str, dataset: str) -> APIRouter:
 
     @router.get("/filter", response_model=list[GeoNameResponse])
     async def filter_geonames(
-        filters: GeoNamesFilter = Depends(),
+        filters: Annotated[GeoNamesFilter, Query()],
         session: AsyncSession = Depends(get_session),
     ):
         if filters.limit is None:

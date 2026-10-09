@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,7 +47,7 @@ async def get_needs_rebuild(
 
 @router.get("/filter", response_model=list[DatasetMetaDataResponse])
 async def filter_metadata(
-    filters: DatasetMetaDataFilter = Depends(),
+    filters: Annotated[DatasetMetaDataFilter, Query()],
     session: AsyncSession = Depends(get_session),
 ):
     if filters.limit is None:
