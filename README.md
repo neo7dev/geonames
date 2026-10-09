@@ -216,7 +216,7 @@ Portal endpoints (login token):
 - `POST /portal/keys` (`{"name": "..."}`, 1-64 characters): `201` with the key, `409` when the tier's key limit is reached.
 - `DELETE /portal/keys/{id}`: revokes the key (`204`); it stops working on the next request.
 
-Deleting a user in Studio deletes their profile and keys.
+Deleting a user in Studio deletes their profile and keys. Banning a user, or soft-deleting them through the Auth admin API, keeps the rows but refuses their keys and login tokens until the ban ends.
 
 ## Daily Sync and Update Logic
 

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api.dependencies import get_session
@@ -92,6 +92,11 @@ def _principal_select(*columns) -> Select:
         .select_from(Profile)
         .join(Role, Role.name == Profile.role)
         .join(Tier, Tier.name == Role.tier)
+        # Banned or soft-deleted in Supabase Auth
+        .where(
+            Profile.deleted_at.is_(None),
+            or_(Profile.banned_until.is_(None), Profile.banned_until <= func.now()),
+        )
     )
 
 
@@ -178,10 +183,10 @@ async def require_user(
     ).one_or_none()
     if row is None:
         # The signup trigger creates a profile for every user, so this means
-        # the user was deleted, or signed up while the trigger was missing.
+        # the user was banned or deleted, or signed up while the trigger was missing.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account has no profile; ask an admin to add one",
+            detail="This account is suspended or has no profile; ask an admin",
         )
     principal = Principal(key_id=None, **row._mapping)
     request.state.principal = principal

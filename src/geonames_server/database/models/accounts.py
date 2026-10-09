@@ -82,6 +82,10 @@ class Profile(AppBase):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Copies of auth.users' columns, kept in sync by the trigger. A banned or
+    # soft-deleted user's keys and login tokens are refused.
+    banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ApiKey(AppBase):

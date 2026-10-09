@@ -118,6 +118,30 @@ async def test_deleting_the_user_disables_their_keys(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("change", "status"),
+    [
+        pytest.param("banned_until = now() + interval '1 hour'", 401, id="banned"),
+        pytest.param("banned_until = now() - interval '1 hour'", 200, id="ban-expired"),
+        pytest.param("deleted_at = now()", 401, id="soft-deleted"),
+    ],
+)
+async def test_banned_or_soft_deleted_users_keys_are_refused(
+    auth_client, async_session, make_user, make_key, change, status
+):
+    user_id = await make_user()
+    key = await make_key(user_id)
+    await async_session.execute(
+        text(f"UPDATE auth.users SET {change} WHERE id = :id"), {"id": user_id}
+    )
+    await async_session.commit()
+
+    resp = await auth_client.get("/deletions/", headers={"X-API-Key": key})
+
+    assert resp.status_code == status
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
 async def test_docs_are_public(auth_client, path):
     assert (await auth_client.get(path)).status_code == 200

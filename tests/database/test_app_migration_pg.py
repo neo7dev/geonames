@@ -186,7 +186,8 @@ def test_models_match_migrations():
 def late_auth_schema():
     """A minimal auth.users, created after the app migrations ran without it."""
     yield lambda: _query(
-        "CREATE SCHEMA auth; CREATE TABLE auth.users (id uuid PRIMARY KEY, email text)"
+        "CREATE SCHEMA auth; CREATE TABLE auth.users "
+        "(id uuid PRIMARY KEY, email text, banned_until timestamptz, deleted_at timestamptz)"
     )
     _query("DROP SCHEMA IF EXISTS auth CASCADE")
 

@@ -96,6 +96,25 @@ class TestLoginToken:
         assert resp.status_code == 403
 
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "change", ["banned_until = now() + interval '1 hour'", "deleted_at = now()"]
+    )
+    async def test_banned_or_soft_deleted_user_is_forbidden(
+        self, auth_client, async_session, login, change
+    ):
+        user_id, headers = await login()
+        await async_session.execute(
+            text(f"UPDATE auth.users SET {change} WHERE id = :id"), {"id": user_id}
+        )
+        await async_session.commit()
+
+        resp = await auth_client.get("/portal/me", headers=headers)
+
+        assert resp.status_code == 403
+        assert "suspended" in resp.json()["detail"]
+
+
 class TestMe:
     @pytest.mark.asyncio
     async def test_new_signup_is_free_on_basic(self, auth_client, login):

@@ -26,8 +26,12 @@ SYNC_PROFILE_FUNCTION = """
 CREATE OR REPLACE FUNCTION app.sync_profile_from_auth_user() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 BEGIN
-    INSERT INTO app.profiles (id, email) VALUES (NEW.id, NEW.email)
-    ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;
+    INSERT INTO app.profiles (id, email, banned_until, deleted_at)
+    VALUES (NEW.id, NEW.email, NEW.banned_until, NEW.deleted_at)
+    ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        banned_until = EXCLUDED.banned_until,
+        deleted_at = EXCLUDED.deleted_at;
     RETURN NEW;
 END
 $$
@@ -35,7 +39,7 @@ $$
 
 SYNC_PROFILE_TRIGGER = """
 CREATE TRIGGER app_sync_profile
-AFTER INSERT OR UPDATE OF email ON auth.users
+AFTER INSERT OR UPDATE OF email, banned_until, deleted_at ON auth.users
 FOR EACH ROW EXECUTE FUNCTION app.sync_profile_from_auth_user()
 """
 
@@ -77,7 +81,8 @@ def link_profiles_to_auth(conn: Connection) -> bool:
         # Users who signed up while the trigger was missing
         conn.execute(
             text(
-                "INSERT INTO app.profiles (id, email) SELECT id, email FROM auth.users "
+                "INSERT INTO app.profiles (id, email, banned_until, deleted_at) "
+                "SELECT id, email, banned_until, deleted_at FROM auth.users "
                 "ON CONFLICT (id) DO NOTHING"
             )
         )
