@@ -271,6 +271,8 @@ This starts:
 - `kong` on port `8000`: Supabase Studio admin dashboard at `/` (basic auth `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`) and the Auth API at `/auth/v1`
 - `redis` (internal network) for rate limiting and quotas
 
+**Run one app instance only.** Keep a single `app` container with the image's single uvicorn worker: no `--workers`, no `docker compose up --scale app=N`, no second replica against the same database. The daily-update scheduler runs inside the process, so a second instance would run every sync twice. Upcoming rate limiting (phase 5) also keeps its API key cache and its fallback counters for Redis outages in process memory, so a second instance would let revoked keys work for up to 60 s longer and double the limits during a Redis outage.
+
 Supabase config (Kong routes, db init scripts) lives in `supabase/`. It is a trimmed copy of the upstream self-hosted stack; PostgREST, Realtime, Storage, Edge Functions and Analytics are not deployed.
 
 ### 3) Verify Service Health
