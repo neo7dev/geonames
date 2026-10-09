@@ -7,7 +7,8 @@ API keys kept in .env.dev as DEV_API_KEY_FREE, _TESTER, _DEV and _ADMIN.
 
 Users are created through Supabase Auth's admin API, confirmed, so they can
 also log in with the password (for /portal). Running it again restores each
-user's role and API key (un-revoking it if needed); it never deletes anything.
+user's role and API key (un-revoking it if needed), unless that would put the
+user over their tier's key limit; it never deletes anything.
 """
 
 from __future__ import annotations
@@ -19,14 +20,14 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import jwt
 from dotenv import dotenv_values, find_dotenv
-from sqlalchemy import text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from geonames_server.api.auth import display_prefix, hash_api_key
 from geonames_server.config.config import settings
 from geonames_server.database.migrations import upgrade_app_schema
-from geonames_server.database.models.accounts import ApiKey, Profile
+from geonames_server.database.models.accounts import ApiKey, Profile, Role, Tier
 from geonames_server.database.session import sessionLocal
 
 # GoTrue inside the compose network; Kong is not needed for the admin API.
@@ -68,7 +69,26 @@ def _user_id(session: Session, email: str):
     )
 
 
-def seed(session: Session, gotrue: httpx.Client, keys: dict[str, str]) -> None:
+def _has_free_key_slot(session: Session, user_id, role: str, key_hash: str) -> bool:
+    """Whether the seed key fits in the tier's key limit next to the user's other keys."""
+    max_keys = session.scalar(
+        select(Tier.max_keys).join(Role, Role.tier == Tier.name).where(Role.name == role)
+    )
+    if max_keys is None:
+        return True
+    other_keys = session.scalar(
+        select(func.count(ApiKey.id)).where(
+            ApiKey.user_id == user_id,
+            ApiKey.revoked_at.is_(None),
+            ApiKey.key_hash != key_hash,
+        )
+    )
+    return other_keys < max_keys
+
+
+def seed(session: Session, gotrue: httpx.Client, keys: dict[str, str]) -> list[str]:
+    """Create or restore the dev users; return the emails whose key was not restored."""
+    skipped = []
     for role, email, var in DEV_USERS:
         key = keys[var]
         user_id = _user_id(session, email)
@@ -89,6 +109,9 @@ def seed(session: Session, gotrue: httpx.Client, keys: dict[str, str]) -> None:
                 f"{email} has no profile in app.profiles; is the signup trigger installed?"
             )
 
+        if not _has_free_key_slot(session, user_id, role, hash_api_key(key)):
+            skipped.append(email)
+            continue
         session.execute(
             insert(ApiKey)
             .values(
@@ -103,6 +126,7 @@ def seed(session: Session, gotrue: httpx.Client, keys: dict[str, str]) -> None:
             )
         )
     session.commit()
+    return skipped
 
 
 def main() -> None:
@@ -126,11 +150,14 @@ def main() -> None:
         ) as gotrue,
         sessionLocal() as session,
     ):
-        seed(session, gotrue, keys)
+        skipped = seed(session, gotrue, keys)
 
     print(f"Dev users (password for all: {PASSWORD}; API keys in .env):")
     for role, email, var in DEV_USERS:
-        print(f"  {role:<7} {email:<24} {var}={keys[var]}")
+        note = "  (not restored: tier key limit reached)" if email in skipped else ""
+        print(f"  {role:<7} {email:<24} {var}={keys[var]}{note}")
+    if skipped:
+        print("Revoke a key for those users on /portal/keys, then rerun to restore the seed key.")
 
 
 if __name__ == "__main__":

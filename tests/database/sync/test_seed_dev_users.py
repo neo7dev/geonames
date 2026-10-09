@@ -94,6 +94,29 @@ def test_rerun_restores_roles_and_keys_without_new_users(sync_session, gotrue):
     ]
 
 
+def test_rerun_does_not_exceed_the_tier_key_limit(sync_session, gotrue):
+    seed_dev_users.seed(sync_session, gotrue, KEYS)
+    free_user = sync_session.scalar(
+        select(Profile.id).where(Profile.email == "seed-test-free@example.com")
+    )
+    # The free user (basic tier, 1 key) revokes the seed key and creates another.
+    sync_session.execute(
+        update(ApiKey).where(ApiKey.user_id == free_user).values(revoked_at=text("now()"))
+    )
+    sync_session.add(
+        ApiKey(user_id=free_user, name="own key", prefix="gn_own", key_hash="own-hash")
+    )
+    sync_session.commit()
+
+    skipped = seed_dev_users.seed(sync_session, gotrue, KEYS)
+
+    assert skipped == ["seed-test-free@example.com"]
+    active = sync_session.scalars(
+        select(ApiKey.name).where(ApiKey.user_id == free_user, ApiKey.revoked_at.is_(None))
+    ).all()
+    assert active == ["own key"]
+
+
 def test_keys_come_from_the_environment(monkeypatch):
     monkeypatch.setenv("TEST_KEY_FREE", "gn_from_env_free")
     monkeypatch.setenv("TEST_KEY_ADMIN", "gn_from_env_admin")
