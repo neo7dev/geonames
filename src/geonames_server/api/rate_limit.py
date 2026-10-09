@@ -10,12 +10,19 @@ app.api_key_usage every few minutes. When a user's month counter is missing
 (a new month, or Redis lost its data), their month and hour counters are
 rebuilt from there before the request is counted.
 
-If Redis fails, requests go through: a warning is logged once and Redis is
-skipped for BACKOFF_SECONDS, so requests do not each wait for a timeout.
+If Redis fails, a warning is logged once and Redis is skipped for
+BACKOFF_SECONDS, so requests do not each wait for a timeout. Meanwhile
+LocalLimiter counts and limits in process memory, starting each user from
+their flushed usage, and the usage flush writes its counts to Postgres. Once
+Redis answers again, the flush writes everything and deletes the hour and
+month counters of the users seen during the outage, so they are rebuilt with
+the outage requests included. One app instance runs, so one process's
+counters are all of them.
 """
 
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 import uuid
@@ -142,6 +149,106 @@ def usage_fields(key_id, hour: int) -> tuple[str, str]:
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 
+class Usage:
+    """Requests per key and UTC hour, and each key's last request."""
+
+    def __init__(self) -> None:
+        self.requests: dict[tuple[uuid.UUID, datetime], int] = {}
+        self.last_used: dict[uuid.UUID, datetime] = {}
+
+    def __bool__(self) -> bool:
+        return bool(self.requests or self.last_used)
+
+    def total(self) -> int:
+        return sum(self.requests.values())
+
+    def add(self, other: Usage) -> None:
+        for slot, n in other.requests.items():
+            self.requests[slot] = self.requests.get(slot, 0) + n
+        for key_id, at in other.last_used.items():
+            self.last_used[key_id] = max(at, self.last_used.get(key_id, at))
+
+    @classmethod
+    def from_hash(cls, fields: dict[bytes, bytes]) -> Usage:
+        """Parse a USAGE_PENDING hash: n:{key_id}:{epoch hour} and t:{key_id}."""
+        usage = cls()
+        for field, value in fields.items():
+            kind, key_id, *hour = field.decode().split(":")
+            if kind == "n":
+                at = datetime.fromtimestamp(int(hour[0]) * 3600, timezone.utc)
+                usage.requests[(uuid.UUID(key_id), at)] = int(value)
+            elif kind == "t":
+                usage.last_used[uuid.UUID(key_id)] = datetime.fromtimestamp(
+                    int(value), timezone.utc
+                )
+        return usage
+
+
+class LocalLimiter:
+    """Counters kept in process memory while Redis is down.
+
+    Same windows and rules as the Redis script. The caller loads a user's month
+    and hour from Postgres before their first request.
+    """
+
+    def __init__(self) -> None:
+        # Counter key (as in Redis) -> [count, end of its window]
+        self._counts: dict[str, list[int]] = {}
+        self.usage = Usage()
+        # Users counted here, whose Redis counters must be rebuilt afterwards
+        self.users: set[uuid.UUID] = set()
+
+    def is_loaded(self, user_id, windows: Windows) -> bool:
+        return windows.counter_keys(user_id)[2] in self._counts
+
+    def load(self, user_id, windows: Windows, month: int, hour: int) -> None:
+        keys = windows.counter_keys(user_id)
+        self._counts.setdefault(keys[2], [month, windows.ends[2]])
+        self._counts.setdefault(keys[1], [hour, windows.ends[1]])
+
+    def counts(self, user_id, windows: Windows) -> list[int]:
+        return [self._counts.get(key, [0])[0] for key in windows.counter_keys(user_id)]
+
+    def hit(self, principal: Principal, windows: Windows, now: float) -> int | None:
+        """Count a request; return the exhausted window (0-2) instead if any."""
+        counts = self.counts(principal.user_id, windows)
+        for window, limit in reversed(list(enumerate(limits_of(principal)))):
+            if limit is not None and counts[window] >= limit:
+                return window
+        for window, key in enumerate(windows.counter_keys(principal.user_id)):
+            self._counts.setdefault(key, [0, windows.ends[window]])[0] += 1
+        slot = (principal.key_id, windows.hour_start)
+        self.usage.requests[slot] = self.usage.requests.get(slot, 0) + 1
+        self.usage.last_used[principal.key_id] = datetime.fromtimestamp(
+            int(now), timezone.utc
+        )
+        self.users.add(principal.user_id)
+        return None
+
+    def prune(self, now: float) -> None:
+        """Forget counters whose window has ended."""
+        for key in [k for k, (_, end) in self._counts.items() if end <= now]:
+            del self._counts[key]
+
+    def take_usage(self) -> Usage:
+        usage, self.usage = self.usage, Usage()
+        return usage
+
+    def restore_usage(self, usage: Usage) -> None:
+        """Put back usage that could not be written."""
+        self.usage.add(usage)
+
+    def take_users(self) -> set[uuid.UUID]:
+        """The outage's users, for their Redis counters to be rebuilt.
+
+        The in-memory counters are dropped too: a later outage starts again
+        from Postgres.
+        """
+        users, self.users = self.users, set()
+        self._counts.clear()
+        return users
+
+
 async def stored_usage(
     session: AsyncSession, user_id: uuid.UUID, windows: Windows
 ) -> tuple[int, int]:
@@ -179,32 +286,53 @@ class RateLimiter:
         self._script = redis.register_script(_SCRIPT)
         # Redis is skipped until this time (epoch seconds) after a failure.
         self._down_until = 0.0
-        self._outage = False
+        self.outage = False
+        self.local = LocalLimiter()
+        # Set when Redis answers again, to wake the usage flush for the reconcile
+        self.recovered = asyncio.Event()
 
     def _redis_failed(self, error: Exception, now: float) -> None:
-        if not self._outage:
+        if not self.outage:
             log.warning(
-                f"Redis failed ({error!r}); rate limits are off and requests are "
-                f"not counted. Retrying in {BACKOFF_SECONDS} s"
+                f"Redis failed ({error!r}); counting and limiting in memory. "
+                f"Retrying in {BACKOFF_SECONDS} s"
             )
-        self._outage = True
+        self.outage = True
         self._down_until = now + BACKOFF_SECONDS
 
     def _redis_ok(self) -> None:
-        if self._outage:
-            log.info("Redis is back; rate limits apply again")
-        self._outage = False
+        if self.outage:
+            log.info("Redis is back; rate limit counters move back to Redis")
+            self.outage = False
+            self.recovered.set()
+
+    async def _stored_usage(
+        self, user_id: uuid.UUID, windows: Windows
+    ) -> tuple[int, int] | None:
+        try:
+            async with self._session_factory() as session:
+                return await stored_usage(session, user_id, windows)
+        except Exception as e:
+            log.warning(f"Could not read the stored usage from Postgres: {e!r}")
+            return None
+
+    async def _hit_locally(
+        self, principal: Principal, windows: Windows, now: float
+    ) -> int | None:
+        if not self.local.is_loaded(principal.user_id, windows):
+            # With Postgres down too, the user starts from 0.
+            month, hour = await self._stored_usage(principal.user_id, windows) or (0, 0)
+            self.local.load(principal.user_id, windows, month, hour)
+        return self.local.hit(principal, windows, now)
 
     async def _rebuild(
         self, principal: Principal, windows: Windows, now: float
     ) -> bool:
         """Set the user's month and hour counters from Postgres, unless set meanwhile."""
-        try:
-            async with self._session_factory() as session:
-                month, hour = await stored_usage(session, principal.user_id, windows)
-        except Exception as e:
-            log.warning(f"Could not rebuild rate limit counters from Postgres: {e!r}")
+        stored = await self._stored_usage(principal.user_id, windows)
+        if stored is None:
             return False
+        month, hour = stored
         keys, ttls = windows.counter_keys(principal.user_id), windows.ttls(now)
         async with self.redis.pipeline(transaction=False) as pipe:
             pipe.set(keys[2], month, nx=True, ex=ttls[2])
@@ -214,9 +342,9 @@ class RateLimiter:
 
     async def hit(self, principal: Principal, now: float) -> int | None:
         """Count a request; return the exhausted window (0-2) instead if any."""
-        if now < self._down_until:
-            return None
         windows = Windows.at(now)
+        if now < self._down_until:
+            return await self._hit_locally(principal, windows, now)
         usage_field, last_used_field = usage_fields(principal.key_id, windows.hour)
         keys = [*windows.counter_keys(principal.user_id), USAGE_PENDING]
         args = [
@@ -234,7 +362,7 @@ class RateLimiter:
                 result = await self._script(keys=keys, args=args)
         except (RedisError, OSError) as e:
             self._redis_failed(e, now)
-            return None
+            return await self._hit_locally(principal, windows, now)
         self._redis_ok()
         # A second -1 (the counter vanished again) lets the request through.
         return int(result) - 1 if result > 0 else None

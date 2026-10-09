@@ -9,12 +9,10 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from redis.asyncio import Redis
 from sqlalchemy import func, select, update
 
 from geonames_server.api import auth, dependencies, rate_limit
-from geonames_server.api.app import app
-from geonames_server.api.rate_limit import USAGE_PENDING, RateLimiter, Windows
+from geonames_server.api.rate_limit import USAGE_PENDING, Windows
 from geonames_server.database.models.accounts import ApiKey, ApiKeyUsage, Profile
 
 PATH = "/metadata/"
@@ -228,33 +226,6 @@ async def test_without_redis_requests_are_not_limited(auth_client, make_user, ma
     key = await make_key(await make_user("free"))
 
     assert await _calls(auth_client, key, 11) == [200] * 11
-
-
-@pytest.mark.asyncio
-async def test_while_redis_is_down_requests_pass_and_redis_is_skipped(
-    auth_client, make_user, make_key, clock
-):
-    down = Redis.from_url("redis://127.0.0.1:1/0", socket_connect_timeout=1)
-    limiter = RateLimiter(down, None)
-    app.state.rate_limiter = limiter
-    key = await make_key(await make_user("free"))
-    try:
-        with (
-            patch.object(limiter, "_script", wraps=limiter._script) as script,
-            patch.object(rate_limit.log, "warning") as warning,
-        ):
-            assert await _calls(auth_client, key, 11) == [200] * 11
-            assert script.call_count == 1
-            warning.assert_called_once()
-
-            clock.now += rate_limit.BACKOFF_SECONDS
-            await _calls(auth_client, key, 1)
-            assert script.call_count == 2
-            # Still one warning per outage
-            warning.assert_called_once()
-    finally:
-        del app.state.rate_limiter
-        await down.aclose()
 
 
 @pytest.mark.asyncio

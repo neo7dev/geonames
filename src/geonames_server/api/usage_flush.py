@@ -6,31 +6,39 @@ app.api_key_usage and api_keys.last_used_at in one transaction that also
 records the batch in app.usage_flushes, then deletes the batch key. A batch
 whose write failed stays in Redis for the next flush; one that was written but
 not deleted is found in usage_flushes and only deleted, so nothing counts twice.
+
+While Redis is down, the rate limiter counts in memory; each flush writes
+those counts too. Once Redis answers again, the flush deletes the hour and
+month counters of the users seen during the outage, after their usage is in
+Postgres, so their next request rebuilds the counters with it.
 """
 
 from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
-from datetime import datetime, timezone
+from contextlib import suppress
 
 from redis.asyncio import Redis
-from redis.exceptions import ResponseError
+from redis.exceptions import RedisError, ResponseError
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from geonames_server.api.rate_limit import USAGE_PENDING
+from geonames_server.api import rate_limit
+from geonames_server.api.rate_limit import (
+    USAGE_PENDING,
+    RateLimiter,
+    SessionFactory,
+    Usage,
+    Windows,
+)
 from geonames_server.database.models.accounts import UsageFlush
 from geonames_server.log.mylogger import get_logger
 
 log = get_logger()
 
 FLUSHING_PREFIX = "usage:flushing:"
-
-SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 # Keys deleted since (their user was deleted) are dropped by the join instead of
 # failing the batch on the foreign key.
@@ -62,35 +70,6 @@ _SET_LAST_USED = text(
 _PRUNE_FLUSHES = text(
     "DELETE FROM app.usage_flushes WHERE flushed_at < now() - interval '7 days'"
 )
-
-
-class Usage:
-    """Requests per key and UTC hour, and each key's last request."""
-
-    def __init__(self) -> None:
-        self.requests: dict[tuple[uuid.UUID, datetime], int] = {}
-        self.last_used: dict[uuid.UUID, datetime] = {}
-
-    def __bool__(self) -> bool:
-        return bool(self.requests or self.last_used)
-
-    def total(self) -> int:
-        return sum(self.requests.values())
-
-    @classmethod
-    def from_hash(cls, fields: dict[bytes, bytes]) -> Usage:
-        """Parse a USAGE_PENDING hash: n:{key_id}:{epoch hour} and t:{key_id}."""
-        usage = cls()
-        for field, value in fields.items():
-            kind, key_id, *hour = field.decode().split(":")
-            if kind == "n":
-                at = datetime.fromtimestamp(int(hour[0]) * 3600, timezone.utc)
-                usage.requests[(uuid.UUID(key_id), at)] = int(value)
-            elif kind == "t":
-                usage.last_used[uuid.UUID(key_id)] = datetime.fromtimestamp(
-                    int(value), timezone.utc
-                )
-        return usage
 
 
 async def write_usage(
@@ -134,8 +113,7 @@ async def write_usage(
     return True
 
 
-async def flush_usage(redis: Redis, session_factory: SessionFactory) -> int:
-    """Write Redis's pending usage to Postgres; return the requests written."""
+async def _flush_redis(redis: Redis, session_factory: SessionFactory) -> int:
     try:
         await redis.rename(USAGE_PENDING, f"{FLUSHING_PREFIX}{uuid.uuid4()}")
     except ResponseError as e:
@@ -153,14 +131,80 @@ async def flush_usage(redis: Redis, session_factory: SessionFactory) -> int:
     return written
 
 
+async def _flush_local(limiter: RateLimiter, session_factory: SessionFactory) -> int:
+    usage = limiter.local.take_usage()
+    if not usage:
+        return 0
+    try:
+        async with session_factory() as session:
+            await write_usage(session, usage)
+    except BaseException:
+        limiter.local.restore_usage(usage)
+        raise
+    return usage.total()
+
+
+async def _reconcile(limiter: RateLimiter) -> None:
+    """Delete the outage users' hour and month counters, to be rebuilt from Postgres."""
+    users = limiter.local.take_users()
+    if not users:
+        return
+    windows = Windows.at(rate_limit._now())
+    try:
+        await limiter.redis.delete(
+            *(key for user in users for key in windows.counter_keys(user)[1:])
+        )
+    except BaseException:
+        limiter.local.users |= users
+        raise
+    log.info(
+        f"Rebuilding the rate limit counters of {len(users)} user(s) after the outage"
+    )
+
+
+async def flush_usage(
+    redis: Redis, session_factory: SessionFactory, limiter: RateLimiter | None = None
+) -> int:
+    """Write the pending usage to Postgres; return the requests written.
+
+    Redis's usage first, then the limiter's in-memory usage (written even with
+    Redis down). Once both are in and Redis is answering, the outage's
+    counters are reconciled.
+    """
+    redis_error: Exception | None = None
+    try:
+        written = await _flush_redis(redis, session_factory)
+    except (RedisError, OSError) as e:
+        redis_error, written = e, 0
+    if limiter is not None:
+        written += await _flush_local(limiter, session_factory)
+        limiter.local.prune(rate_limit._now())
+        if redis_error is None and not limiter.outage:
+            await _reconcile(limiter)
+    if redis_error is not None:
+        raise redis_error
+    return written
+
+
 async def run_usage_flusher(
-    redis: Redis, session_factory: SessionFactory, interval: float
+    redis: Redis,
+    session_factory: SessionFactory,
+    interval: float,
+    limiter: RateLimiter | None = None,
 ) -> None:
-    """Flush every interval seconds until cancelled; failures are retried next time."""
+    """Flush every interval seconds until cancelled; failures are retried next time.
+
+    Redis coming back after an outage wakes it at once, to reconcile.
+    """
     while True:
-        await asyncio.sleep(interval)
+        if limiter is None:
+            await asyncio.sleep(interval)
+        else:
+            with suppress(TimeoutError):
+                await asyncio.wait_for(limiter.recovered.wait(), interval)
+            limiter.recovered.clear()
         try:
-            written = await flush_usage(redis, session_factory)
+            written = await flush_usage(redis, session_factory, limiter)
             log.debug(f"Usage flush wrote {written} request(s)")
         except Exception as e:
             log.warning(f"Usage flush failed, retrying in {interval} s: {e!r}")
