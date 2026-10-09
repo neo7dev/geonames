@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated, override
 
 from dotenv import find_dotenv
-from pydantic import Field, computed_field, field_validator
+from pydantic import Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from geonames_server.log.mylogger import get_logger
@@ -34,6 +34,8 @@ _RESERVED_SCHEMAS = frozenset(
         "net",
         "cron",
         "pgmq",
+        # User tables (tiers, roles, profiles, API keys); see database/models/app_base.py
+        "app",
     }
 )
 
@@ -95,6 +97,11 @@ class Settings(BaseSettings):
     redis_url: str | None = Field(
         default=None,
         description="Redis URL, e.g. redis://redis:6379/0. Reported by /health when set",
+    )
+
+    jwt_secret: SecretStr | None = Field(
+        default=None,
+        description="Supabase Auth JWT secret, used to verify login tokens on /portal. Required at startup",
     )
 
     enabled_datasets: Annotated[list[str], NoDecode] = Field(

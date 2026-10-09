@@ -81,11 +81,18 @@ def _check_search_path() -> None:
         )
 
 
-def db_migrations(force: bool = False) -> None:
-    """Run Alembic migrations.
+def _alembic_config(section: str = "alembic") -> Config:
+    """Config for one migration chain: ``alembic`` (geonames) or ``app`` (user data)."""
+    cfg = Config(str(_alembic_ini), ini_section=section)
+    cfg.set_main_option("sqlalchemy.url", settings.postges_url)
+    return cfg
 
-    If *force* is True, drop every table first so migrations run from
-    scratch (full rebuild).
+
+def db_migrations(force: bool = False) -> None:
+    """Run Alembic migrations: the geonames chain, then the app (user data) chain.
+
+    If *force* is True, drop the geonames tables first so their migrations run
+    from scratch (full rebuild). User data in the app schema is never dropped.
     """
     log.info(
         "Running database migrations",
@@ -96,9 +103,8 @@ def db_migrations(force: bool = False) -> None:
         _drop_all_tables()
 
     try:
-        alembic_cfg = Config(str(_alembic_ini))
-        alembic_cfg.set_main_option("sqlalchemy.url", settings.postges_url)
-        command.upgrade(alembic_cfg, "head")
+        command.upgrade(_alembic_config(), "head")
+        command.upgrade(_alembic_config("app"), "head")
         _check_search_path()
         log.info("Database migrations complete")
     except Exception as e:
