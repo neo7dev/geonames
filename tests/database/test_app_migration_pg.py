@@ -294,3 +294,18 @@ def test_app_migrations_wait_for_the_migration_lock():
         engine.dispose()
 
     assert _tables(APP_SCHEMA) == APP_TABLES
+
+
+def test_downgrade_restores_only_the_max_tiers_per_minute_cap():
+    cfg = _config()
+    command.upgrade(cfg, "head")
+    _query("INSERT INTO app.tiers (name, per_minute) VALUES ('enterprise', NULL)")
+
+    with pytest.raises(Exception, match="Tiers without a per-minute limit: enterprise"):
+        command.downgrade(cfg, "7c3e5a1f9b2d")
+
+    _query("UPDATE app.tiers SET per_minute = 50 WHERE name = 'enterprise'")
+    command.downgrade(cfg, "7c3e5a1f9b2d")
+    assert _query(
+        "SELECT name, per_minute FROM app.tiers WHERE name IN ('max', 'enterprise') ORDER BY name"
+    ) == [("enterprise", 50), ("max", 600)]

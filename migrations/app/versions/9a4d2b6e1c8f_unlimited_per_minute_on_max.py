@@ -31,7 +31,24 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("UPDATE app.tiers SET per_minute = 600 WHERE per_minute IS NULL")
+    # Restore only what upgrade changed. Another tier left without a per-minute
+    # limit would have to be given one, which is not this migration's call.
+    op.execute(
+        """
+        DO $$
+        DECLARE
+            unlimited text;
+        BEGIN
+            SELECT string_agg(name, ', ' ORDER BY name) INTO unlimited
+            FROM app.tiers WHERE per_minute IS NULL AND name <> 'max';
+            IF unlimited IS NOT NULL THEN
+                RAISE EXCEPTION 'Tiers without a per-minute limit: %', unlimited
+                    USING HINT = 'Set their per_minute before downgrading.';
+            END IF;
+        END $$
+        """
+    )
+    op.execute("UPDATE app.tiers SET per_minute = 600 WHERE name = 'max'")
     op.alter_column(
         "tiers", "per_minute", existing_type=sa.Integer(), nullable=False, schema=SCHEMA
     )
