@@ -21,15 +21,21 @@
 		// },
 		"ghcr.io/devcontainers-extra/features/uv": {
 			"version": "latest"
+		},
+		// Node builds the web UI in frontend/ (Vite); nothing Node runs in the deployed image.
+		"ghcr.io/devcontainers/features/node": {
+			"version": "24"
 		}
 	},
 	
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// 8000 = Supabase Studio + Auth API (kong), 8025 = Mailpit, 3000 = Metabase
-	"forwardPorts": [9500, 5432, 6379, 8000, 8025, 5050, 3000, 3002, 3003],
+	// 8000 = Supabase Studio + Auth API (kong), 8025 = Mailpit, 3000 = Metabase,
+	// 5173 = Vite dev server for the web UI (make ui-dev)
+	"forwardPorts": [9500, 5173, 5432, 6379, 8000, 8025, 5050, 3000, 3002, 3003],
 	
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "uv sync",
+	// Frontend packages too, once frontend/ has a lockfile.
+	"postCreateCommand": "uv sync && (test ! -f frontend/package-lock.json || npm ci --prefix frontend)",
 
 	// Dev users, one per tier, with known passwords and API keys (see make seed-users).
 	// Skipped, not failed, while .env lacks DEV_SEED_USERS or the keys.

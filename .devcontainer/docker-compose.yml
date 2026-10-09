@@ -22,6 +22,8 @@ services:
       - ..:/workspace:cached
     ports:
       - "9500:9500"
+      # Vite dev server for the web UI (make ui-dev)
+      - "5173:5173"
     command: sleep infinity
     depends_on:
       db:

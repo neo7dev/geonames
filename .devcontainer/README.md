@@ -8,11 +8,12 @@ Do `make switch2dev` then `make run` to get started.
 
 | Service | URL | Purpose |
 |---|---|---|
-| app | http://localhost:9500 | Dev container (run the API here) |
+| app | http://localhost:9500 | Dev container (run the API here). Has Node 24 for the web UI |
+| app (Vite) | http://localhost:5173/ui/ | Web UI dev server with hot reload (`make ui-dev`, from phase 6) |
 | db | localhost:5432 | Supabase Postgres 17. Holds geonames data, app data and Supabase auth. Connect as `postgres` to database `postgres` |
 | kong | http://localhost:8000 | Supabase gateway: Studio dashboard at `/` (basic auth `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`), Auth API at `/auth/v1` |
 | studio, meta | via kong | Supabase Studio admin dashboard and its Postgres metadata API |
-| auth | via kong `/auth/v1` | Supabase Auth (GoTrue): signup, login, OAuth |
+| auth | via kong `/auth/v1` | Supabase Auth (GoTrue): signup, login, OAuth. Passwords need `PASSWORD_MIN_LENGTH` (8) characters |
 | mailpit | http://localhost:8025 | Catches all auth emails (signup confirmation, password reset). Nothing is delivered |
 | redis | localhost:6379 | Rate limiting, quotas, caching |
 | pgadmin | http://localhost:5050 | Postgres admin UI |
