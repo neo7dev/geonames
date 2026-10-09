@@ -117,6 +117,24 @@ class Settings(BaseSettings):
         ge=10,
         description="Seconds between copies of the request counts from Redis to Postgres",
     )
+    supabase_public_url: str | None = Field(
+        default=None,
+        description="Supabase (Kong) URL as users' browsers reach it, e.g. https://auth.example.com. The web UI calls Supabase Auth there",
+    )
+    anon_key: str | None = Field(
+        default=None,
+        description="Supabase anon key, handed to the web UI for Supabase Auth calls. Public by design",
+    )
+    password_min_length: int = Field(
+        default=8,
+        ge=6,
+        description="Shortest password Supabase Auth accepts (GOTRUE_PASSWORD_MIN_LENGTH); the web UI checks it on signup",
+    )
+    ui_dir: Path | None = Field(
+        default=None,
+        description="Built web UI (index.html and assets/) served at /ui. Defaults to frontend/dist under root_dir",
+    )
+
     dev_seed_users: bool = Field(
         default=False,
         description="Allow `make seed-users` to create dev users with known passwords and API keys. Dev only",
@@ -195,6 +213,10 @@ class Settings(BaseSettings):
     def gostatic_dir(self) -> Path:
         return self.root_dir / "gostatic"
 
+    @property
+    def ui_root(self) -> Path:
+        return self.ui_dir or self.root_dir / "frontend" / "dist"
+
     @computed_field
     @property
     def alembic_ini(self) -> Path:
@@ -254,6 +276,27 @@ class Settings(BaseSettings):
                 "generate one with `make supabase-keys`"
             )
         return SecretStr(secret)
+
+    @field_validator("supabase_public_url", "anon_key")
+    @classmethod
+    def blank_is_unset(cls, value: str | None) -> str | None:
+        # `ANON_KEY =` in .env (as shipped in .env.example) counts as not set.
+        if value is None or not value.strip():
+            return None
+        return value.strip()
+
+    @field_validator("supabase_public_url")
+    @classmethod
+    def validate_supabase_public_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        # The web UI's CSP lists it in connect-src, which needs a plain origin.
+        if not re.fullmatch(r"https?://[^/\s;'\"]+/?", value):
+            raise ValueError(
+                f"supabase_public_url {value!r} must be an http(s) origin, "
+                "e.g. https://auth.example.com, without a path"
+            )
+        return value.rstrip("/")
 
     @field_validator("sync_schedule_hours", mode="before")
     @classmethod

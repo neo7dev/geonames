@@ -25,6 +25,7 @@ from geonames_server.api.routers import (
     modifications,
     portal,
     sync,
+    ui,
 )
 from geonames_server.api.routers.geonames import create_geoname_router
 from geonames_server.api.usage_flush import flush_usage, run_usage_flusher
@@ -94,6 +95,9 @@ async def lifespan(app: FastAPI):
     log.info("Seeding dataset metadata for %d dataset(s)", len(all_datasets))
     seed_dataset_metadata(all_datasets)
     log.info("Dataset metadata seeded")
+
+    if not (settings.ui_root / "index.html").is_file():
+        log.info(f"No web UI build in {settings.ui_root}; /ui answers 404")
 
     # Shared Redis client; it connects on first use, so a Redis outage does not
     # stop startup (/health reports it instead).
@@ -269,3 +273,6 @@ app.include_router(
 
 # Account pages, authenticated with the Supabase Auth login token
 app.include_router(portal.router, prefix="/portal")
+
+# Web UI at /ui (and / redirecting there): public, its pages log in themselves
+app.include_router(ui.router)

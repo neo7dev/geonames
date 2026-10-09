@@ -103,6 +103,45 @@ class TestJwtSecret:
         assert Settings(jwt_secret=secret).jwt_secret.get_secret_value() == secret
 
 
+class TestUiSettings:
+    @pytest.mark.parametrize("field", ["supabase_public_url", "anon_key"])
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_blank_counts_as_not_set(self, field, value):
+        assert getattr(Settings(**{field: value}), field) is None
+
+    @pytest.mark.parametrize(
+        "url, expected",
+        [
+            ("http://localhost:8000", "http://localhost:8000"),
+            ("https://auth.example.com/", "https://auth.example.com"),
+        ],
+    )
+    def test_supabase_url_is_an_origin(self, url, expected):
+        assert Settings(supabase_public_url=url).supabase_public_url == expected
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "localhost:8000",
+            "ftp://example.com",
+            "https://example.com/auth/v1",
+            "https://example.com; script-src *",
+        ],
+    )
+    def test_rejects_supabase_url_that_is_not_an_origin(self, url):
+        with pytest.raises(ValidationError, match="http\\(s\\) origin"):
+            Settings(supabase_public_url=url)
+
+    def test_password_min_length_is_at_least_supabase_minimum(self):
+        assert Settings().password_min_length == 8
+        with pytest.raises(ValidationError):
+            Settings(password_min_length=5)
+
+    def test_ui_dir_defaults_to_frontend_build(self, tmp_path):
+        assert Settings(root_dir=tmp_path).ui_root == tmp_path / "frontend" / "dist"
+        assert Settings(ui_dir=tmp_path / "ui").ui_root == tmp_path / "ui"
+
+
 class TestPostgresUrl:
     PASSWORD = "p%40ss@w:rd/x"
 
