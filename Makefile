@@ -166,7 +166,7 @@ db-app-downgrade:
 
 ## Create one dev user per tier with known passwords and API keys (needs DEV_SEED_USERS=true)
 seed-users:
-	$(UV) run python -m geonames_server.scripts.seed_dev_users
+	$(UV) run python -m geonames_server.scripts.seed_dev_users $(SEED_ARGS)
 
 API_URL ?= http://localhost:9500
 

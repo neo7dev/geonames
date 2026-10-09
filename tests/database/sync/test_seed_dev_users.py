@@ -131,7 +131,7 @@ def test_missing_keys_are_named(monkeypatch):
     monkeypatch.delenv("TEST_KEY_ADMIN", raising=False)
     monkeypatch.setenv("TEST_KEY_FREE", "gn_from_env_free")
 
-    with pytest.raises(SystemExit, match="TEST_KEY_ADMIN"):
+    with pytest.raises(seed_dev_users.NotConfigured, match="TEST_KEY_ADMIN"):
         seed_dev_users.load_keys()
 
 
@@ -141,6 +141,35 @@ def test_refuses_without_dev_seed_users():
         patch(f"{MODULE}.upgrade_app_schema") as upgrade,
         pytest.raises(SystemExit, match="DEV_SEED_USERS"),
     ):
-        seed_dev_users.main()
+        seed_dev_users.main([])
 
+    upgrade.assert_not_called()
+
+
+def test_missing_keys_stop_the_seed(monkeypatch):
+    monkeypatch.delenv("TEST_KEY_ADMIN", raising=False)
+    with (
+        patch(f"{MODULE}.settings.dev_seed_users", True),
+        patch(f"{MODULE}.dotenv_values", return_value={}),
+        patch(f"{MODULE}.upgrade_app_schema") as upgrade,
+        pytest.raises(SystemExit, match="TEST_KEY_ADMIN"),
+    ):
+        seed_dev_users.main([])
+
+    upgrade.assert_not_called()
+
+
+@pytest.mark.parametrize("seed_users", [False, True])
+def test_skip_unconfigured_exits_cleanly(monkeypatch, capsys, seed_users):
+    # DEV_SEED_USERS unset, or set but the keys are missing (an older .env)
+    monkeypatch.delenv("TEST_KEY_FREE", raising=False)
+    monkeypatch.delenv("TEST_KEY_ADMIN", raising=False)
+    with (
+        patch(f"{MODULE}.settings.dev_seed_users", seed_users),
+        patch(f"{MODULE}.dotenv_values", return_value={}),
+        patch(f"{MODULE}.upgrade_app_schema") as upgrade,
+    ):
+        seed_dev_users.main(["--skip-unconfigured"])
+
+    assert "Skipping dev users" in capsys.readouterr().out
     upgrade.assert_not_called()

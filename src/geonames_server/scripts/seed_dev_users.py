@@ -1,7 +1,8 @@
 """Create one dev user per tier, with a known password and API key. Dev only.
 
-Run with `make seed-users`; the devcontainer also runs it on every start. It
-refuses unless DEV_SEED_USERS is true, which only .env.dev sets: known
+Run with `make seed-users`; the devcontainer also runs it on every start, with
+--skip-unconfigured so an older .env without the dev settings does not fail the
+start. It refuses unless DEV_SEED_USERS is true, which only .env.dev sets: known
 passwords and keys must never reach a deployed server. The keys are real
 API keys kept in .env.dev as DEV_API_KEY_FREE, _TESTER, _DEV and _ADMIN.
 
@@ -13,6 +14,7 @@ user over their tier's key limit; it never deletes anything.
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from datetime import UTC, datetime, timedelta
@@ -44,12 +46,18 @@ DEV_USERS = [
 ]
 
 
+class NotConfigured(Exception):
+    """DEV_SEED_USERS or the dev API keys are not set."""
+
+
 def load_keys() -> dict[str, str]:
     """API keys by variable name, from the environment or .env."""
     values = {**dotenv_values(find_dotenv()), **os.environ}
     missing = [var for _, _, var in DEV_USERS if not values.get(var)]
     if missing:
-        sys.exit(f"{', '.join(missing)} not set: copy them from .env.dev into .env")
+        raise NotConfigured(
+            f"{', '.join(missing)} not set: copy them from .env.dev into .env"
+        )
     return {var: values[var] for _, _, var in DEV_USERS}
 
 
@@ -129,15 +137,32 @@ def seed(session: Session, gotrue: httpx.Client, keys: dict[str, str]) -> list[s
     return skipped
 
 
-def main() -> None:
-    if not settings.dev_seed_users:
-        sys.exit(
-            "DEV_SEED_USERS is not true: refusing to create users with known "
-            "passwords and API keys. It is meant for the devcontainer only."
-        )
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--skip-unconfigured",
+        action="store_true",
+        help="exit successfully, without seeding, if DEV_SEED_USERS or the keys are not set",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+    try:
+        if not settings.dev_seed_users:
+            raise NotConfigured(
+                "DEV_SEED_USERS is not true: refusing to create users with known "
+                "passwords and API keys. It is meant for the devcontainer only."
+            )
+        keys = load_keys()
+    except NotConfigured as e:
+        if args.skip_unconfigured:
+            print(f"Skipping dev users: {e} (run `make switch2dev` to set them)")
+            return
+        sys.exit(str(e))
     if settings.jwt_secret is None:
         sys.exit("JWT_SECRET is not set")
-    keys = load_keys()
 
     # The app tables may not exist yet if the server has never started.
     upgrade_app_schema()
