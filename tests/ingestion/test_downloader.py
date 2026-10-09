@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 from pathlib import Path
@@ -618,3 +619,74 @@ class TestRetries:
             dl.download(URL, "test.txt")
         assert not (dirs[1] / "test.txt").exists()
         assert (dirs[0] / "test.txt.part.meta").exists()
+
+
+class TestEdgeCases:
+    def test_moves_across_filesystems_by_copying(self, dirs):
+        real_replace = os.replace
+        calls = []
+
+        def replace(src, dst):
+            calls.append((Path(src).name, Path(dst).name))
+            if len(calls) == 1:
+                raise OSError(errno.EXDEV, "Invalid cross-device link")
+            return real_replace(src, dst)
+
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"hello"])])
+        with patch("geonames_server.ingestion.downloader.os.replace", replace):
+            dl.download(URL, "test.txt")
+
+        assert calls == [("test.txt.part", "test.txt"), ("test.txt.tmp", "test.txt")]
+        assert (dirs[1] / "test.txt").read_bytes() == b"hello"
+        assert not (dirs[0] / "test.txt.part").exists()
+        assert not (dirs[1] / "test.txt.tmp").exists()
+
+    def test_other_move_errors_propagate(self, dirs):
+        dl = _dl(dirs, [_resp(200, {"content-length": "5"}, [b"hello"])])
+        with (
+            patch(
+                "geonames_server.ingestion.downloader.os.replace",
+                side_effect=OSError(errno.EACCES, "Permission denied"),
+            ),
+            pytest.raises(PermissionError),
+        ):
+            dl.download(URL, "test.txt")
+        assert not (dirs[1] / "test.txt").exists()
+
+    @pytest.mark.parametrize("unwritable", ["cache", "data"])
+    def test_unwritable_directories_fail_before_downloading(self, dirs, unwritable):
+        blocked = dirs[0] / "test.txt.part" if unwritable == "cache" else dirs[1]
+        dl = _dl(dirs, [])
+        with (
+            patch(
+                "geonames_server.ingestion.downloader._has_write_access",
+                side_effect=lambda path: Path(path) != blocked,
+            ),
+            pytest.raises(PermissionError, match="No write access"),
+        ):
+            dl.download(URL, "test.txt")
+        dl._session.get.assert_not_called()
+
+    def test_unexpected_success_status_is_not_retried(self, dirs):
+        dl = _dl(dirs, [_resp(204)])
+        with pytest.raises(requests.HTTPError, match="Unexpected status 204"):
+            dl.download(URL, "test.txt")
+        assert dl._session.get.call_count == 1
+
+    def test_body_longer_than_announced_is_discarded_and_retried(self, dirs):
+        dl = _dl(
+            dirs,
+            [
+                _resp(200, {"content-length": "3", "ETag": '"e1"'}, [b"hello"]),
+                _resp(200, {"content-length": "5", "ETag": '"e1"'}, [b"hello"]),
+            ],
+        )
+        dl.download(URL, "test.txt")
+        assert (dirs[1] / "test.txt").read_bytes() == b"hello"
+        # Retried from scratch, not resumed from the oversized partial
+        assert "Range" not in dl._session.get.call_args_list[1].kwargs["headers"]
+
+    def test_without_content_length_or_with_empty_chunks(self, dirs):
+        dl = _dl(dirs, [_resp(200, {}, [b"hel", b"", b"lo"])])
+        dl.download(URL, "test.txt")
+        assert (dirs[1] / "test.txt").read_bytes() == b"hello"

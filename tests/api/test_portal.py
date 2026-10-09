@@ -13,6 +13,7 @@ from sqlalchemy.exc import DBAPIError
 
 from geonames_server.api.app import app
 from geonames_server.api.rate_limit import RateLimiter
+from geonames_server.config.config import settings
 from geonames_server.database.models.accounts import ApiKey, ApiKeyUsage, Profile, Role
 
 
@@ -42,6 +43,20 @@ class TestLoginToken:
 
         assert resp.status_code == 401
         assert resp.headers["WWW-Authenticate"] == "Bearer"
+
+    @pytest.mark.asyncio
+    async def test_login_without_jwt_secret_is_unavailable(
+        self, auth_client, make_user, make_jwt
+    ):
+        token = make_jwt(await make_user("free"))
+
+        with patch.object(settings, "jwt_secret", None):
+            resp = await auth_client.get(
+                "/portal/me", headers={"Authorization": f"Bearer {token}"}
+            )
+
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "Login is not configured on this server"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

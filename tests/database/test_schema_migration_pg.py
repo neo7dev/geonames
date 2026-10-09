@@ -281,3 +281,29 @@ def test_models_match_migrations():
 
     # Raises if autogenerate would emit anything, e.g. dropping alembic_version
     command.check(cfg)
+
+
+@pytest.mark.parametrize("with_search_path", [True, False])
+def test_migrations_check_where_app_connections_resolve_tables(with_search_path):
+    from geonames_server.database import migrations
+
+    command.upgrade(_alembic_config(), "head")
+    options = {"options": settings.postgres_options} if with_search_path else {}
+    engine = create_engine(
+        "postgresql+psycopg2://", creator=lambda: psycopg2.connect(DSN, **options)
+    )
+
+    try:
+        with (
+            patch.object(migrations, "sync_engine", engine),
+            # Already at head; only the check runs for real
+            patch.object(migrations.command, "upgrade"),
+            patch.object(migrations, "_upgrade_app_schema"),
+        ):
+            if with_search_path:
+                migrations.db_migrations()
+            else:
+                with pytest.raises(RuntimeError, match="resolve tables in schema"):
+                    migrations.db_migrations()
+    finally:
+        engine.dispose()
