@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -102,6 +103,8 @@ class ApiKey(AppBase):
             "user_id",
             postgresql_where=text("revoked_at IS NULL"),
         ),
+        # Usage queries include revoked keys
+        Index("api_keys_user_id_idx", "user_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -119,7 +122,36 @@ class ApiKey(AppBase):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    # Filled from the usage counters in phase 5
+    # Set from the usage counters when they are flushed (every few minutes)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Revoked keys are kept so usage history still points at them
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ApiKeyUsage(AppBase):
+    """Requests made with a key in one UTC hour, flushed from Redis."""
+
+    __tablename__ = "api_key_usage"
+    __table_args__ = (
+        CheckConstraint("requests > 0", name="api_key_usage_requests_positive"),
+    )
+
+    key_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey(f"{APP_SCHEMA}.api_keys.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # Start of the UTC hour
+    hour: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    requests: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class UsageFlush(AppBase):
+    """A usage batch already written, so a retried flush does not count it twice."""
+
+    __tablename__ = "usage_flushes"
+
+    batch: Mapped[str] = mapped_column(Text, primary_key=True)
+    flushed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

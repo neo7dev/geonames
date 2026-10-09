@@ -29,7 +29,15 @@ from geonames_server.database.models.app_base import APP_SCHEMA
 DSN = os.environ.get("TEST_PG_DSN")
 pytestmark = pytest.mark.skipif(not DSN, reason="TEST_PG_DSN not set")
 
-APP_TABLES = {"tiers", "roles", "profiles", "api_keys", "alembic_version"}
+APP_TABLES = {
+    "tiers",
+    "roles",
+    "profiles",
+    "api_keys",
+    "api_key_usage",
+    "usage_flushes",
+    "alembic_version",
+}
 API_ROLES = ("anon", "authenticated", "service_role")
 
 
@@ -127,20 +135,49 @@ def test_api_roles_get_no_access():
     assert grants == []
 
 
-def test_user_tiers_view_checks_the_callers_privileges():
+@pytest.mark.parametrize("view", ["user_tiers", "monthly_usage"])
+def test_views_check_the_callers_privileges(view):
     command.upgrade(_config(), "head")
 
     assert _query(
-        "SELECT reloptions FROM pg_class WHERE oid = 'app.user_tiers'::regclass"
+        "SELECT reloptions FROM pg_class WHERE oid = %s::regclass", f"app.{view}"
     ) == [(["security_invoker=true"],)]
-    assert _query("SELECT count(*) FROM app.user_tiers") == [(0,)]
+    assert _query(f"SELECT count(*) FROM app.{view}") == [(0,)]
     grants = _query(
         "SELECT grantee FROM information_schema.role_table_grants "
-        "WHERE table_schema = %s AND table_name = 'user_tiers' AND grantee = ANY(%s)",
+        "WHERE table_schema = %s AND table_name = %s AND grantee = ANY(%s)",
         APP_SCHEMA,
+        view,
         list(API_ROLES),
     )
     assert grants == []
+
+
+def test_monthly_usage_sums_a_users_keys_per_utc_month():
+    command.upgrade(_config(), "head")
+    _query(
+        "INSERT INTO app.profiles (id, email) VALUES "
+        "('00000000-0000-0000-0000-000000000001', 'u@example.com');"
+        "INSERT INTO app.api_keys (id, user_id, name, prefix, key_hash, revoked_at) VALUES "
+        "('00000000-0000-0000-0000-00000000000a', "
+        "'00000000-0000-0000-0000-000000000001', 'a', 'gn_a', 'ha', NULL), "
+        "('00000000-0000-0000-0000-00000000000b', "
+        "'00000000-0000-0000-0000-000000000001', 'b', 'gn_b', 'hb', now());"
+        "INSERT INTO app.api_key_usage (key_id, hour, requests) VALUES "
+        "('00000000-0000-0000-0000-00000000000a', '2026-09-30 23:00+00', 4), "
+        "('00000000-0000-0000-0000-00000000000a', '2026-10-01 00:00+00', 5), "
+        "('00000000-0000-0000-0000-00000000000b', '2026-10-09 12:00+00', 6)"
+    )
+
+    rows = _query(
+        "SELECT email, tier, month::text, requests, per_month "
+        "FROM app.monthly_usage ORDER BY month"
+    )
+
+    assert rows == [
+        ("u@example.com", "basic", "2026-09-01", 4, 5000),
+        ("u@example.com", "basic", "2026-10-01", 11, 5000),
+    ]
 
 
 def test_downgrade_and_upgrade_again():
@@ -150,6 +187,7 @@ def test_downgrade_and_upgrade_again():
     command.downgrade(cfg, "base")
     assert _tables(APP_SCHEMA) == {"alembic_version"}
     assert _query("SELECT to_regclass('app.user_tiers')") == [(None,)]
+    assert _query("SELECT to_regclass('app.monthly_usage')") == [(None,)]
 
     command.upgrade(cfg, "head")
     assert _tables(APP_SCHEMA) == APP_TABLES
