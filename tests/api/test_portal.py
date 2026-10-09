@@ -5,9 +5,10 @@ import uuid
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select, text, update
+from sqlalchemy import delete, select, text, update
+from sqlalchemy.exc import DBAPIError
 
-from geonames_server.database.models.accounts import ApiKey, Profile
+from geonames_server.database.models.accounts import ApiKey, Profile, Role
 
 
 def _bearer(token: str) -> dict:
@@ -116,6 +117,54 @@ class TestMe:
             },
             "active_keys": 0,
         }
+
+    @pytest.mark.asyncio
+    async def test_renamed_default_role_still_applies_to_signups(
+        self, auth_client, async_session, login
+    ):
+        await async_session.execute(
+            update(Role).where(Role.name == "free").values(name="basic_user")
+        )
+        await async_session.commit()
+
+        _, headers = await login()
+
+        assert (await auth_client.get("/portal/me", headers=headers)).json()["role"] == (
+            "basic_user"
+        )
+
+    @pytest.mark.asyncio
+    async def test_signups_get_whichever_role_is_default(
+        self, auth_client, async_session, login
+    ):
+        await async_session.execute(
+            update(Role).values(is_default=Role.name == "tester")
+        )
+        await async_session.commit()
+
+        _, headers = await login()
+
+        body = (await auth_client.get("/portal/me", headers=headers)).json()
+        assert (body["role"], body["tier"]) == ("tester", "plus")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "change",
+        [
+            pytest.param(update(Role).values(is_default=False), id="no-default"),
+            pytest.param(update(Role).values(is_default=True), id="two-defaults"),
+            pytest.param(delete(Role).where(Role.name == "free"), id="delete-default"),
+        ],
+    )
+    async def test_exactly_one_role_stays_default(self, async_session, change):
+        # Free users would otherwise block deleting their role.
+        await async_session.execute(
+            update(Profile).where(Profile.role == "free").values(role="tester")
+        )
+        await async_session.execute(change)
+
+        with pytest.raises(DBAPIError, match="exactly one default role"):
+            await async_session.execute(text("SET CONSTRAINTS app.roles_one_default IMMEDIATE"))
 
     @pytest.mark.asyncio
     async def test_max_tier_is_unlimited(self, auth_client, login):

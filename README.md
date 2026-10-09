@@ -172,7 +172,7 @@ Accounts live in Supabase Auth; the API checks two kinds of credential:
 - **API keys** (`X-API-Key` header) for the data endpoints and `/sync`.
 - **Login tokens** (`Authorization: Bearer <access_token>` from Supabase Auth) for `/portal`, where users manage their keys.
 
-Every signup gets the `free` role. Roles map to tiers, and each tier caps how many active API keys a user can hold:
+Every signup gets the default role: the one marked `is_default` in `app.roles`, `free` to start with. Exactly one role must be marked, so to change the default, unmark the old one and mark the new one in the same transaction. Roles map to tiers, and each tier caps how many active API keys a user can hold:
 
 | Tier | Roles | Active API keys |
 |---|---|---|

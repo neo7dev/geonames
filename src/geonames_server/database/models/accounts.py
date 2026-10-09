@@ -1,8 +1,9 @@
 """User accounts: tiers, roles, profiles and API keys, in the ``app`` schema.
 
 Supabase Auth owns users (``auth.users``). A trigger there creates a profile
-for every signup with the default ``free`` role. Tiers and the role -> tier
-mapping are rows, so they can be edited in Studio.
+for every signup with the default role (``roles.is_default``, ``free`` at
+first). Tiers and the role -> tier mapping are rows, so they can be edited in
+Studio.
 """
 
 import uuid
@@ -23,9 +24,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from geonames_server.database.models.app_base import APP_SCHEMA, AppBase
-
-DEFAULT_ROLE = "free"
-
 
 class Tier(AppBase):
     """Request limits for a group of roles. NULL means unlimited."""
@@ -57,6 +55,10 @@ class Role(AppBase):
     is_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # The role new profiles get; a deferred trigger keeps exactly one marked
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
 
 class Profile(AppBase):
@@ -75,7 +77,7 @@ class Profile(AppBase):
         Text,
         ForeignKey(f"{APP_SCHEMA}.roles.name", onupdate="CASCADE"),
         nullable=False,
-        server_default=DEFAULT_ROLE,
+        server_default=text("app.default_role()"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
