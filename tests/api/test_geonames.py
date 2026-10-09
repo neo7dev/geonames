@@ -1,5 +1,7 @@
 import pytest
 
+from geonames_server.database.models.cities15000 import Cities15000
+
 
 @pytest.mark.usefixtures("seed_geonames")
 class TestListGeonames:
@@ -176,3 +178,35 @@ class TestFilterGeonames:
         data = response.json()
         assert len(data) >= 1
         assert any(r["geonameid"] == 99000001 for r in data)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "param, field",
+        [
+            ("latitude", "latitude"),
+            ("longitude", "longitude"),
+            ("elevation", "elevation"),
+            ("dem", "dem"),
+            ("max_population", "population"),
+        ],
+    )
+    async def test_filter_by_zero(self, client, async_session, param, field):
+        # Zero is a value (the equator, sea level), not a missing filter
+        async_session.add(
+            Cities15000(
+                geonameid=99000005,
+                name="TestNullIsland",
+                asciiname="TestNullIsland",
+                latitude=0,
+                longitude=0,
+                population=0,
+                elevation=0,
+                dem=0,
+            )
+        )
+        await async_session.commit()
+        response = await client.get("/cities15000/filter", params={param: 0})
+        assert response.status_code == 200
+        data = response.json()
+        assert any(r["geonameid"] == 99000005 for r in data)
+        assert all(r[field] == 0 for r in data)

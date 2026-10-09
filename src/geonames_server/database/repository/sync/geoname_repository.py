@@ -152,7 +152,7 @@ class GeoNamesRepository(BaseRepository[T], Generic[T]):
         stmt = select(self.model)
         conditions = []
 
-        if filters.geonameid:
+        if filters.geonameid is not None:
             conditions.append(self.model.geonameid == filters.geonameid)
 
         if filters.name:
@@ -166,10 +166,10 @@ class GeoNamesRepository(BaseRepository[T], Generic[T]):
                 self.model.alternatenames.ilike(f"%{filters.alternatenames}%")
             )
 
-        if filters.latitude:
+        if filters.latitude is not None:
             conditions.append(self.model.latitude == filters.latitude)
 
-        if filters.longitude:
+        if filters.longitude is not None:
             conditions.append(self.model.longitude == filters.longitude)
 
         if filters.feature_class:
@@ -210,16 +210,16 @@ class GeoNamesRepository(BaseRepository[T], Generic[T]):
                 )
             )
 
-        if filters.min_population:
+        if filters.min_population is not None:
             conditions.append(self.model.population >= filters.min_population)
 
-        if filters.max_population:
+        if filters.max_population is not None:
             conditions.append(self.model.population <= filters.max_population)
 
-        if filters.elevation:
+        if filters.elevation is not None:
             conditions.append(self.model.elevation == filters.elevation)
 
-        if filters.dem:
+        if filters.dem is not None:
             conditions.append(self.model.dem == filters.dem)
 
         if filters.modification_date:
