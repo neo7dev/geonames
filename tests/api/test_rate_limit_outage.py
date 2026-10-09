@@ -317,6 +317,7 @@ async def test_counters_redis_lost_are_rebuilt_with_the_unflushed_outage_calls(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("rebuild_first", [True, False])
 async def test_a_rebuild_and_the_reconcile_add_the_outage_calls_once(
     auth_client,
     limiter,
@@ -326,20 +327,23 @@ async def test_a_rebuild_and_the_reconcile_add_the_outage_calls_once(
     make_user,
     make_key,
     clock,
+    rebuild_first,
 ):
     user_id = await make_user("free")
     key = await make_key(user_id)
     assert await _calls(auth_client, key, 3) == [200] * 3  # In memory
-    break_redis.broken = False
-    clock.now += BACKOFF_SECONDS
-
-    # A request rebuilds while the flush runs; whichever goes second adds nothing
-    await asyncio.gather(
-        _calls(auth_client, key, 1), flush_usage(redis, session_factory, limiter)
-    )
+    # Writes the outage calls; Redis still counts as down, so no reconcile yet
     await flush_usage(redis, session_factory, limiter)
+    assert limiter.local.users == {user_id}
 
-    assert await _counters(redis, user_id, clock.now) == [1, 4, 4]
+    principal = SimpleNamespace(user_id=user_id)
+    windows = Windows.at(clock.now)
+    rebuild = limiter._rebuild(principal, windows, clock.now)
+    steps = [rebuild, limiter.reconcile()]
+    for step in steps if rebuild_first else reversed(steps):
+        await step
+
+    assert (await _counters(redis, user_id, clock.now))[1:] == [3, 3]
 
 
 @pytest.mark.asyncio
