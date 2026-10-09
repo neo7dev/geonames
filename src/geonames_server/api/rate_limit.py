@@ -409,6 +409,9 @@ class RateLimiter:
                         None,
                         None,
                     )
+                else:
+                    # No request yet this hour
+                    hour = hour or 0
                 return [int(minute or 0), _int(hour), _int(month)], True
         if self.local.is_loaded(user_id, windows):
             return list(self.local.counts(user_id, windows)), False

@@ -484,6 +484,20 @@ class TestUsage:
         ]
 
     @pytest.mark.asyncio
+    async def test_an_hour_without_calls_shows_zero(
+        self, auth_client, limiter, login, make_key, clock
+    ):
+        user_id, headers = await login("free")
+        key = await make_key(user_id)
+        await auth_client.get("/metadata/", headers={"X-API-Key": key})
+        clock.now += 3600
+
+        body = (await _usage(auth_client, headers)).json()
+
+        used = [body["current"][w]["used"] for w in ("minute", "hour", "month")]
+        assert used == [0, 0, 1]
+
+    @pytest.mark.asyncio
     async def test_before_the_counters_are_rebuilt_the_month_comes_from_postgres(
         self, auth_client, limiter, async_session, login, make_key, clock
     ):
