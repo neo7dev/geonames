@@ -359,6 +359,12 @@ Please keep proper attribution to GeoNames in downstream uses of this data and r
 - Alembic migrations are under `migrations/`.
 - A generated OpenAPI snapshot is in `openapi.yaml`.
 
+### Checks before deploying
+
+Ruff is a dev dependency (`uv sync` installs it), with its rules in `pyproject.toml`. `make lint` / `make format` fix what they can; `make lint-check` / `make format-check` only report.
+
+Before deploying, run `make predeploy` in the devcontainer. It runs the lint and format checks, `uv lock --check` (the image installs from `uv.lock`) and the whole test suite, including the Postgres tests (`make tests-pg`, against the throwaway `geonames_test` database; see `.devcontainer/README.md`). Then run `make image-check` where Docker runs (the host): it builds the image and checks that the app imports and that each migration chain has exactly one head. `make push-image` publishes it.
+
 ### Simulated downloads in development
 
 In the devcontainer, `.env.dev` sets `GEONAMES_URL` to `http://slow-download-server:80/`, so the app does not download from geonames.org. To simulate a real download, the `slow-download-server` service (nginx) serves the local zipped files from `gostatic/` at a throttled speed:

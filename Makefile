@@ -105,17 +105,46 @@ build: tests sync
 run:
 	$(UV) run uvicorn geonames_server.api.app:app --host 0.0.0.0 --port 9500
 
-## Run the test suite
+## Run the test suite (the *_pg.py tests skip without TEST_PG_DSN; see tests-pg)
 tests: sync-dev
 	$(UV) run pytest tests/ -v
 
-## Lint and auto-fix with ruff
+# Throwaway database for the *_pg.py tests, which drop and recreate its schemas.
+# Create it once: psql -h db -U postgres -c "create database geonames_test"
+TEST_PG_DB ?= geonames_test
+env_value = $(strip $(shell sed -n 's/^$(1) *= *//p' .env 2>/dev/null))
+TEST_PG_DSN ?= host=$(call env_value,POSTGRES_HOST) port=$(call env_value,POSTGRES_PORT) user=$(call env_value,POSTGRES_USER) password=$(call env_value,POSTGRES_PASSWORD) dbname=$(TEST_PG_DB)
+
+## Run the whole test suite, including the Postgres tests against TEST_PG_DB
+## (default geonames_test, on the server in .env)
+tests-pg: sync-dev
+	@echo "uv run pytest tests/ (TEST_PG_DSN: dbname=$(TEST_PG_DB))"
+	@TEST_PG_DSN="$(TEST_PG_DSN)" $(UV) run pytest tests/ -q
+
+## Lint with ruff and apply its fixes
 lint:
-	$(UVX) ruff --fix
+	$(UV) run ruff check --fix
 
 ## Lint with ruff without fixing
 lint-check:
-	$(UVX) ruff check
+	$(UV) run ruff check
+
+## Format the code with ruff
+format:
+	$(UV) run ruff format
+
+## Check the formatting without changing files
+format-check:
+	$(UV) run ruff format --check
+
+## Check uv.lock matches pyproject.toml (the image installs from uv.lock)
+lock-check:
+	$(UV) lock --check
+
+## Run every check before deploying: lint, formatting, lockfile and all tests.
+## Run it in the devcontainer, then `make image-check` where Docker runs.
+predeploy: lint-check format-check lock-check tests-pg
+	@echo "predeploy: all checks passed"
 
 ## Remove caches and build artifacts
 clean:
@@ -217,20 +246,32 @@ remote-etag:
 
 ##@ Docker image
 
+IMAGE ?= ghcr.io/neo7dev/$(APP_NAME)
+
 ## Build the image tagged latest and $(VERSION)
 build-image: build-image-version
-	docker build -t ghcr.io/neo7dev/$(APP_NAME):latest .
+	docker build -t $(IMAGE):latest .
 
 ## Build the image tagged $(VERSION)
 build-image-version:
-	docker build -t ghcr.io/neo7dev/$(APP_NAME):$(VERSION) .
+	docker build -t $(IMAGE):$(VERSION) .
+
+## Build the image and smoke-test it before pushing: the app imports, and each
+## migration chain (geonames, app) has exactly one head. Needs no database.
+image-check: build-image-version
+	docker run --rm --entrypoint python $(IMAGE):$(VERSION) -c "import geonames_server.api.app"
+	@for chain in alembic app; do \
+		heads=$$(docker run --rm --entrypoint alembic $(IMAGE):$(VERSION) -n $$chain heads 2>/dev/null | grep -c '(head)'); \
+		if [ "$$heads" != 1 ]; then echo "image-check: $$chain chain has $$heads heads, expected 1"; exit 1; fi; \
+	done
+	@echo "image-check: $(IMAGE):$(VERSION) ok"
 
 ## Push the image tagged latest and $(VERSION)
 push-image: push-image-version
-	docker push ghcr.io/neo7dev/$(APP_NAME):latest
+	docker push $(IMAGE):latest
 
 ## Push the image tagged $(VERSION)
 push-image-version:
-	docker push ghcr.io/neo7dev/$(APP_NAME):$(VERSION)
+	docker push $(IMAGE):$(VERSION)
 
-.PHONY: install install-dev help run tests build lint lint-check clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version push-image push-image-version
+.PHONY: install install-dev help run tests tests-pg build lint lint-check format format-check lock-check predeploy clean build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version

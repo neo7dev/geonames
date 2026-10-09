@@ -47,6 +47,8 @@ psql -h db -U postgres -c "create database geonames_test"
 TEST_PG_DSN="host=db port=5432 user=postgres password=dev-postgres-password dbname=geonames_test" uv run pytest tests
 ```
 
+`make tests-pg` does the same, building `TEST_PG_DSN` from the server in `.env` (`TEST_PG_DB=...` picks another database).
+
 ## Resetting Supabase
 
 Supabase init scripts only run on an empty data directory. To start over, remove the `supabase-db-data` and `supabase-db-config` volumes.
