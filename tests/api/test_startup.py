@@ -30,6 +30,9 @@ def startup_mocks():
         patch(f"{MODULE}.build_all_datasets", side_effect=_slow_build) as build,
         patch(f"{MODULE}.start_scheduler") as start,
         patch(f"{MODULE}.stop_scheduler") as stop,
+        # No real Redis or usage flush; tests that need them patch these again
+        patch.object(app_module.settings, "redis_url", None),
+        patch(f"{MODULE}.flush_usage", AsyncMock(return_value=0)),
     ):
         yield {
             "release_build": release_build,
