@@ -2,13 +2,16 @@
 
 import hashlib
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import delete, select, text, update
+from redis.asyncio import Redis
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import DBAPIError
 
-from geonames_server.database.models.accounts import ApiKey, Profile, Role
+from geonames_server.api.app import app
+from geonames_server.api.rate_limit import RateLimiter
+from geonames_server.database.models.accounts import ApiKey, ApiKeyUsage, Profile, Role
 
 
 def _bearer(token: str) -> dict:
@@ -416,3 +419,209 @@ class TestKeyLimits:
             data = await auth_client.get("/deletions/", headers={"X-API-Key": key})
             assert data.status_code == 200
         assert (await _create_key(auth_client, headers)).status_code == 409
+
+
+async def _usage(client, headers, **params):
+    return await client.get("/portal/usage", headers=headers, params=params)
+
+
+async def _flushed(async_session, *usage):
+    """Flushed usage rows: (key id, hour, requests)."""
+    async_session.add_all(
+        ApiKeyUsage(key_id=key_id, hour=hour, requests=n) for key_id, hour, n in usage
+    )
+    await async_session.commit()
+
+
+async def _key_id(async_session, user_id, name=None):
+    query = select(ApiKey.id).where(ApiKey.user_id == user_id)
+    if name is not None:
+        query = query.where(ApiKey.name == name)
+    return await async_session.scalar(query)
+
+
+def _utc(*args):
+    return datetime(*args, tzinfo=timezone.utc)
+
+
+class TestUsage:
+    @pytest.mark.asyncio
+    async def test_live_counts_rise_with_each_call(
+        self, auth_client, limiter, login, make_key, clock
+    ):
+        user_id, headers = await login("free")
+        key = await make_key(user_id)
+        for _ in range(3):
+            await auth_client.get("/metadata/", headers={"X-API-Key": key})
+
+        body = (await _usage(auth_client, headers)).json()
+
+        assert body["tier"] == "basic"
+        assert body["live"] is True
+        assert body["current"] == {
+            "minute": {"used": 3, "limit": 10, "resets_at": "2026-10-09T12:01:00Z"},
+            "hour": {"used": 3, "limit": 100, "resets_at": "2026-10-09T13:00:00Z"},
+            "month": {"used": 3, "limit": 5000, "resets_at": "2026-11-01T00:00:00Z"},
+        }
+
+        await auth_client.get("/metadata/", headers={"X-API-Key": key})
+        body = (await _usage(auth_client, headers)).json()
+        assert body["current"]["minute"]["used"] == 4
+
+    @pytest.mark.asyncio
+    async def test_unlimited_tiers_show_null_limits(
+        self, auth_client, limiter, login, clock
+    ):
+        _, headers = await login("sr_dev")
+
+        body = (await _usage(auth_client, headers)).json()
+
+        assert body["tier"] == "max"
+        assert [body["current"][w]["limit"] for w in ("minute", "hour", "month")] == [
+            None,
+            None,
+            None,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_before_the_counters_are_rebuilt_the_month_comes_from_postgres(
+        self, auth_client, limiter, async_session, login, make_key, clock
+    ):
+        user_id, headers = await login("free")
+        await make_key(user_id)
+        key_id = await _key_id(async_session, user_id)
+        await _flushed(
+            async_session,
+            (key_id, _utc(2026, 10, 9, 12), 4),
+            (key_id, _utc(2026, 10, 1), 3),
+        )
+
+        body = (await _usage(auth_client, headers)).json()
+
+        assert body["live"] is True
+        used = [body["current"][w]["used"] for w in ("minute", "hour", "month")]
+        assert used == [0, 4, 7]
+
+    @pytest.mark.asyncio
+    async def test_while_redis_is_down_the_in_memory_counts_show(
+        self, auth_client, login, make_key, session_factory, clock
+    ):
+        down = Redis.from_url("redis://127.0.0.1:1/0", socket_connect_timeout=1)
+        app.state.rate_limiter = RateLimiter(down, session_factory)
+        try:
+            user_id, headers = await login("free")
+            key = await make_key(user_id)
+            for _ in range(2):
+                await auth_client.get("/metadata/", headers={"X-API-Key": key})
+
+            body = (await _usage(auth_client, headers)).json()
+        finally:
+            del app.state.rate_limiter
+            await down.aclose()
+
+        assert body["live"] is False
+        used = [body["current"][w]["used"] for w in ("minute", "hour", "month")]
+        assert used == [2, 2, 2]
+
+    @pytest.mark.asyncio
+    async def test_without_redis_the_flushed_usage_shows(
+        self, auth_client, async_session, login, make_key, clock
+    ):
+        user_id, headers = await login("free")
+        await make_key(user_id)
+        await _flushed(
+            async_session,
+            (await _key_id(async_session, user_id), _utc(2026, 10, 9, 12), 5),
+        )
+
+        body = (await _usage(auth_client, headers)).json()
+
+        assert body["live"] is False
+        used = [body["current"][w]["used"] for w in ("minute", "hour", "month")]
+        assert used == [None, 5, 5]
+
+    @pytest.mark.asyncio
+    async def test_daily_history_is_zero_filled_utc_days(
+        self, auth_client, async_session, login, make_key, clock
+    ):
+        user_id, headers = await login("tester")
+        await make_key(user_id, "a")
+        await make_key(user_id, "b")
+        a = await _key_id(async_session, user_id, "a")
+        b = await _key_id(async_session, user_id, "b")
+        await _flushed(
+            async_session,
+            (a, _utc(2026, 10, 7, 23), 2),
+            (b, _utc(2026, 10, 7, 1), 3),
+            (a, _utc(2026, 10, 9, 0), 4),
+            # Before the window
+            (a, _utc(2026, 10, 6, 23), 100),
+        )
+        body = (await _usage(auth_client, headers, days=3)).json()
+
+        assert body["daily"] == [
+            {"date": "2026-10-07", "requests": 5},
+            {"date": "2026-10-08", "requests": 0},
+            {"date": "2026-10-09", "requests": 4},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_keys_show_this_months_requests_and_revoked_keys_used(
+        self, auth_client, async_session, login, make_key, clock
+    ):
+        user_id, headers = await login("tester")
+        for name in ("active", "revoked-used", "revoked-unused"):
+            await make_key(user_id, name)
+        ids = {
+            name: await _key_id(async_session, user_id, name)
+            for name in ("active", "revoked-used", "revoked-unused")
+        }
+        await _flushed(
+            async_session,
+            (ids["active"], _utc(2026, 10, 2), 6),
+            (ids["active"], _utc(2026, 9, 30), 50),
+            (ids["revoked-used"], _utc(2026, 10, 3), 2),
+            (ids["revoked-unused"], _utc(2026, 9, 3), 9),
+        )
+        await async_session.execute(
+            update(ApiKey)
+            .where(ApiKey.id.in_([ids["revoked-used"], ids["revoked-unused"]]))
+            .values(revoked_at=func.now())
+        )
+        await async_session.commit()
+
+        keys = (await _usage(auth_client, headers)).json()["keys"]
+
+        assert {k["name"]: (k["revoked"], k["requests_this_month"]) for k in keys} == {
+            "active": (False, 6),
+            "revoked-used": (True, 2),
+        }
+
+    @pytest.mark.asyncio
+    async def test_other_users_usage_is_not_shown(
+        self, auth_client, async_session, login, make_user, make_key, clock
+    ):
+        other = await make_user("free")
+        await make_key(other)
+        await _flushed(
+            async_session,
+            (await _key_id(async_session, other), _utc(2026, 10, 9, 12), 8),
+        )
+        _, headers = await login("free")
+
+        body = (await _usage(auth_client, headers)).json()
+
+        assert body["keys"] == []
+        assert sum(day["requests"] for day in body["daily"]) == 0
+        assert body["current"]["month"]["used"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("days", [0, 91])
+    async def test_days_out_of_range(self, auth_client, login, days):
+        _, headers = await login()
+
+        assert (await _usage(auth_client, headers, days=days)).status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_needs_a_login_token(self, auth_client):
+        assert (await auth_client.get("/portal/usage")).status_code == 401

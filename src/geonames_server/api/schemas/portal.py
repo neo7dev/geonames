@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
@@ -50,3 +50,42 @@ class ApiKeyResponse(BaseModel):
 class CreatedApiKeyResponse(ApiKeyResponse):
     # The full key. It is not stored and cannot be shown again.
     key: str
+
+
+class UsageWindow(BaseModel):
+    # None when unknown: the minute while Redis is down
+    used: int | None
+    # None means unlimited
+    limit: int | None
+    resets_at: datetime
+
+
+class CurrentUsage(BaseModel):
+    minute: UsageWindow
+    hour: UsageWindow
+    month: UsageWindow
+
+
+class DailyUsage(BaseModel):
+    date: date
+    requests: int
+
+
+class KeyUsage(BaseModel):
+    id: uuid.UUID
+    name: str
+    prefix: str
+    revoked: bool
+    requests_this_month: int
+
+
+class UsageResponse(BaseModel):
+    tier: str
+    # False when the counts could not be read from Redis and come from memory
+    # or Postgres instead
+    live: bool
+    current: CurrentUsage
+    # Oldest first, UTC days; from Postgres, so up to USAGE_FLUSH_SECONDS behind
+    daily: list[DailyUsage]
+    # Active keys, and revoked keys used this month; newest first
+    keys: list[KeyUsage]

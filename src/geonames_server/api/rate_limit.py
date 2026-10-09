@@ -138,6 +138,10 @@ class Windows:
         return max(1, math.ceil(self.ends[window] - now))
 
 
+def _int(value) -> int | None:
+    return None if value is None else int(value)
+
+
 def limits_of(principal: Principal) -> list[int | None]:
     return [principal.per_minute, principal.per_hour, principal.per_month]
 
@@ -324,6 +328,35 @@ class RateLimiter:
             month, hour = await self._stored_usage(principal.user_id, windows) or (0, 0)
             self.local.load(principal.user_id, windows, month, hour)
         return self.local.hit(principal, windows, now)
+
+    async def current_usage(
+        self, user_id: uuid.UUID, windows: Windows, now: float
+    ) -> tuple[list[int | None], bool]:
+        """The user's minute, hour and month counts, and whether they are live.
+
+        Live counts come from Redis. Otherwise the in-memory outage counts, or
+        failing that the flushed usage, with no minute count.
+        """
+        if now >= self._down_until:
+            try:
+                minute, hour, month = await self.redis.mget(
+                    windows.counter_keys(user_id)
+                )
+            except (RedisError, OSError) as e:
+                self._redis_failed(e, now)
+            else:
+                self._redis_ok()
+                if month is None:
+                    # Not rebuilt yet: no request since the counters were lost
+                    month, hour = await self._stored_usage(user_id, windows) or (
+                        None,
+                        None,
+                    )
+                return [int(minute or 0), _int(hour), _int(month)], True
+        if self.local.is_loaded(user_id, windows):
+            return list(self.local.counts(user_id, windows)), False
+        month, hour = await self._stored_usage(user_id, windows) or (None, None)
+        return [None, hour, month], False
 
     async def _rebuild(
         self, principal: Principal, windows: Windows, now: float
