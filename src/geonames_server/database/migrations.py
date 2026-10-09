@@ -3,6 +3,7 @@ from alembic.config import Config
 from sqlalchemy import Connection, text
 
 from geonames_server.config.config import settings
+from geonames_server.database.auth_link import link_profiles_to_auth
 from geonames_server.database.models.base import Base
 from geonames_server.database.session import sync_engine
 from geonames_server.log.mylogger import get_logger
@@ -88,6 +89,14 @@ def _alembic_config(section: str = "alembic") -> Config:
     return cfg
 
 
+def upgrade_app_schema() -> None:
+    """Migrate the app (user data) chain, then link profiles to Supabase Auth if needed."""
+    command.upgrade(_alembic_config("app"), "head")
+    with sync_engine.begin() as conn:
+        if not link_profiles_to_auth(conn):
+            log.warning("auth.users not found: app.profiles is not linked to Supabase Auth")
+
+
 def db_migrations(force: bool = False) -> None:
     """Run Alembic migrations: the geonames chain, then the app (user data) chain.
 
@@ -104,7 +113,7 @@ def db_migrations(force: bool = False) -> None:
 
     try:
         command.upgrade(_alembic_config(), "head")
-        command.upgrade(_alembic_config("app"), "head")
+        upgrade_app_schema()
         _check_search_path()
         log.info("Database migrations complete")
     except Exception as e:

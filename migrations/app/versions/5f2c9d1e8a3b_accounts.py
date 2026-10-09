@@ -166,6 +166,7 @@ def upgrade() -> None:
     )
 
     if not _has_auth_users():
+        # Server startup links them once auth.users exists (database/auth_link.py).
         log.warning("auth.users not found: app.profiles is not linked to Supabase Auth")
         return
 

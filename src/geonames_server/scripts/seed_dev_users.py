@@ -18,7 +18,6 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import jwt
-from alembic import command
 from dotenv import dotenv_values, find_dotenv
 from sqlalchemy import text, update
 from sqlalchemy.dialects.postgresql import insert
@@ -26,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from geonames_server.api.auth import display_prefix, hash_api_key
 from geonames_server.config.config import settings
-from geonames_server.database.migrations import _alembic_config
+from geonames_server.database.migrations import upgrade_app_schema
 from geonames_server.database.models.accounts import ApiKey, Profile
 from geonames_server.database.session import sessionLocal
 
@@ -117,7 +116,7 @@ def main() -> None:
     keys = load_keys()
 
     # The app tables may not exist yet if the server has never started.
-    command.upgrade(_alembic_config("app"), "head")
+    upgrade_app_schema()
 
     with (
         httpx.Client(

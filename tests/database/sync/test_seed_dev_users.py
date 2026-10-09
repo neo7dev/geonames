@@ -115,9 +115,9 @@ def test_missing_keys_are_named(monkeypatch):
 def test_refuses_without_dev_seed_users():
     with (
         patch(f"{MODULE}.settings.dev_seed_users", False),
-        patch(f"{MODULE}.command") as alembic,
+        patch(f"{MODULE}.upgrade_app_schema") as upgrade,
         pytest.raises(SystemExit, match="DEV_SEED_USERS"),
     ):
         seed_dev_users.main()
 
-    alembic.upgrade.assert_not_called()
+    upgrade.assert_not_called()

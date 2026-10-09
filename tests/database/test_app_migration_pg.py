@@ -21,6 +21,7 @@ from sqlalchemy import URL, create_engine
 
 from geonames_server.config.config import settings
 from geonames_server.database import migrations
+from geonames_server.database.auth_link import link_profiles_to_auth
 from geonames_server.database.models.app_base import APP_SCHEMA
 
 DSN = os.environ.get("TEST_PG_DSN")
@@ -179,3 +180,53 @@ def test_models_match_migrations():
     command.upgrade(cfg, "head")
 
     command.check(cfg)
+
+
+@pytest.fixture
+def late_auth_schema():
+    """A minimal auth.users, created after the app migrations ran without it."""
+    yield lambda: _query(
+        "CREATE SCHEMA auth; CREATE TABLE auth.users (id uuid PRIMARY KEY, email text)"
+    )
+    _query("DROP SCHEMA IF EXISTS auth CASCADE")
+
+
+def test_profiles_are_linked_once_auth_users_appears(late_auth_schema):
+    command.upgrade(_config(), "head")
+    late_auth_schema()
+    _query(
+        "INSERT INTO auth.users (id, email) "
+        "VALUES ('00000000-0000-0000-0000-000000000001', 'early@example.com')"
+    )
+
+    engine = create_engine(_config().get_main_option("sqlalchemy.url").replace("%%", "%"))
+    try:
+        for _ in range(2):  # the second run finds everything in place
+            with engine.begin() as conn:
+                assert link_profiles_to_auth(conn)
+    finally:
+        engine.dispose()
+
+    # Backfilled, then created by the trigger on signup
+    _query(
+        "INSERT INTO auth.users (id, email) "
+        "VALUES ('00000000-0000-0000-0000-000000000002', 'late@example.com')"
+    )
+    assert _query("SELECT email, role FROM app.profiles ORDER BY email") == [
+        ("early@example.com", "free"),
+        ("late@example.com", "free"),
+    ]
+    # Deleting a user removes the profile
+    _query("DELETE FROM auth.users WHERE email = 'early@example.com'")
+    assert _query("SELECT email FROM app.profiles") == [("late@example.com",)]
+
+
+def test_linking_is_skipped_without_auth_users():
+    command.upgrade(_config(), "head")
+
+    engine = create_engine(_config().get_main_option("sqlalchemy.url").replace("%%", "%"))
+    try:
+        with engine.begin() as conn:
+            assert not link_profiles_to_auth(conn)
+    finally:
+        engine.dispose()
