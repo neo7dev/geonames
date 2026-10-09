@@ -9,7 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from geonames_server.api.auth import Principal, generate_api_key, require_user
+from geonames_server.api.auth import (
+    Principal,
+    forget_api_key,
+    generate_api_key,
+    require_user,
+)
 from geonames_server.api.dependencies import get_session
 from geonames_server.api.schemas.portal import (
     ApiKeyResponse,
@@ -123,3 +128,4 @@ async def revoke_key(
             detail=f"API key '{key_id}' not found",
         )
     await session.commit()
+    forget_api_key(key_id)

@@ -107,6 +107,11 @@ class Settings(BaseSettings):
         description="Supabase Auth JWT secret, used to verify login tokens on /portal. Required at startup",
     )
 
+    auth_cache_seconds: int = Field(
+        default=60,
+        ge=0,
+        description="Seconds an API key lookup is cached; role, tier and Studio revoke changes apply within this. 0 turns the cache off",
+    )
     dev_seed_users: bool = Field(
         default=False,
         description="Allow `make seed-users` to create dev users with known passwords and API keys. Dev only",

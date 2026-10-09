@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api import dependencies
 from geonames_server.api.app import app
-from geonames_server.api.auth import Principal, generate_api_key, require_api_key
+from geonames_server.api.auth import (
+    Principal,
+    clear_principal_cache,
+    generate_api_key,
+    require_api_key,
+)
 from geonames_server.api.dependencies import get_session
 from geonames_server.config.config import settings
 from geonames_server.database.models.accounts import ApiKey, Profile
@@ -27,6 +32,13 @@ def _forget_built_datasets():
     dependencies._built.clear()
     yield
     dependencies._built.clear()
+
+
+@pytest.fixture(autouse=True)
+def _forget_cached_keys():
+    clear_principal_cache()
+    yield
+    clear_principal_cache()
 
 
 @pytest_asyncio.fixture

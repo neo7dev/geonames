@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -75,6 +76,59 @@ def generate_api_key() -> tuple[str, str, str]:
     return key, display_prefix(key), hash_api_key(key)
 
 
+# Key lookups are cached in process, by key hash, for settings.auth_cache_seconds.
+# A role, tier, ban or revoke change made in Studio applies when the entry
+# expires; a revoke through /portal drops the entry at once. Only one app
+# instance runs, so one process's cache is the whole cache.
+_MAX_CACHED_KEYS = 10_000
+# key hash -> (expiry, principal). Every entry lives equally long, so insertion
+# order is also expiry order and the first entry is the oldest.
+_principal_cache: dict[str, tuple[float, Principal]] = {}
+
+
+def _monotonic() -> float:
+    # Tests replace this to expire entries without waiting.
+    return time.monotonic()
+
+
+def _cache_get(key_hash: str) -> Principal | None:
+    entry = _principal_cache.get(key_hash)
+    if entry is None:
+        return None
+    expires_at, principal = entry
+    if _monotonic() >= expires_at:
+        del _principal_cache[key_hash]
+        return None
+    return principal
+
+
+def _cache_put(key_hash: str, principal: Principal) -> None:
+    ttl = settings.auth_cache_seconds
+    if ttl <= 0:
+        return
+    now = _monotonic()
+    # Drop expired entries from the front, then the oldest while full.
+    while _principal_cache:
+        oldest = next(iter(_principal_cache))
+        if (
+            _principal_cache[oldest][0] > now
+            and len(_principal_cache) < _MAX_CACHED_KEYS
+        ):
+            break
+        del _principal_cache[oldest]
+    _principal_cache[key_hash] = (now + ttl, principal)
+
+
+def forget_api_key(key_id: uuid.UUID) -> None:
+    """Drop a key from the lookup cache, so its revocation applies at once."""
+    for key_hash in [h for h, (_, p) in _principal_cache.items() if p.key_id == key_id]:
+        del _principal_cache[key_hash]
+
+
+def clear_principal_cache() -> None:
+    _principal_cache.clear()
+
+
 def _principal_select(*columns) -> Select:
     return (
         select(
@@ -119,16 +173,20 @@ async def require_api_key(
         raise _unauthorized(
             "Missing API key: send it in the X-API-Key header", "ApiKey"
         )
-    row = (
-        await session.execute(
-            _principal_select(ApiKey.id.label("key_id"))
-            .join(ApiKey, ApiKey.user_id == Profile.id)
-            .where(ApiKey.key_hash == hash_api_key(key), ApiKey.revoked_at.is_(None))
-        )
-    ).one_or_none()
-    if row is None:
-        raise _unauthorized("Invalid or revoked API key", "ApiKey")
-    principal = Principal(**row._mapping)
+    key_hash = hash_api_key(key)
+    principal = _cache_get(key_hash)
+    if principal is None:
+        row = (
+            await session.execute(
+                _principal_select(ApiKey.id.label("key_id"))
+                .join(ApiKey, ApiKey.user_id == Profile.id)
+                .where(ApiKey.key_hash == key_hash, ApiKey.revoked_at.is_(None))
+            )
+        ).one_or_none()
+        if row is None:
+            raise _unauthorized("Invalid or revoked API key", "ApiKey")
+        principal = Principal(**row._mapping)
+        _cache_put(key_hash, principal)
     request.state.principal = principal
     return principal
 
