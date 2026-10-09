@@ -204,6 +204,10 @@ Built as scoped above, on `phase-4-auth`.
   - Revoke and delete: a revoked key gets 401. Deleting the user from `auth.users` removed the profile and keys.
   - `FORCE_REBUILD` was not run live, because it reloads every dataset; `test_force_rebuild_keeps_user_data` covers it.
 - `pyjwt` 2.15.1 added.
+- Found while checking migrations, fixed separately:
+  - `modifications.population` was still INTEGER, because `a684673d5b5c` recreated the table after the bigint migration. Migration `b8e1f4c2d9a6` widens it (`f8d1e07`).
+  - Autogenerate on the geonames chain wanted to drop `alembic_version` (`2eac71b`).
+  - Tests now run `alembic check` on both chains.
 
 ## Risks
 
