@@ -32,7 +32,6 @@ dependencies = [
     "pluggy==1.6.0",
     "psycopg==3.3.3",
     "psycopg-binary==3.3.3",
-    "psycopg2>=2.9.11",
     "psycopg2-binary==2.9.11",
     "pydantic==2.12.5",
     "pydantic-core==2.41.5",
