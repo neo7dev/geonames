@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -30,6 +32,35 @@ def _get_conn_params() -> dict:
         "port": settings.postgres_port,
         "dbname": settings.postgres_db,
     }
+
+
+# First key of the advisory locks taken by dataset_lock (arbitrary, app-wide).
+_DATASET_LOCK_NAMESPACE = 0x6E6D  # "gn"
+
+
+@contextmanager
+def dataset_lock(name: str) -> Iterator[None]:
+    """Hold a Postgres advisory lock that serialises writers of dataset *name*.
+
+    Rebuilds and daily updates both take it, so a daily update cannot write to a
+    table that a rebuild is about to swap out, and their ``last_applied_date``
+    writes cannot interleave. Works across processes.
+    """
+    key = (_DATASET_LOCK_NAMESPACE, name)
+    conn = psycopg2.connect(**_get_conn_params())
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_lock(%s, hashtext(%s))", key)
+        try:
+            yield
+        finally:
+            # Unlock explicitly: the server releases it on disconnect only
+            # asynchronously.
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s, hashtext(%s))", key)
+    finally:
+        conn.close()
 
 
 def truncate_table(table_name: str) -> None:
@@ -150,29 +181,31 @@ def build_dataset(dataset_info: DatasetInfo, force: bool = False) -> None:
         log.error(f"[{name}] Extracted file not found: {txt_path}")
         raise FileNotFoundError(f"Extracted file not found: {txt_path}")
 
-    try:
-        _load_and_swap(model, table_name, txt_path)
-    except Exception:
-        log.exception(f"[{name}] Ingestion failed")
-        raise
+    # Daily updates wait until the swap and metadata write are both done.
+    with dataset_lock(name):
+        try:
+            _load_and_swap(model, table_name, txt_path)
+        except Exception:
+            log.exception(f"[{name}] Ingestion failed")
+            raise
 
-    # --- Mark synced ---
-    now = datetime.now(timezone.utc)
+        # --- Mark synced ---
+        now = datetime.now(timezone.utc)
 
-    with get_session() as session:
-        repo = DatasetMetaDataRepository(session)
-        metadata = repo.get_by_dataset(name)
-        if metadata:
-            # Capture remote metadata from the download response headers
-            metadata.remote_etag = result.etag
-            metadata.remote_last_modified = result.last_modified
-            # After a fresh build, local etag matches remote
-            metadata.etag = result.etag
-            metadata.last_modified = now
-            # The dump contains every change up to the day before it was built.
-            built = result.last_modified or now
-            metadata.last_applied_date = built.date() - timedelta(days=1)
-            session.commit()
+        with get_session() as session:
+            repo = DatasetMetaDataRepository(session)
+            metadata = repo.get_by_dataset(name)
+            if metadata:
+                # Capture remote metadata from the download response headers
+                metadata.remote_etag = result.etag
+                metadata.remote_last_modified = result.last_modified
+                # After a fresh build, local etag matches remote
+                metadata.etag = result.etag
+                metadata.last_modified = now
+                # The dump contains every change up to the day before it was built.
+                built = result.last_modified or now
+                metadata.last_applied_date = built.date() - timedelta(days=1)
+                session.commit()
 
     log.info(f"[{name}] Dataset sync complete")
 

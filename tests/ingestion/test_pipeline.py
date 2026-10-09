@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -28,6 +29,16 @@ from geonames_server.ingestion.remote import RemoteFileMeta
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _no_dataset_lock():
+    """build_dataset takes a Postgres advisory lock; there is no DB here."""
+    with patch(
+        "geonames_server.ingestion.pipeline.dataset_lock",
+        side_effect=lambda _n: nullcontext(),
+    ) as lock:
+        yield lock
+
 
 def _make_dataset_info(**overrides) -> DatasetInfo:
     defaults = dict(

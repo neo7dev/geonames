@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -565,6 +566,9 @@ def engine():
         ["allcountries", "cities500", "cities5000"],
     )
     patches["enabled"].start()
+    mocks["dataset_lock"] = patch(
+        f"{MODULE}.dataset_lock", side_effect=lambda _n: nullcontext()
+    ).start()
     mocks["_yesterday"].return_value = Y
     mocks["_stage_day"].return_value = True
     mocks["_upsert_modifications"].return_value = 1
@@ -586,6 +590,7 @@ class TestApplyDailyUpdates:
         assert partial == [True, True, False]
         advanced = [c.args[1] for c in engine["_set_last_applied"].call_args_list]
         assert advanced == staged
+        assert engine["dataset_lock"].call_args_list == [call("allcountries")] * 3
         engine["_sync_metadata"].assert_called_once_with([ds])
 
     def test_failed_dataset_not_synced_and_does_not_skip_days(self, engine):

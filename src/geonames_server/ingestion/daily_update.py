@@ -37,7 +37,11 @@ from geonames_server.database.repository.sync.dataset_metadata_repository import
 )
 from geonames_server.database.session import get_session
 from geonames_server.ingestion.downloader import Downloader
-from geonames_server.ingestion.pipeline import _get_conn_params, check_remote_metadata
+from geonames_server.ingestion.pipeline import (
+    _get_conn_params,
+    check_remote_metadata,
+    dataset_lock,
+)
 from geonames_server.ingestion.registry import (
     DatasetInfo,
     enabled_names,
@@ -480,16 +484,18 @@ def apply_daily_updates(
         for ds in todo:
             table = ds.model.__table__.name
             try:
-                if published:
-                    on_dataset(ds.name, DatasetSyncStatus.APPLYING_MODIFICATIONS)
-                    count = _upsert_modifications(
-                        conn_params, table, day, POPULATION_THRESHOLDS.get(ds.name, 0)
-                    )
-                    log.info(f"[{ds.name}] {day}: upserted {count} modification(s)")
-                    on_dataset(ds.name, DatasetSyncStatus.APPLYING_DELETES)
-                    count = _delete_from_dataset(conn_params, table, day)
-                    log.info(f"[{ds.name}] {day}: deleted {count} row(s)")
-                _set_last_applied(ds.name, day)
+                # Blocks while a rebuild of this dataset is loading / swapping.
+                with dataset_lock(ds.name):
+                    if published:
+                        on_dataset(ds.name, DatasetSyncStatus.APPLYING_MODIFICATIONS)
+                        count = _upsert_modifications(
+                            conn_params, table, day, POPULATION_THRESHOLDS.get(ds.name, 0)
+                        )
+                        log.info(f"[{ds.name}] {day}: upserted {count} modification(s)")
+                        on_dataset(ds.name, DatasetSyncStatus.APPLYING_DELETES)
+                        count = _delete_from_dataset(conn_params, table, day)
+                        log.info(f"[{ds.name}] {day}: deleted {count} row(s)")
+                    _set_last_applied(ds.name, day)
             except Exception:
                 log.exception(f"[{ds.name}] Failed to apply {day}")
                 failed.add(ds.name)

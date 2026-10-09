@@ -142,3 +142,17 @@ def test_sequence_ownership_survives_swap(conn, tmp_path):
         "WHERE table_name = 'cities500' AND column_name = 'geonameid'",
     )
     assert owned == 1 and "nextval" in default
+
+
+def test_dataset_lock_excludes_other_sessions(conn):
+    key = (pipeline._DATASET_LOCK_NAMESPACE, "cities500")
+    try_lock = "SELECT pg_try_advisory_lock(%s, hashtext(%s))"
+    with patch.object(pipeline, "_get_conn_params", return_value=parse_dsn(DSN)):
+        with pipeline.dataset_lock("cities500"):
+            with conn.cursor() as cur:
+                cur.execute(try_lock, key)
+                assert cur.fetchone()[0] is False
+        with conn.cursor() as cur:
+            cur.execute(try_lock, key)
+            assert cur.fetchone()[0] is True
+            cur.execute("SELECT pg_advisory_unlock(%s, hashtext(%s))", key)
