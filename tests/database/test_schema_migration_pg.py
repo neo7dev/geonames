@@ -262,3 +262,14 @@ def _query_commit(query: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def test_population_is_bigint_in_every_table():
+    command.upgrade(_alembic_config(), "head")
+
+    types = _query(
+        "SELECT table_name, data_type FROM information_schema.columns "
+        "WHERE table_schema = %s AND column_name = 'population'",
+        SCHEMA,
+    )
+    assert types and {data_type for _, data_type in types} == {"bigint"}
