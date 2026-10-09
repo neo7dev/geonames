@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,3 +15,4 @@ class DatasetMetaDataResponse(BaseModel):
     remote_etag: str | None = None
     last_modified: datetime | None = None
     remote_last_modified: datetime | None = None
+    last_applied_date: date | None = None

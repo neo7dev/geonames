@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg2
@@ -169,6 +169,9 @@ def build_dataset(dataset_info: DatasetInfo, force: bool = False) -> None:
             # After a fresh build, local etag matches remote
             metadata.etag = result.etag
             metadata.last_modified = now
+            # The dump contains every change up to the day before it was built.
+            built = result.last_modified or now
+            metadata.last_applied_date = built.date() - timedelta(days=1)
             session.commit()
 
     log.info(f"[{name}] Dataset sync complete")

@@ -21,7 +21,12 @@ from geonames_server.database.models.dataset_metadata import (
 )
 from geonames_server.ingestion.daily_update import (
     GEOBASE_COLUMNS,
+    MAX_CATCHUP_DAYS,
     POPULATION_THRESHOLDS,
+    DailyUpdateError,
+    _pending_days,
+    _stage_day,
+    apply_daily_updates,
     _delete_from_dataset,
     _download_daily_file,
     _ingest_daily_file,
@@ -32,6 +37,8 @@ from geonames_server.ingestion.daily_update import (
     check_and_apply_daily_updates,
 )
 from geonames_server.ingestion.pipeline import check_remote_metadata
+from geonames_server.ingestion.sync_tracker import DatasetSyncStatus
+from geonames_server.utils.utils import current_utc_date
 from geonames_server.ingestion.registry import DatasetInfo
 
 if _orig_datasets:
@@ -88,7 +95,7 @@ class TestYesterday:
         assert isinstance(result, date)
 
     def test_is_one_day_before_today(self):
-        assert _yesterday() == date.today() - timedelta(days=1)
+        assert _yesterday() == current_utc_date() - timedelta(days=1)
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +190,7 @@ class TestDownloadDailyFile:
 
     @patch(f"{MODULE}.Downloader")
     @patch(f"{MODULE}.settings")
-    def test_returns_none_on_download_exception(self, mock_settings, mock_dl_cls):
+    def test_download_exception_propagates(self, mock_settings, mock_dl_cls):
         mock_settings.geonames_url = "https://example.com/"
         mock_settings.cache_dir = Path("/tmp/cache")
         mock_settings.data_dir = Path("/tmp/data")
@@ -197,8 +204,8 @@ class TestDownloadDailyFile:
         mock_dl_instance.__exit__ = MagicMock(return_value=False)
         mock_dl_cls.return_value = mock_dl_instance
 
-        result = _download_daily_file(client, "modifications-2026-03-18.txt")
-        assert result is None
+        with pytest.raises(RuntimeError):
+            _download_daily_file(client, "modifications-2026-03-18.txt")
 
 
 # ---------------------------------------------------------------------------
@@ -501,473 +508,232 @@ class TestSyncMetadata:
 
 
 # ---------------------------------------------------------------------------
-# check_and_apply_daily_updates  (orchestration)
+# _pending_days
 # ---------------------------------------------------------------------------
 
 
-class TestCheckAndApplyDailyUpdates:
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset")
-    @patch(f"{MODULE}._upsert_modifications")
-    @patch(f"{MODULE}._ingest_deletions_file")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_full_pipeline_with_out_of_sync_datasets(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """Happy path: datasets are out of sync, daily files exist."""
-        ds_all = _make_dataset_info("allcountries")
-        ds_500 = _make_dataset_info("cities500")
-        mock_get_all.return_value = [ds_all, ds_500]
+class TestPendingDays:
+    Y = date(2026, 3, 18)
 
-        # Simulate out-of-sync records
-        oos_record1 = MagicMock()
-        oos_record1.dataset = "allcountries"
-        oos_record2 = MagicMock()
-        oos_record2.dataset = "cities500"
+    def test_none_means_only_yesterday(self):
+        assert _pending_days(None, self.Y) == [self.Y]
 
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
+    def test_caught_up_is_empty(self):
+        assert _pending_days(self.Y, self.Y) == []
 
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [
-                oos_record1,
-                oos_record2,
-            ]
-
-            # Daily files are found
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [
-                Path("/tmp/modifications.txt"),
-                Path("/tmp/deletes.txt"),
-            ]
-
-            mock_upsert.return_value = 10
-            mock_delete.return_value = 2
-
-            check_and_apply_daily_updates()
-
-        # Step 1a
-        mock_check_remote.assert_called_once()
-        # Step 1b – download called twice (mod + del)
-        assert mock_download.call_count == 2
-        # Modifications ingested via _ingest_daily_file
-        assert mock_ingest.call_count == 1
-        # Deletions ingested via _ingest_deletions_file
-        assert mock_ingest_del.call_count == 1
-        # Step 2 – upsert + delete for each dataset (2 × 2 = 4 total)
-        assert mock_upsert.call_count == 2
-        assert mock_delete.call_count == 2
-        # Step 3
-        mock_sync.assert_called_once()
-
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    def test_exits_early_when_all_in_sync(
-        self, mock_get_all, mock_check_remote, mock_get_session
-    ):
-        """When no dataset is out of sync, nothing else happens."""
-        mock_get_all.return_value = [_make_dataset_info("allcountries")]
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = []
-            check_and_apply_daily_updates()
-
-        mock_check_remote.assert_called_once()
-        # No download or ingestion should happen
-
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    def test_exits_early_when_no_daily_files(
-        self,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-    ):
-        """When daily files don't exist (both None), exits without ingestion."""
-        mock_get_all.return_value = [_make_dataset_info("allcountries")]
-
-        oos = MagicMock()
-        oos.dataset = "allcountries"
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.return_value = None
-
-            check_and_apply_daily_updates()
-
-        # download attempted for both mod and del files
-        assert mock_download.call_count == 2
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset")
-    @patch(f"{MODULE}._upsert_modifications")
-    @patch(f"{MODULE}._ingest_deletions_file")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_only_processes_out_of_sync_datasets(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """Only out-of-sync datasets get upserts/deletes applied."""
-        ds_all = _make_dataset_info("allcountries")
-        ds_500 = _make_dataset_info("cities500")
-        ds_1000 = _make_dataset_info("cities1000")
-        mock_get_all.return_value = [ds_all, ds_500, ds_1000]
-
-        # Only allcountries is out of sync
-        oos = MagicMock()
-        oos.dataset = "allcountries"
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [
-                Path("/tmp/modifications.txt"),
-                Path("/tmp/deletes.txt"),
-            ]
-            mock_upsert.return_value = 1
-            mock_delete.return_value = 1
-
-            check_and_apply_daily_updates()
-
-        # Only 1 dataset (allcountries) should get upsert + delete
-        assert mock_upsert.call_count == 1
-        assert mock_delete.call_count == 1
-        # The upsert should use allcountries threshold (0)
-        upsert_call = mock_upsert.call_args
-        assert upsert_call[1].get("population_threshold", upsert_call[0][3]) == 0
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset")
-    @patch(f"{MODULE}._upsert_modifications")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_only_modifications_when_deletes_unavailable(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """When only modifications file exists, deletions are skipped."""
-        ds = _make_dataset_info("allcountries")
-        mock_get_all.return_value = [ds]
-
-        oos = MagicMock()
-        oos.dataset = "allcountries"
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            # mod exists, del doesn't
-            mock_download.side_effect = [Path("/tmp/mod.txt"), None]
-            mock_upsert.return_value = 5
-
-            check_and_apply_daily_updates()
-
-        # Ingestion only for mod file
-        assert mock_ingest.call_count == 1
-        # Upsert called, delete not called
-        assert mock_upsert.call_count == 1
-        mock_delete.assert_not_called()
-        # Sync still runs
-        mock_sync.assert_called_once()
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset")
-    @patch(f"{MODULE}._upsert_modifications")
-    @patch(f"{MODULE}._ingest_deletions_file")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_only_deletions_when_modifications_unavailable(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """When only deletes file exists, modifications are skipped."""
-        ds = _make_dataset_info("allcountries")
-        mock_get_all.return_value = [ds]
-
-        oos = MagicMock()
-        oos.dataset = "allcountries"
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            # mod doesn't exist, del does
-            mock_download.side_effect = [None, Path("/tmp/del.txt")]
-            mock_delete.return_value = 3
-
-            check_and_apply_daily_updates()
-
-        # No modifications ingested
-        mock_ingest.assert_not_called()
-        # Deletions ingested via _ingest_deletions_file
-        assert mock_ingest_del.call_count == 1
-        # Delete called, upsert not called
-        mock_upsert.assert_not_called()
-        assert mock_delete.call_count == 1
-        mock_sync.assert_called_once()
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset")
-    @patch(f"{MODULE}._upsert_modifications")
-    @patch(f"{MODULE}._ingest_deletions_file")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_returns_early_if_mod_ingestion_fails(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """If modifications ingestion fails, pipeline aborts."""
-        ds = _make_dataset_info("allcountries")
-        mock_get_all.return_value = [ds]
-
-        oos = MagicMock()
-        oos.dataset = "allcountries"
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [Path("/tmp/mod.txt"), Path("/tmp/del.txt")]
-            mock_ingest.side_effect = RuntimeError("COPY failed")
-
-            check_and_apply_daily_updates()
-
-        # Should not proceed to upsert/delete/sync
-        mock_upsert.assert_not_called()
-        mock_delete.assert_not_called()
-        mock_sync.assert_not_called()
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset")
-    @patch(f"{MODULE}._upsert_modifications")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_population_thresholds_passed_per_dataset(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """Each dataset gets the correct population threshold."""
-        datasets = [
-            _make_dataset_info("allcountries"),
-            _make_dataset_info("cities500"),
-            _make_dataset_info("cities5000"),
-            _make_dataset_info("cities15000"),
+    def test_gap_is_replayed_in_order(self):
+        assert _pending_days(date(2026, 3, 15), self.Y) == [
+            date(2026, 3, 16),
+            date(2026, 3, 17),
+            date(2026, 3, 18),
         ]
-        mock_get_all.return_value = datasets
 
-        oos_records = [MagicMock(dataset=ds.name) for ds in datasets]
+    def test_gap_is_capped(self):
+        days = _pending_days(date(2025, 1, 1), self.Y)
+        assert len(days) == MAX_CATCHUP_DAYS
+        assert days[-1] == self.Y
 
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
 
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = oos_records
+# ---------------------------------------------------------------------------
+# apply_daily_updates / check_and_apply_daily_updates
+# ---------------------------------------------------------------------------
 
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [Path("/tmp/mod.txt"), None]
-            mock_upsert.return_value = 1
+Y = date(2026, 3, 18)
 
-            check_and_apply_daily_updates()
 
-        # Verify each call used the right threshold
-        assert mock_upsert.call_count == 4
-        thresholds_used = [c[0][3] for c in mock_upsert.call_args_list]
-        assert thresholds_used == [0, 500, 5000, 15000]
+@pytest.fixture
+def engine():
+    """Patch every collaborator of apply_daily_updates; yield the mocks."""
+    names = [
+        "_yesterday",
+        "_load_last_applied",
+        "_set_last_applied",
+        "_stage_day",
+        "_upsert_modifications",
+        "_delete_from_dataset",
+        "_sync_metadata",
+        "_get_conn_params",
+    ]
+    patches = {n: patch(f"{MODULE}.{n}") for n in names}
+    mocks = {n: p.start() for n, p in patches.items()}
+    mocks["_yesterday"].return_value = Y
+    mocks["_stage_day"].return_value = True
+    mocks["_upsert_modifications"].return_value = 1
+    mocks["_delete_from_dataset"].return_value = 1
+    yield mocks
+    patch.stopall()
 
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset")
-    @patch(f"{MODULE}._upsert_modifications")
+
+class TestApplyDailyUpdates:
+    def test_replays_each_missed_day_in_order(self, engine):
+        ds = _make_dataset_info("allcountries")
+        engine["_load_last_applied"].return_value = {"allcountries": date(2026, 3, 15)}
+
+        apply_daily_updates([ds], {"allcountries"})
+
+        staged = [c.args[0] for c in engine["_stage_day"].call_args_list]
+        assert staged == [date(2026, 3, 16), date(2026, 3, 17), Y]
+        advanced = [c.args[1] for c in engine["_set_last_applied"].call_args_list]
+        assert advanced == staged
+        engine["_sync_metadata"].assert_called_once_with([ds])
+
+    def test_failed_dataset_not_synced_and_does_not_skip_days(self, engine):
+        ok, bad = _make_dataset_info("cities500"), _make_dataset_info("allcountries")
+        engine["_load_last_applied"].return_value = {
+            "cities500": date(2026, 3, 16),
+            "allcountries": date(2026, 3, 16),
+        }
+
+        def upsert(_conn, table, day, _thr):
+            if table == "allcountries":
+                raise RuntimeError("boom")
+            return 1
+
+        engine["_upsert_modifications"].side_effect = upsert
+        seen = []
+
+        apply_daily_updates(
+            [ok, bad], {"cities500", "allcountries"}, on_dataset=lambda n, s: seen.append((n, s))
+        )
+
+        engine["_sync_metadata"].assert_called_once_with([ok])
+        assert ("allcountries", DatasetSyncStatus.FAILED) in seen
+        # failed dataset is dropped after its first failure, never advanced
+        assert all(c.args[0] != "allcountries" for c in engine["_set_last_applied"].call_args_list)
+        assert engine["_upsert_modifications"].call_count == 3  # cities500: 2 days; allcountries: 1 (failed, dropped)
+
+    def test_stops_when_yesterdays_files_not_published(self, engine):
+        ds = _make_dataset_info()
+        engine["_load_last_applied"].return_value = {"allcountries": Y - timedelta(days=1)}
+        engine["_stage_day"].return_value = False
+
+        apply_daily_updates([ds], {"allcountries"})
+
+        engine["_set_last_applied"].assert_not_called()
+        engine["_upsert_modifications"].assert_not_called()
+        engine["_sync_metadata"].assert_called_once_with([])
+
+    def test_old_unpublished_day_is_skipped_but_advanced(self, engine):
+        ds = _make_dataset_info()
+        engine["_load_last_applied"].return_value = {"allcountries": date(2026, 3, 16)}
+        engine["_stage_day"].side_effect = [False, True]  # 03-17 missing, 03-18 ok
+
+        apply_daily_updates([ds], {"allcountries"})
+
+        assert [c.args[1] for c in engine["_set_last_applied"].call_args_list] == [
+            date(2026, 3, 17),
+            Y,
+        ]
+        assert engine["_upsert_modifications"].call_count == 1
+        engine["_sync_metadata"].assert_called_once_with([ds])
+
+    def test_staging_failure_aborts_without_syncing(self, engine):
+        ds = _make_dataset_info()
+        engine["_load_last_applied"].return_value = {"allcountries": Y - timedelta(days=1)}
+        engine["_stage_day"].side_effect = DailyUpdateError("x")
+
+        with pytest.raises(DailyUpdateError):
+            apply_daily_updates([ds], {"allcountries"})
+
+        engine["_sync_metadata"].assert_not_called()
+        engine["_set_last_applied"].assert_not_called()
+
+    def test_already_caught_up_dataset_is_just_synced(self, engine):
+        ds = _make_dataset_info()
+        engine["_load_last_applied"].return_value = {"allcountries": Y}
+
+        apply_daily_updates([ds], {"allcountries"})
+
+        engine["_stage_day"].assert_not_called()
+        engine["_sync_metadata"].assert_called_once_with([ds])
+
+    def test_population_threshold_passed_per_dataset(self, engine):
+        a, c = _make_dataset_info("allcountries"), _make_dataset_info("cities5000")
+        engine["_load_last_applied"].return_value = {
+            "allcountries": Y - timedelta(days=1),
+            "cities5000": Y - timedelta(days=1),
+        }
+
+        apply_daily_updates([a, c], {"allcountries", "cities5000"})
+
+        thresholds = {
+            call.args[1]: call.args[3]
+            for call in engine["_upsert_modifications"].call_args_list
+        }
+        assert thresholds == {"allcountries": 0, "cities5000": 5000}
+
+    def test_only_out_of_sync_datasets_are_touched(self, engine):
+        a, c = _make_dataset_info("allcountries"), _make_dataset_info("cities500")
+        engine["_load_last_applied"].return_value = {"cities500": Y - timedelta(days=1)}
+
+        apply_daily_updates([a, c], {"cities500"})
+
+        engine["_load_last_applied"].assert_called_once_with(["cities500"])
+        engine["_sync_metadata"].assert_called_once_with([c])
+
+
+class TestStageDay:
     @patch(f"{MODULE}._ingest_deletions_file")
     @patch(f"{MODULE}._ingest_daily_file")
     @patch(f"{MODULE}._download_daily_file")
     @patch(f"{MODULE}.RemoteFileClient")
+    def test_downloads_and_ingests_both_files(self, _rfc, mock_dl, mock_mod, mock_del):
+        mock_dl.side_effect = [Path("/tmp/m.txt"), Path("/tmp/d.txt")]
+        assert _stage_day(Y, lambda _s: None) is True
+        names = [c.args[1] for c in mock_dl.call_args_list]
+        assert names == ["modifications-2026-03-18.txt", "deletes-2026-03-18.txt"]
+        mock_mod.assert_called_once()
+        mock_del.assert_called_once_with(Path("/tmp/d.txt"), Y)
+
+    @patch(f"{MODULE}._download_daily_file", return_value=None)
+    @patch(f"{MODULE}.RemoteFileClient")
+    def test_returns_false_when_nothing_published(self, _rfc, _dl):
+        assert _stage_day(Y, lambda _s: None) is False
+
+    @patch(f"{MODULE}._download_daily_file", side_effect=RuntimeError("net"))
+    @patch(f"{MODULE}.RemoteFileClient")
+    def test_download_failure_raises_daily_update_error(self, _rfc, _dl):
+        with pytest.raises(DailyUpdateError):
+            _stage_day(Y, lambda _s: None)
+
+    @patch(f"{MODULE}._ingest_daily_file", side_effect=RuntimeError("db"))
+    @patch(f"{MODULE}._download_daily_file", return_value=Path("/tmp/m.txt"))
+    @patch(f"{MODULE}.RemoteFileClient")
+    def test_ingest_failure_raises_daily_update_error(self, _rfc, _dl, _ing):
+        with pytest.raises(DailyUpdateError):
+            _stage_day(Y, lambda _s: None)
+
+
+class TestCheckAndApplyDailyUpdates:
+    @patch(f"{MODULE}.apply_daily_updates")
     @patch(f"{MODULE}.get_session")
     @patch(f"{MODULE}.check_remote_metadata")
     @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_upsert_exception_does_not_block_other_datasets(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """If upsert fails for one dataset, others still proceed."""
-        ds1 = _make_dataset_info("allcountries")
-        ds2 = _make_dataset_info("cities500")
-        mock_get_all.return_value = [ds1, ds2]
-
-        oos = [MagicMock(dataset="allcountries"), MagicMock(dataset="cities500")]
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = oos
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [Path("/tmp/mod.txt"), Path("/tmp/del.txt")]
-
-            # First upsert fails, second succeeds
-            mock_upsert.side_effect = [RuntimeError("DB error"), 5]
-            mock_delete.return_value = 1
-
+    def _run(self, out_of_sync, mock_all, mock_check, mock_session, mock_apply, **kw):
+        ds = [_make_dataset_info("allcountries"), _make_dataset_info("cities500")]
+        mock_all.return_value = ds
+        mock_session.return_value.__enter__ = MagicMock()
+        mock_session.return_value.__exit__ = MagicMock(return_value=False)
+        if "side_effect" in kw:
+            mock_apply.side_effect = kw["side_effect"]
+        with patch(f"{MODULE}.DatasetMetaDataRepository") as repo:
+            repo.return_value.get_out_of_sync.return_value = [
+                _make_metadata_record(n) for n in out_of_sync
+            ]
             check_and_apply_daily_updates()
+        mock_check.assert_called_once_with(ds)
+        return mock_apply, ds
 
-        # Both datasets attempted upsert
-        assert mock_upsert.call_count == 2
-        # deletions still applied to both
-        assert mock_delete.call_count == 2
-        # sync still runs
-        mock_sync.assert_called_once()
+    def test_exits_early_when_all_in_sync(self):
+        mock_apply, _ = self._run([])
+        mock_apply.assert_not_called()
+
+    def test_applies_only_out_of_sync_names(self):
+        mock_apply, ds = self._run(["cities500"])
+        mock_apply.assert_called_once_with(ds, {"cities500"})
+
+    def test_swallows_daily_update_error(self):
+        self._run(["cities500"], side_effect=DailyUpdateError("x"))
 
 
 # ---------------------------------------------------------------------------
@@ -1383,338 +1149,3 @@ class TestCheckRemoteMetadata:
         assert rec1.remote_last_modified == datetime(2026, 3, 18, tzinfo=timezone.utc)
         assert rec2.remote_last_modified == datetime(2026, 3, 17, tzinfo=timezone.utc)
         assert mock_session.commit.call_count == 2
-
-
-# ---------------------------------------------------------------------------
-# End-to-end etag/last-modified triggering in check_and_apply_daily_updates
-# ---------------------------------------------------------------------------
-
-
-class TestEtagLastModifiedTriggering:
-    """Verify that check_and_apply_daily_updates proceeds or skips based on
-    the out_of_sync flag that is driven by etag/last-modified comparisons."""
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset", return_value=0)
-    @patch(f"{MODULE}._upsert_modifications", return_value=0)
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_matching_etag_means_in_sync_skips_update(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """When etag matches and remote is not newer, out_of_sync=False →
-        no datasets to update → early return."""
-        mock_get_all.return_value = [_make_dataset_info("allcountries")]
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            # No out-of-sync records → etag and last-modified matched
-            MockRepo.return_value.get_out_of_sync.return_value = []
-
-            check_and_apply_daily_updates()
-
-        mock_check_remote.assert_called_once()
-        mock_download.assert_not_called()
-        mock_ingest.assert_not_called()
-        mock_upsert.assert_not_called()
-        mock_delete.assert_not_called()
-        mock_sync.assert_not_called()
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset", return_value=1)
-    @patch(f"{MODULE}._upsert_modifications", return_value=5)
-    @patch(f"{MODULE}._ingest_deletions_file")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_different_etag_triggers_full_pipeline(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """When remote etag differs → dataset is out_of_sync → full pipeline runs."""
-        ds = _make_dataset_info("allcountries")
-        mock_get_all.return_value = [ds]
-
-        oos_record = _make_metadata_record(
-            dataset="allcountries",
-            out_of_sync=True,
-            etag='"old-etag"',
-            remote_etag='"new-etag"',
-        )
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos_record]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [
-                Path("/tmp/mod.txt"),
-                Path("/tmp/del.txt"),
-            ]
-
-            check_and_apply_daily_updates()
-
-        mock_check_remote.assert_called_once()
-        assert mock_download.call_count == 2
-        # Modifications ingested via _ingest_daily_file
-        assert mock_ingest.call_count == 1
-        # Deletions ingested via _ingest_deletions_file
-        assert mock_ingest_del.call_count == 1
-        mock_upsert.assert_called_once()
-        mock_delete.assert_called_once()
-        mock_sync.assert_called_once()
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset", return_value=1)
-    @patch(f"{MODULE}._upsert_modifications", return_value=3)
-    @patch(f"{MODULE}._ingest_deletions_file")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_newer_remote_last_modified_triggers_pipeline(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """When remote last_modified is newer → out_of_sync → pipeline runs."""
-        ds = _make_dataset_info("cities5000")
-        mock_get_all.return_value = [ds]
-
-        oos_record = _make_metadata_record(
-            dataset="cities5000",
-            out_of_sync=True,
-            etag='"same-etag"',
-            remote_etag='"same-etag"',
-        )
-        # remote_last_modified is newer than local
-        oos_record.remote_last_modified = datetime(2026, 3, 19, 12, 0, 0, tzinfo=timezone.utc)
-        oos_record.last_modified = datetime(2026, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos_record]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [
-                Path("/tmp/mod.txt"),
-                Path("/tmp/del.txt"),
-            ]
-
-            check_and_apply_daily_updates()
-
-        mock_upsert.assert_called_once()
-        mock_delete.assert_called_once()
-        mock_sync.assert_called_once()
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset", return_value=0)
-    @patch(f"{MODULE}._upsert_modifications", return_value=0)
-    @patch(f"{MODULE}._ingest_deletions_file")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_mixed_sync_only_updates_out_of_sync_datasets(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """When 3 datasets exist but only 1 has a changed etag, only that
-        one is upserted/deleted/synced."""
-        ds_all = _make_dataset_info("allcountries")
-        ds_500 = _make_dataset_info("cities500")
-        ds_5000 = _make_dataset_info("cities5000")
-        mock_get_all.return_value = [ds_all, ds_500, ds_5000]
-
-        # Only cities500 is out of sync (different etag)
-        oos_record = _make_metadata_record(
-            dataset="cities500",
-            out_of_sync=True,
-            etag='"old"',
-            remote_etag='"new"',
-        )
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos_record]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [Path("/tmp/mod.txt"), Path("/tmp/del.txt")]
-
-            check_and_apply_daily_updates()
-
-        # Only 1 dataset was out of sync → upsert/delete called once
-        mock_upsert.assert_called_once()
-        mock_delete.assert_called_once()
-        # The sync only includes the out-of-sync dataset
-        synced_datasets = mock_sync.call_args[0][0]
-        assert len(synced_datasets) == 1
-        assert synced_datasets[0].name == "cities500"
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset", return_value=0)
-    @patch(f"{MODULE}._upsert_modifications", return_value=0)
-    @patch(f"{MODULE}._ingest_deletions_file")
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_sync_metadata_copies_remote_values_after_update(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_ingest_del,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """After applying updates, _sync_metadata is called so that
-        local etag/last_modified are set to match remote (clearing out_of_sync)."""
-        ds = _make_dataset_info("allcountries")
-        mock_get_all.return_value = [ds]
-
-        oos_record = _make_metadata_record(
-            dataset="allcountries",
-            out_of_sync=True,
-            etag='"stale"',
-            remote_etag='"fresh"',
-        )
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = [oos_record]
-
-            mock_client = MagicMock()
-            mock_rfc.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_rfc.return_value.__exit__ = MagicMock(return_value=False)
-            mock_download.side_effect = [Path("/tmp/mod.txt"), Path("/tmp/del.txt")]
-
-            check_and_apply_daily_updates()
-
-        # _sync_metadata was called with the out-of-sync datasets
-        mock_sync.assert_called_once()
-        synced = mock_sync.call_args[0][0]
-        assert synced[0].name == "allcountries"
-
-    @patch(f"{MODULE}._sync_metadata")
-    @patch(f"{MODULE}._delete_from_dataset", return_value=0)
-    @patch(f"{MODULE}._upsert_modifications", return_value=0)
-    @patch(f"{MODULE}._ingest_daily_file")
-    @patch(f"{MODULE}._download_daily_file")
-    @patch(f"{MODULE}.RemoteFileClient")
-    @patch(f"{MODULE}.get_session")
-    @patch(f"{MODULE}.check_remote_metadata")
-    @patch(f"{MODULE}.get_all_datasets")
-    @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_check_remote_metadata_called_with_all_datasets(
-        self,
-        mock_conn,
-        mock_get_all,
-        mock_check_remote,
-        mock_get_session,
-        mock_rfc,
-        mock_download,
-        mock_ingest,
-        mock_upsert,
-        mock_delete,
-        mock_sync,
-    ):
-        """Step 1a always calls check_remote_metadata with ALL datasets,
-        not just enabled ones, to detect remote changes."""
-        ds_all = _make_dataset_info("allcountries")
-        ds_500 = _make_dataset_info("cities500")
-        ds_5000 = _make_dataset_info("cities5000")
-        mock_get_all.return_value = [ds_all, ds_500, ds_5000]
-
-        mock_session = MagicMock()
-        mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
-            MockRepo.return_value.get_out_of_sync.return_value = []
-            check_and_apply_daily_updates()
-
-        mock_check_remote.assert_called_once_with([ds_all, ds_500, ds_5000])

@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import Boolean, DateTime, String, event
+from sqlalchemy import Boolean, Date, DateTime, String, event
 from sqlalchemy.orm import Mapped, mapped_column, validates  # noqa: F401
 
 from geonames_server.database.models.base import Base
@@ -75,6 +75,12 @@ class DatasetMetaData(Base):
         index=True,
     )
 
+    # Last day whose daily modifications/deletes files were applied.
+    last_applied_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
     # ! Convert dataset to lowercase but on second thought, may be just leave it as is
     # @validates("dataset")
     # def validate_dataset_lowercase(self, _key, value):
@@ -91,7 +97,8 @@ class DatasetMetaData(Base):
             f"etag={self.etag}, "
             f"remote_etag={self.remote_etag}, "
             f"last_modified={self.last_modified}, "
-            f"remote_last_modified={self.remote_last_modified}>"
+            f"remote_last_modified={self.remote_last_modified}, "
+            f"last_applied_date={self.last_applied_date}>"
         )
 
     def to_dict(self) -> dict:
@@ -108,6 +115,9 @@ class DatasetMetaData(Base):
             else None,
             "remote_last_modified": self.remote_last_modified.isoformat()
             if self.remote_last_modified
+            else None,
+            "last_applied_date": self.last_applied_date.isoformat()
+            if self.last_applied_date
             else None,
         }
 

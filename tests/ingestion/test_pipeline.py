@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -348,6 +348,8 @@ class TestBuildDataset:
         # Metadata updated
         assert mock_metadata.remote_etag == '"etag1"'
         assert mock_metadata.etag == '"etag1"'
+        # dump built 2025-07-01 contains changes through 2025-06-30
+        assert mock_metadata.last_applied_date == date(2025, 6, 30)
         mock_session.commit.assert_called_once()
 
     @patch("geonames_server.ingestion.pipeline.DatasetMetaDataRepository")

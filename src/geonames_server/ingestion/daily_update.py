@@ -1,30 +1,24 @@
 """Daily update pipeline for GeoNames datasets.
 
-Workflow
--------
-1a. HEAD-check each dataset's zip (or txt) file to compare etag &
-    last-modified against the stored values.  If the remote file has
-    changed the dataset record is marked *out_of_sync* automatically.
-1b. If any dataset is out of sync, check whether yesterday's
-    ``modifications-YYYY-MM-DD.txt`` and ``deletes-YYYY-MM-DD.txt``
-    exist on the remote server.  If they do, download them and COPY
-    them into the ``modifications`` / ``deletions`` staging tables.
-2a. Use SQL to UPSERT from ``modifications`` and DELETE via
-    ``deletions`` into each out-of-sync dataset table, filtered to
-    yesterday's date only.
-2b. Population-based filtering per dataset:
-    - allcountries  → all modifications, all deletions
-    - cities500     → population ≥ 500, all deletions (if record exists)
-    - cities1000    → population ≥ 1 000, all deletions (if record exists)
-    - cities5000    → population ≥ 5 000, all deletions (if record exists)
-    - cities15000   → population ≥ 15 000, all deletions (if record exists)
-3.  Copy each dataset's remote etag/last-modified into the local
-    fields so ``out_of_sync`` is cleared by the model event listener.
+Each dataset tracks ``last_applied_date``: the last day whose
+``modifications-`` / ``deletes-`` files were applied to it. A run replays every
+day after that up to yesterday (UTC), in order, so missed runs are caught up.
+Applying a day is idempotent (upsert / delete by key), so replays are safe.
+
+1. HEAD-check each dataset's remote file; out-of-sync datasets are updated.
+2. For each pending day: download the daily files, COPY them into the
+   ``modifications`` / ``deletions`` staging tables, then apply them to every
+   dataset still pending that day (population-filtered for city datasets).
+   ``last_applied_date`` advances only after a day is applied to a dataset.
+3. Datasets caught up to yesterday get their local etag / last-modified synced
+   with the remote ones, which clears ``out_of_sync``. Failed or lagging
+   datasets stay out of sync and are retried on the next run.
 """
 
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import TextIO
@@ -44,7 +38,9 @@ from geonames_server.ingestion.downloader import Downloader
 from geonames_server.ingestion.pipeline import _get_conn_params, check_remote_metadata
 from geonames_server.ingestion.registry import DatasetInfo, get_all_datasets
 from geonames_server.ingestion.remote import RemoteFileClient
+from geonames_server.ingestion.sync_tracker import DatasetSyncStatus, SyncStep
 from geonames_server.log.mylogger import get_logger
+from geonames_server.utils.utils import current_utc_date
 
 log = get_logger()
 
@@ -62,6 +58,13 @@ POPULATION_THRESHOLDS: dict[str, int] = {
     "cities15000": 15000,
 }
 
+# Upper bound on how many days a single run will replay.
+MAX_CATCHUP_DAYS = 31
+
+
+class DailyUpdateError(Exception):
+    """A day's files could not be downloaded or staged."""
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -69,13 +72,29 @@ POPULATION_THRESHOLDS: dict[str, int] = {
 
 
 def _yesterday() -> date:
-    return date.today() - timedelta(days=1)
+    return current_utc_date() - timedelta(days=1)
+
+
+def _pending_days(last_applied: date | None, yesterday: date) -> list[date]:
+    """Days after *last_applied* up to *yesterday*, oldest first."""
+    if last_applied is None:
+        last_applied = yesterday - timedelta(days=1)
+    start = max(
+        last_applied + timedelta(days=1), yesterday - timedelta(days=MAX_CATCHUP_DAYS - 1)
+    )
+    if start > last_applied + timedelta(days=1):
+        log.warning(
+            f"Gap since {last_applied} exceeds {MAX_CATCHUP_DAYS} days — "
+            f"replaying from {start}; a full rebuild is recommended"
+        )
+    return [start + timedelta(days=i) for i in range((yesterday - start).days + 1)]
 
 
 def _download_daily_file(client: RemoteFileClient, file_name: str) -> Path | None:
-    """Check if a daily file exists on the remote server and download it.
+    """Download a daily file if it exists on the remote server.
 
-    Returns the local path on success, ``None`` if the file does not exist.
+    Returns the local path, or ``None`` if the file does not exist. Download
+    failures propagate.
     """
     url = settings.geonames_url + file_name
 
@@ -83,14 +102,10 @@ def _download_daily_file(client: RemoteFileClient, file_name: str) -> Path | Non
         log.info(f"Daily file not available: {url}")
         return None
 
-    try:
-        with Downloader(
-            cache_dir=settings.cache_dir, data_dir=settings.data_dir, force=True
-        ) as dl:
-            return dl.download(url=url, file_name=file_name).path
-    except Exception:
-        log.exception(f"Failed to download daily file: {url}")
-        return None
+    with Downloader(
+        cache_dir=settings.cache_dir, data_dir=settings.data_dir, force=True
+    ) as dl:
+        return dl.download(url=url, file_name=file_name).path
 
 
 def _copy_into_temp_table(
@@ -336,96 +351,136 @@ def _sync_metadata(datasets: list[DatasetInfo]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public entry point
+# Catch-up bookkeeping
 # ---------------------------------------------------------------------------
 
 
-def check_and_apply_daily_updates() -> None:
-    """Main daily-update function called by the scheduler.
-
-    1a. HEAD-check all dataset zip/txt files to detect remote changes.
-    1b. If any dataset is out of sync, download yesterday's daily files
-        and COPY them into the modifications / deletions staging tables.
-    2.  UPSERT modifications and DELETE deletions into each out-of-sync
-        dataset table (with population-based filtering).
-    3.  Sync local metadata to remote values (auto-clears out_of_sync).
-    """
-    all_datasets = get_all_datasets()
-    yesterday = _yesterday()
-
-    log.info(f"Starting daily update check for {yesterday}")
-
-    # --- Step 1a: HEAD-check remote metadata for all datasets -----------
-    check_remote_metadata(all_datasets)
-
-    # --- Step 1b: Determine which datasets are out of sync --------------
+def _load_last_applied(names: list[str]) -> dict[str, date | None]:
     with get_session() as session:
         repo = DatasetMetaDataRepository(session)
-        out_of_sync_records = repo.get_out_of_sync()
+        return {
+            n: (r.last_applied_date if (r := repo.get_by_dataset(n)) else None)
+            for n in names
+        }
 
-    if not out_of_sync_records:
+
+def _set_last_applied(name: str, day: date) -> None:
+    with get_session() as session:
+        record = DatasetMetaDataRepository(session).get_by_dataset(name)
+        if record is not None:
+            record.last_applied_date = day
+
+
+def _stage_day(day: date, on_step: Callable[[SyncStep], None]) -> bool:
+    """Download and stage *day*'s files. Returns False if neither is published."""
+    mod_file = f"modifications-{day.isoformat()}.txt"
+    del_file = f"deletes-{day.isoformat()}.txt"
+
+    try:
+        with RemoteFileClient() as client:
+            on_step(SyncStep.DOWNLOADING_MODIFICATIONS)
+            mod_path = _download_daily_file(client, mod_file)
+            on_step(SyncStep.DOWNLOADING_DELETES)
+            del_path = _download_daily_file(client, del_file)
+
+        if mod_path is not None:
+            on_step(SyncStep.INGESTING_MODIFICATIONS)
+            _ingest_daily_file(mod_path, Modifications)
+        if del_path is not None:
+            on_step(SyncStep.INGESTING_DELETES)
+            _ingest_deletions_file(del_path, day)
+    except Exception as e:
+        raise DailyUpdateError(f"Failed to stage daily files for {day}: {e}") from e
+
+    return mod_path is not None or del_path is not None
+
+
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
+
+
+def apply_daily_updates(
+    datasets: list[DatasetInfo],
+    out_of_sync_names: set[str],
+    on_step: Callable[[SyncStep], None] = lambda _s: None,
+    on_dataset: Callable[[str, DatasetSyncStatus], None] = lambda _n, _s: None,
+) -> None:
+    """Replay pending daily files for the out-of-sync datasets.
+
+    Raises :class:`DailyUpdateError` if a day's files cannot be staged.
+    """
+    yesterday = _yesterday()
+    targets = [ds for ds in datasets if ds.name in out_of_sync_names]
+    last_applied = _load_last_applied([ds.name for ds in targets])
+    pending = {n: set(_pending_days(d, yesterday)) for n, d in last_applied.items()}
+    caught_up = {n for n, days in pending.items() if not days}
+    failed: set[str] = set()
+    conn_params = _get_conn_params()
+
+    for day in sorted(set().union(*pending.values())):
+        todo = [ds for ds in targets if ds.name not in failed and day in pending[ds.name]]
+        if not todo:
+            continue
+
+        log.info(f"Applying daily files for {day} to {[d.name for d in todo]}")
+        published = _stage_day(day, on_step)
+        if not published:
+            if day >= yesterday:
+                log.info(f"Daily files for {day} not published yet — will retry")
+                break
+            log.warning(f"No daily files for {day}; skipping that day")
+
+        on_step(SyncStep.APPLYING_DATASETS)
+        for ds in todo:
+            table = ds.model.__table__.name
+            try:
+                if published:
+                    on_dataset(ds.name, DatasetSyncStatus.APPLYING_MODIFICATIONS)
+                    count = _upsert_modifications(
+                        conn_params, table, day, POPULATION_THRESHOLDS.get(ds.name, 0)
+                    )
+                    log.info(f"[{ds.name}] {day}: upserted {count} modification(s)")
+                    on_dataset(ds.name, DatasetSyncStatus.APPLYING_DELETES)
+                    count = _delete_from_dataset(conn_params, table, day)
+                    log.info(f"[{ds.name}] {day}: deleted {count} row(s)")
+                _set_last_applied(ds.name, day)
+            except Exception:
+                log.exception(f"[{ds.name}] Failed to apply {day}")
+                failed.add(ds.name)
+                on_dataset(ds.name, DatasetSyncStatus.FAILED)
+                continue
+            if day == yesterday:
+                caught_up.add(ds.name)
+
+    synced = [ds for ds in targets if ds.name in caught_up and ds.name not in failed]
+    on_step(SyncStep.SYNCING_METADATA)
+    _sync_metadata(synced)
+    for ds in synced:
+        on_dataset(ds.name, DatasetSyncStatus.SYNCED)
+
+
+def check_and_apply_daily_updates() -> None:
+    """Scheduler entry point: HEAD-check remotes, then catch up out-of-sync datasets."""
+    all_datasets = get_all_datasets()
+    log.info(f"Starting daily update check for {_yesterday()}")
+
+    check_remote_metadata(all_datasets)
+
+    with get_session() as session:
+        out_of_sync_names = {
+            r.dataset for r in DatasetMetaDataRepository(session).get_out_of_sync()
+        }
+
+    if not out_of_sync_names:
         log.info("All datasets are in sync — nothing to do")
         return
 
-    out_of_sync_names = {r.dataset for r in out_of_sync_records}
     log.info(f"Out-of-sync datasets: {sorted(out_of_sync_names)}")
-
-    # Check for yesterday's daily files and download them
-    mod_file = f"modifications-{yesterday.isoformat()}.txt"
-    del_file = f"deletes-{yesterday.isoformat()}.txt"
-
-    with RemoteFileClient() as client:
-        mod_path = _download_daily_file(client, mod_file)
-        del_path = _download_daily_file(client, del_file)
-
-    if mod_path is None and del_path is None:
-        log.info("No daily files available — skipping ingestion")
+    try:
+        apply_daily_updates(all_datasets, out_of_sync_names)
+    except DailyUpdateError:
+        log.exception("Daily update aborted")
         return
 
-    # Ingest daily files into their staging tables via COPY
-    if mod_path is not None:
-        log.info(f"Ingesting {mod_file} into modifications table")
-        try:
-            _ingest_daily_file(mod_path, Modifications)
-        except Exception:
-            log.exception("Failed to ingest modifications file")
-            return
-
-    if del_path is not None:
-        log.info(f"Ingesting {del_file} into deletions table")
-        try:
-            _ingest_deletions_file(del_path, yesterday)
-        except Exception:
-            log.exception("Failed to ingest deletions file")
-            return
-
-    # --- Step 2: Apply staged data to each out-of-sync dataset ----------
-    conn_params = _get_conn_params()
-    datasets_to_update = [
-        ds for ds in all_datasets if ds.name in out_of_sync_names
-    ]
-
-    for ds in datasets_to_update:
-        table_name = ds.model.__table__.name
-        threshold = POPULATION_THRESHOLDS.get(ds.name, 0)
-
-        if mod_path is not None:
-            try:
-                count = _upsert_modifications(
-                    conn_params, table_name, yesterday, threshold
-                )
-                log.info(f"[{ds.name}] Upserted {count} modification(s)")
-            except Exception:
-                log.exception(f"[{ds.name}] Failed to apply modifications")
-
-        if del_path is not None:
-            try:
-                count = _delete_from_dataset(conn_params, table_name, yesterday)
-                log.info(f"[{ds.name}] Deleted {count} row(s)")
-            except Exception:
-                log.exception(f"[{ds.name}] Failed to apply deletions")
-
-    # --- Step 3: Sync metadata (clears out_of_sync) ---------------------
-    _sync_metadata(datasets_to_update)
-
-    log.info(f"Daily update for {yesterday} complete")
+    log.info("Daily update complete")
