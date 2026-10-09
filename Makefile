@@ -38,7 +38,7 @@ sync-dev:
 	$(UV) sync --dev
 
 requirements:
-	$(UV) export --format requirements-txt > requirements.txt
+	$(UV) export --no-dev --no-hashes --no-emit-project -o requirements.txt
 
 requirements-nohash:
 	$(UV) export --format requirements-txt --no-hashes > requirements.txt
