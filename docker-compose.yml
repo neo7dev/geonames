@@ -1,10 +1,15 @@
 # Deployment stack: geonames-server app + trimmed self-hosted Supabase.
-# Supabase config (Kong routes, db init scripts) is shared with the devcontainer in ./supabase.
+# The Supabase services (db, auth, meta, studio, kong) live in supabase/docker-compose.yml,
+# shared with the devcontainer.
 # Generate secrets with `make supabase-keys` and put them in .env before the first start.
-# Compose refuses to start while any secret is empty (`${VAR:?...}` below).
+# Compose refuses to start while any secret is empty (`${VAR:?...}` in the Supabase file).
 #
 #   API:            http://localhost:9500 (health: /health)
 #   Studio + Auth:  http://localhost:8000 (basic auth DASHBOARD_USERNAME / DASHBOARD_PASSWORD)
+
+include:
+  - path: supabase/docker-compose.yml
+    env_file: .env
 
 services:
   app:
@@ -36,203 +41,6 @@ services:
       - app-data:/app/data
       - app-logs:/app/logs
 
-# Postgres for geonames data, app data and Supabase auth. The app connects as `postgres`
-# to database `postgres` (Supabase expects that name; `postgres` is not a superuser here).
-  db:
-    image: supabase/postgres:17.6.1.136
-    hostname: db
-    restart: unless-stopped
-    networks:
-      - geonames
-    # uncomment to expose postgres to the host machine
-    # ports:
-    #   - "5432:5432"
-    volumes:
-      # Must be superuser to alter reserved role
-      - ./supabase/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
-      # Initialize the database settings with JWT_EXP
-      - ./supabase/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
-      - supabase-db-data:/var/lib/postgresql/data
-      # Persist pgsodium decryption key between restarts
-      - supabase-db-config:/etc/postgresql-custom
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    environment:
-      POSTGRES_HOST: /var/run/postgresql
-      PGPORT: ${POSTGRES_PORT}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      PGPASSWORD: ${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}
-      PGDATABASE: ${POSTGRES_DB}
-      POSTGRES_DB: ${POSTGRES_DB}
-      JWT_EXP: ${JWT_EXPIRY}
-    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_min_messages=fatal"]
-
-# GoTrue: signup/login, email confirmation, OAuth
-  auth:
-    image: supabase/gotrue:v2.196.0
-    hostname: auth
-    restart: unless-stopped
-    networks:
-      - geonames
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      GOTRUE_API_HOST: 0.0.0.0
-      GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
-
-      GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-
-      GOTRUE_SITE_URL: ${SITE_URL}
-      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
-      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP}
-
-      GOTRUE_JWT_ADMIN_ROLES: service_role
-      GOTRUE_JWT_AUD: authenticated
-      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_JWT_EXP: ${JWT_EXPIRY}
-      GOTRUE_JWT_SECRET: ${JWT_SECRET:?run make supabase-keys and set it in .env}
-      GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL}
-
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP}
-      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
-      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM}
-      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
-
-      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
-      GOTRUE_SMTP_HOST: ${SMTP_HOST}
-      GOTRUE_SMTP_PORT: ${SMTP_PORT}
-      GOTRUE_SMTP_USER: ${SMTP_USER}
-      GOTRUE_SMTP_PASS: ${SMTP_PASS}
-      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
-      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE}
-      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION}
-      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY}
-      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE}
-
-      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED}
-      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET}
-      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${API_EXTERNAL_URL}/callback
-
-      GOTRUE_EXTERNAL_GITHUB_ENABLED: ${GITHUB_ENABLED}
-      GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
-      GOTRUE_EXTERNAL_GITHUB_SECRET: ${GITHUB_SECRET}
-      GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${API_EXTERNAL_URL}/callback
-
-# Postgres metadata API used by Studio (table editor, SQL editor)
-  meta:
-    image: supabase/postgres-meta:v0.99.0
-    hostname: meta
-    restart: unless-stopped
-    networks:
-      - geonames
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PG_META_PORT: 8080
-      PG_META_DB_HOST: ${POSTGRES_HOST}
-      PG_META_DB_PORT: ${POSTGRES_PORT}
-      PG_META_DB_NAME: ${POSTGRES_DB}
-      PG_META_DB_USER: postgres
-      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}
-      CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?run make supabase-keys and set it in .env}
-
-# Supabase Studio: admin dashboard (users, roles, tables). Reached through kong.
-  studio:
-    image: supabase/studio:2026.09.07-sha-7996410
-    hostname: studio
-    restart: unless-stopped
-    networks:
-      - geonames
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})\""]
-      timeout: 10s
-      interval: 5s
-      retries: 3
-      start_period: 20s
-    depends_on:
-      meta:
-        condition: service_started
-    environment:
-      HOSTNAME: "0.0.0.0"
-
-      STUDIO_PG_META_URL: http://meta:8080
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}
-      POSTGRES_USER_READ_WRITE: postgres
-      PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?run make supabase-keys and set it in .env}
-
-      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION}
-      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
-
-      SUPABASE_URL: http://kong:8000
-      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
-      SUPABASE_ANON_KEY: ${ANON_KEY:?run make supabase-keys and set it in .env}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?run make supabase-keys and set it in .env}
-      AUTH_JWT_SECRET: ${JWT_SECRET:?run make supabase-keys and set it in .env}
-
-      # Analytics (logflare) is not deployed
-      ENABLED_FEATURES_LOGS_ALL: "false"
-      SNIPPETS_MANAGEMENT_FOLDER: /app/snippets
-    volumes:
-      - supabase-studio-snippets:/app/snippets
-
-# API gateway: routes /auth/v1 to GoTrue, /pg to meta, everything else to Studio
-  kong:
-    image: kong/kong:3.9.3
-    hostname: kong
-    restart: unless-stopped
-    networks:
-      - geonames
-    healthcheck:
-      test: ["CMD", "kong", "health"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    depends_on:
-      studio:
-        condition: service_healthy
-      auth:
-        condition: service_healthy
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./supabase/kong.yml:/home/kong/temp.yml:ro,z
-      - ./supabase/kong-entrypoint.sh:/home/kong/kong-entrypoint.sh:ro,z
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
-      KONG_ROUTER_FLAVOR: expressions
-      KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_DNS_NOT_FOUND_TTL: 1
-      KONG_DNS_VALID_TTL: 5
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction,post-function
-      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
-      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
-      KONG_PROXY_ACCESS_LOG: /dev/stdout combined
-      SUPABASE_ANON_KEY: ${ANON_KEY:?run make supabase-keys and set it in .env}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?run make supabase-keys and set it in .env}
-      SUPABASE_PUBLISHABLE_KEY: ""
-      SUPABASE_SECRET_KEY: ""
-      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
-      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?run make supabase-keys and set it in .env}
-    entrypoint: ["/bin/sh", "/home/kong/kong-entrypoint.sh"]
-
 # Rate limiting, quotas and caching. Append-only file so counters survive restarts.
   redis:
     image: redis:7
@@ -254,8 +62,5 @@ networks:
 
 volumes:
   redis-data:
-  supabase-db-data:
-  supabase-db-config:
-  supabase-studio-snippets:
   app-data:
   app-logs:

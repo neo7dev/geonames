@@ -1,0 +1,5 @@
+# Devcontainer-only changes to supabase/docker-compose.yml.
+services:
+  db:
+    ports:
+      - "5432:5432"
