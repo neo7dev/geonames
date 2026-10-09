@@ -1,10 +1,12 @@
 from datetime import date, datetime, timezone
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from geonames_server.api import dependencies
 from geonames_server.api.app import app
 from geonames_server.api.dependencies import get_session
 from geonames_server.database.models.cities15000 import Cities15000
@@ -12,6 +14,14 @@ from geonames_server.database.models.dataset_metadata import DatasetMetaData
 from geonames_server.database.models.deletions import Deletions
 from geonames_server.database.models.modifications import Modifications
 from geonames_server.database.session import async_engine
+from geonames_server.ingestion.registry import get_all_datasets
+
+
+@pytest.fixture(autouse=True)
+def _forget_built_datasets():
+    dependencies._built.clear()
+    yield
+    dependencies._built.clear()
 
 
 @pytest_asyncio.fixture
@@ -38,6 +48,9 @@ async def client(async_session):
         yield async_session
 
     app.dependency_overrides[get_session] = _override_get_session
+    # Serve every dataset regardless of the database's build state;
+    # test_disabled_datasets.py covers the built check.
+    dependencies._built.update(ds.name for ds in get_all_datasets())
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

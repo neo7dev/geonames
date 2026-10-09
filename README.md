@@ -229,6 +229,8 @@ curl "http://localhost:9500/health"
 
 `status` is `ok` once every enabled dataset is built, `degraded` while datasets are still building (listed in `datasets.pending`), if the background startup failed, or if Redis is unreachable, and `error` (HTTP 503) only when the database is unreachable. The container's healthcheck uses this endpoint, so it stays healthy while a large dataset such as `allcountries` loads.
 
+Until a dataset's first build finishes, its endpoints answer `503` with a `Retry-After` header instead of an empty result. A dataset that is rebuilt because it is out of date keeps serving its current data.
+
 Open:
 - `http://localhost:9500/docs`
 
