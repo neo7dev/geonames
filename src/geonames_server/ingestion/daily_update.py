@@ -5,7 +5,7 @@ Each dataset tracks ``last_applied_date``: the last day whose
 day after that up to yesterday (UTC), in order, so missed runs are caught up.
 Applying a day is idempotent (upsert / delete by key), so replays are safe.
 
-1. HEAD-check each dataset's remote file; out-of-sync datasets are updated.
+1. HEAD-check each dataset's remote file; out-of-sync enabled datasets are updated.
 2. For each pending day: download the daily files, COPY them into the
    ``modifications`` / ``deletions`` staging tables, then apply them to every
    dataset still pending that day (population-filtered for city datasets).
@@ -36,7 +36,11 @@ from geonames_server.database.repository.sync.dataset_metadata_repository import
 from geonames_server.database.session import get_session
 from geonames_server.ingestion.downloader import Downloader
 from geonames_server.ingestion.pipeline import _get_conn_params, check_remote_metadata
-from geonames_server.ingestion.registry import DatasetInfo, get_all_datasets
+from geonames_server.ingestion.registry import (
+    DatasetInfo,
+    enabled_names,
+    get_all_datasets,
+)
 from geonames_server.ingestion.remote import RemoteFileClient
 from geonames_server.ingestion.sync_tracker import DatasetSyncStatus, SyncStep
 from geonames_server.log.mylogger import get_logger
@@ -406,12 +410,15 @@ def apply_daily_updates(
     on_step: Callable[[SyncStep], None] = lambda _s: None,
     on_dataset: Callable[[str, DatasetSyncStatus], None] = lambda _n, _s: None,
 ) -> None:
-    """Replay pending daily files for the out-of-sync datasets.
+    """Replay pending daily files for the out-of-sync, enabled datasets.
 
-    Raises :class:`DailyUpdateError` if a day's files cannot be staged.
+    Disabled datasets are never touched. Raises :class:`DailyUpdateError` if a day's files cannot be staged.
     """
     yesterday = _yesterday()
-    targets = [ds for ds in datasets if ds.name in out_of_sync_names]
+    enabled = enabled_names(settings.enabled_datasets)
+    targets = [
+        ds for ds in datasets if ds.name in out_of_sync_names and ds.name in enabled
+    ]
     last_applied = _load_last_applied([ds.name for ds in targets])
     pending = {n: set(_pending_days(d, yesterday)) for n, d in last_applied.items()}
     caught_up = {n for n, days in pending.items() if not days}
@@ -470,7 +477,7 @@ def check_and_apply_daily_updates() -> None:
     with get_session() as session:
         out_of_sync_names = {
             r.dataset for r in DatasetMetaDataRepository(session).get_out_of_sync()
-        }
+        } & enabled_names(settings.enabled_datasets)
 
     if not out_of_sync_names:
         log.info("All datasets are in sync — nothing to do")

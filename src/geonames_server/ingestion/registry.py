@@ -55,6 +55,11 @@ ALL_DATASETS: dict[str, DatasetInfo] = {
 }
 
 
+def enabled_names(names: list[str]) -> set[str]:
+    """Normalise configured dataset names (case and whitespace insensitive)."""
+    return {n.strip().lower() for n in names}
+
+
 def get_enabled_datasets(enabled_names: list[str]) -> list[DatasetInfo]:
     """Return DatasetInfo objects for the given dataset names.
 

@@ -7,13 +7,14 @@ so callers can poll ``GET /sync/{sync_id}`` for step-by-step status.
 
 from __future__ import annotations
 
+from geonames_server.config.config import settings
 from geonames_server.database.repository.sync.dataset_metadata_repository import (
     DatasetMetaDataRepository,
 )
 from geonames_server.database.session import get_session
 from geonames_server.ingestion.daily_update import apply_daily_updates
 from geonames_server.ingestion.pipeline import check_remote_metadata
-from geonames_server.ingestion.registry import get_all_datasets
+from geonames_server.ingestion.registry import enabled_names, get_all_datasets
 from geonames_server.ingestion.sync_tracker import (
     DatasetStatus,
     DatasetSyncStatus,
@@ -82,7 +83,9 @@ def _run(sync_id: str) -> None:
                     needs_rebuild=record.needs_rebuild if record else None,
                 )
             )
-        out_of_sync_names = {r.dataset for r in repo.get_out_of_sync()}
+        out_of_sync_names = {
+            r.dataset for r in repo.get_out_of_sync()
+        } & enabled_names(settings.enabled_datasets)
     set_datasets(sync_id, ds_statuses)
 
     all_names = {ds.name for ds in all_datasets}

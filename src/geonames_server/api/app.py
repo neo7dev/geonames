@@ -112,19 +112,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="GeoNames Server", version=settings.app_version, lifespan=lifespan)
 
 # Geo dataset routers
-app.include_router(
-    create_geoname_router(AllCountries, "All Countries"), prefix="/allcountries"
-)
-app.include_router(create_geoname_router(Cities500, "Cities 500"), prefix="/cities500")
-app.include_router(
-    create_geoname_router(Cities1000, "Cities 1000"), prefix="/cities1000"
-)
-app.include_router(
-    create_geoname_router(Cities5000, "Cities 5000"), prefix="/cities5000"
-)
-app.include_router(
-    create_geoname_router(Cities15000, "Cities 15000"), prefix="/cities15000"
-)
+for _model, _tag, _name in [
+    (AllCountries, "All Countries", "allcountries"),
+    (Cities500, "Cities 500", "cities500"),
+    (Cities1000, "Cities 1000", "cities1000"),
+    (Cities5000, "Cities 5000", "cities5000"),
+    (Cities15000, "Cities 15000", "cities15000"),
+]:
+    app.include_router(create_geoname_router(_model, _tag, _name), prefix=f"/{_name}")
 
 # Modifications router
 app.include_router(modifications.router, prefix="/modifications")

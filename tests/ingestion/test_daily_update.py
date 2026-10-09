@@ -556,6 +556,11 @@ def engine():
     ]
     patches = {n: patch(f"{MODULE}.{n}") for n in names}
     mocks = {n: p.start() for n, p in patches.items()}
+    patches["enabled"] = patch(
+        f"{MODULE}.settings.enabled_datasets",
+        ["allcountries", "cities500", "cities5000"],
+    )
+    patches["enabled"].start()
     mocks["_yesterday"].return_value = Y
     mocks["_stage_day"].return_value = True
     mocks["_upsert_modifications"].return_value = 1
@@ -672,6 +677,26 @@ class TestApplyDailyUpdates:
         engine["_sync_metadata"].assert_called_once_with([c])
 
 
+class TestDisabledDatasets:
+    def test_disabled_dataset_is_never_loaded_staged_or_synced(self, engine):
+        on, off = _make_dataset_info("cities500"), _make_dataset_info("cities1000")
+        engine["_load_last_applied"].return_value = {"cities500": Y - timedelta(days=1)}
+
+        apply_daily_updates([on, off], {"cities500", "cities1000"})
+
+        engine["_load_last_applied"].assert_called_once_with(["cities500"])
+        tables = [c.args[1] for c in engine["_upsert_modifications"].call_args_list]
+        assert tables == ["cities500"]
+        engine["_sync_metadata"].assert_called_once_with([on])
+
+    def test_enabled_names_are_case_and_space_insensitive(self, engine):
+        ds = _make_dataset_info("cities500")
+        engine["_load_last_applied"].return_value = {"cities500": Y}
+        with patch(f"{MODULE}.settings.enabled_datasets", [" Cities500 "]):
+            apply_daily_updates([ds], {"cities500"})
+        engine["_sync_metadata"].assert_called_once_with([ds])
+
+
 class TestStageDay:
     @patch(f"{MODULE}._ingest_deletions_file")
     @patch(f"{MODULE}._ingest_daily_file")
@@ -731,6 +756,16 @@ class TestCheckAndApplyDailyUpdates:
     def test_applies_only_out_of_sync_names(self):
         mock_apply, ds = self._run(["cities500"])
         mock_apply.assert_called_once_with(ds, {"cities500"})
+
+    def test_ignores_out_of_sync_datasets_that_are_disabled(self):
+        with patch(f"{MODULE}.settings.enabled_datasets", ["cities500"]):
+            mock_apply, ds = self._run(["cities500", "allcountries"])
+        mock_apply.assert_called_once_with(ds, {"cities500"})
+
+    def test_nothing_to_do_when_only_disabled_are_out_of_sync(self):
+        with patch(f"{MODULE}.settings.enabled_datasets", ["cities500"]):
+            mock_apply, _ = self._run(["allcountries"])
+        mock_apply.assert_not_called()
 
     def test_swallows_daily_update_error(self):
         self._run(["cities500"], side_effect=DailyUpdateError("x"))

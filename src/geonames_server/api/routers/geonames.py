@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from geonames_server.api.dependencies import get_session
+from geonames_server.api.dependencies import get_session, require_dataset_enabled
 from geonames_server.api.schemas.geoname import GeoNameResponse
 from geonames_server.config.config import settings
 from geonames_server.database.repository.async_.geoname_repository import (
@@ -13,8 +13,10 @@ DEFAULT_LIMIT = 100
 MAX_LIMIT = settings.max_results
 
 
-def create_geoname_router(model: type, tag: str) -> APIRouter:
-    router = APIRouter(tags=[tag])
+def create_geoname_router(model: type, tag: str, dataset: str) -> APIRouter:
+    router = APIRouter(
+        tags=[tag], dependencies=[Depends(require_dataset_enabled(dataset))]
+    )
 
     @router.get("/", response_model=list[GeoNameResponse])
     async def list_geonames(
