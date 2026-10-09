@@ -15,6 +15,7 @@ import pytest
 import pytest_asyncio
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy import func, select
 
 from geonames_server.api import rate_limit, usage_flush
@@ -91,6 +92,27 @@ async def test_limits_hold_in_memory_and_redis_is_skipped(
         await _calls(auth_client, key, 1)
         assert script.call_count == 2
         warning.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "counted_in_memory"),
+    [
+        ("Timeout reading from redis:6379", 0),
+        ("Timeout writing to socket", 0),
+        ("Timeout connecting to server", 1),
+    ],
+)
+async def test_a_reply_that_timed_out_is_not_counted_again_in_memory(
+    auth_client, limiter, make_user, make_key, error, counted_in_memory
+):
+    key = await make_key(await make_user("free"))
+
+    with patch.object(limiter, "_script", side_effect=RedisTimeoutError(error)):
+        assert await _calls(auth_client, key, 1) == [200]
+
+    assert limiter.outage
+    assert limiter.local.usage.total() == counted_in_memory
 
 
 @pytest.mark.asyncio

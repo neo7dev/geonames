@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -156,6 +157,17 @@ class Windows:
 
 def _int(value) -> int | None:
     return None if value is None else int(value)
+
+
+def _may_have_run(error: Exception) -> bool:
+    """Whether Redis may have run the command despite error: the reply timed out.
+
+    redis-py raises its TimeoutError for a connect timeout too, when nothing
+    was sent; only its message tells the two apart.
+    """
+    return isinstance(error, RedisTimeoutError) and not str(error).startswith(
+        "Timeout connecting"
+    )
 
 
 def limits_of(principal: Principal) -> list[int | None]:
@@ -486,6 +498,9 @@ class RateLimiter:
                     result = await self._script(keys=keys, args=args)
         except (RedisError, OSError) as e:
             self._redis_failed(e, now)
+            if _may_have_run(e):
+                # Counting it in memory as well could count it twice.
+                return None
             return await self._hit_locally(principal, windows, now)
         self._redis_ok()
         if not rebuilt:
