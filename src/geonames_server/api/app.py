@@ -14,6 +14,7 @@ import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from redis.asyncio import Redis
 
 from geonames_server.api.routers import (
     dataset_metadata,
@@ -85,6 +86,14 @@ async def lifespan(app: FastAPI):
     seed_dataset_metadata(all_datasets)
     log.info("Dataset metadata seeded")
 
+    # Shared Redis client; it connects on first use, so a Redis outage does not
+    # stop startup (/health reports it instead).
+    app.state.redis = (
+        Redis.from_url(settings.redis_url, socket_connect_timeout=1, socket_timeout=1)
+        if settings.redis_url
+        else None
+    )
+
     # 4-6. Remote check, rebuilds and scheduler run in the background, so the API
     #      (and /health) answer while large datasets download and load.
     app.state.dataset_startup = "pending"
@@ -105,6 +114,8 @@ async def lifespan(app: FastAPI):
         log.info("Shutting down GeoNames Server")
         stopping.set()
         stop_scheduler()
+        if app.state.redis is not None:
+            await app.state.redis.aclose()
         log.info("Scheduler stopped — shutdown complete")
 
 

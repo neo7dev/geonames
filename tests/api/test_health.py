@@ -6,6 +6,7 @@ from sqlalchemy import update
 
 from geonames_server.api.app import app
 from geonames_server.api.dependencies import get_session
+from geonames_server.api.routers.health import redis_status
 from geonames_server.config.config import settings
 from geonames_server.database.models.dataset_metadata import DatasetMetaData
 
@@ -25,12 +26,11 @@ async def built_cities15000(async_session):
 
 @pytest.fixture(autouse=True)
 def _settings():
-    with (
-        patch.object(settings, "enabled_datasets", ["cities15000"]),
-        patch.object(settings, "redis_url", None),
-    ):
+    with patch.object(settings, "enabled_datasets", ["cities15000"]):
         app.state.dataset_startup = "done"
+        app.state.redis = None
         yield
+    del app.state.redis
 
 
 class TestHealth:
@@ -103,26 +103,25 @@ class TestHealth:
 
 class TestRedisStatus:
     @pytest.mark.asyncio
-    async def test_ok_when_ping_succeeds(self):
-        from geonames_server.api.routers.health import redis_status
+    async def test_not_configured_without_client(self):
+        assert await redis_status(None) == "not_configured"
 
-        client = AsyncMock()
-        with (
-            patch.object(settings, "redis_url", "redis://redis:6379/0"),
-            patch(f"{ROUTER}.Redis.from_url", return_value=client),
-        ):
-            assert await redis_status() == "ok"
-        client.aclose.assert_awaited_once()
+    @pytest.mark.asyncio
+    async def test_ok_when_ping_succeeds(self):
+        assert await redis_status(AsyncMock()) == "ok"
 
     @pytest.mark.asyncio
     async def test_error_when_ping_fails(self):
-        from geonames_server.api.routers.health import redis_status
-
         client = AsyncMock()
         client.ping.side_effect = ConnectionError("refused")
-        with (
-            patch.object(settings, "redis_url", "redis://redis:6379/0"),
-            patch(f"{ROUTER}.Redis.from_url", return_value=client),
-        ):
-            assert await redis_status() == "error"
-        client.aclose.assert_awaited_once()
+        assert await redis_status(client) == "error"
+
+    @pytest.mark.asyncio
+    async def test_health_pings_the_shared_client(self, client, built_cities15000):
+        app.state.redis = AsyncMock()
+
+        response = await client.get("/health")
+
+        assert response.json()["redis"] == "ok"
+        app.state.redis.ping.assert_awaited_once()
+        app.state.redis.aclose.assert_not_called()

@@ -2,7 +2,7 @@
 
 import asyncio
 import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -89,6 +89,33 @@ async def test_scheduler_not_started_after_shutdown(startup_mocks):
     assert startup_mocks["build_finished"].wait(timeout=5)
     await asyncio.sleep(0.05)
     startup_mocks["start"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_shares_one_redis_client(startup_mocks):
+    app = FastAPI()
+    redis = AsyncMock()
+
+    with (
+        patch.object(app_module.settings, "redis_url", "redis://redis:6379/0"),
+        patch(f"{MODULE}.Redis.from_url", return_value=redis) as from_url,
+    ):
+        async with app_module.lifespan(app):
+            assert app.state.redis is redis
+            startup_mocks["release_build"].set()
+
+    from_url.assert_called_once()
+    redis.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_without_redis_url(startup_mocks):
+    app = FastAPI()
+
+    with patch.object(app_module.settings, "redis_url", None):
+        async with app_module.lifespan(app):
+            assert app.state.redis is None
+            startup_mocks["release_build"].set()
 
 
 def test_prepare_datasets_tolerates_closed_loop():

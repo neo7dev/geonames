@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request, Response, status
 from redis.asyncio import Redis
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api.dependencies import get_session
@@ -15,20 +15,15 @@ log = get_logger()
 router = APIRouter(tags=["Health"])
 
 
-async def redis_status() -> str:
-    if not settings.redis_url:
+async def redis_status(client: Redis | None) -> str:
+    if client is None:
         return "not_configured"
-    client = Redis.from_url(
-        settings.redis_url, socket_connect_timeout=1, socket_timeout=1
-    )
     try:
         await client.ping()
         return "ok"
     except Exception as e:
         log.warning(f"Redis health check failed: {e}")
         return "error"
-    finally:
-        await client.aclose()
 
 
 @router.get("", response_model=HealthResponse)
@@ -43,7 +38,7 @@ async def health(
     startup = getattr(request.app.state, "dataset_startup", "pending")
 
     try:
-        await session.execute(text("SELECT 1"))
+        # Reading the metadata also proves the database is reachable.
         result = await session.execute(
             select(DatasetMetaData.dataset).where(
                 DatasetMetaData.dataset.in_(enabled),
@@ -57,7 +52,7 @@ async def health(
         built = set()
         database = "error"
 
-    redis = await redis_status()
+    redis = await redis_status(getattr(request.app.state, "redis", None))
     ready = [name for name in enabled if name in built]
     pending = [name for name in enabled if name not in built]
 
