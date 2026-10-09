@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -10,6 +11,8 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from geonames_server.log.mylogger import get_logger
 
 log = get_logger()
+
+_SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 
 # Schemas owned by Postgres or Supabase. postgres_schema must not be one of them.
 _RESERVED_SCHEMAS = frozenset(
@@ -182,6 +185,14 @@ class Settings(BaseSettings):
     @field_validator("postgres_schema")
     @classmethod
     def validate_postgres_schema(cls, value: str) -> str:
+        # postgres_options passes the name to search_path unquoted, so only names that
+        # Postgres does not case-fold or need quoting resolve to the same schema.
+        if not _SCHEMA_NAME.fullmatch(value):
+            raise ValueError(
+                f"postgres_schema {value!r} must be a lowercase identifier: "
+                "letters a-z, digits and underscores, not starting with a digit, "
+                "at most 63 characters"
+            )
         # FORCE_REBUILD drops this schema with CASCADE, so it must belong to the app alone.
         if value in _RESERVED_SCHEMAS or value.startswith(("pg_", "supabase_")):
             raise ValueError(

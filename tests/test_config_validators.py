@@ -79,3 +79,10 @@ class TestPostgresSchema:
 
     def test_accepts_dedicated_schema(self):
         assert Settings(postgres_schema="geonames").postgres_schema == "geonames"
+
+    @pytest.mark.parametrize(
+        "schema", ["GeoNames", "geo names", "1geo", "geo-names", "", "g" * 64]
+    )
+    def test_rejects_names_that_need_quoting(self, schema):
+        with pytest.raises(ValidationError, match="lowercase identifier"):
+            Settings(postgres_schema=schema)
