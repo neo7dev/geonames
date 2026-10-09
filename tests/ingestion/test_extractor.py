@@ -198,3 +198,75 @@ class TestExtract:
 
         assert (dest / "a.txt").read_bytes() == b"aaa"
         assert (dest / "b.txt").read_bytes() == b"bbb"
+
+
+# ---------------------------------------------------------------------------
+# Directory entries, permissions and unsafe paths
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _no_progress_bar():
+    with patch("geonames_server.ingestion.extractor.ExtractorProgressBar"):
+        yield
+
+
+def _entry(name: str, mode: int | None = None) -> zipfile.ZipInfo:
+    info = zipfile.ZipInfo(name)
+    if mode is not None:
+        info.external_attr = mode << 16
+    return info
+
+
+@pytest.mark.usefixtures("_no_progress_bar")
+class TestExtractEntries:
+    def test_directory_entries_become_directories(self, tmp_path):
+        zip_path = tmp_path / "dirs.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(_entry("empty/"), b"")
+            zf.writestr("data/file.txt", b"x")
+        dest = tmp_path / "out"
+
+        Extractor(dest_path=dest).extract(zip_path)
+
+        assert (dest / "empty").is_dir()
+        assert (dest / "data" / "file.txt").read_bytes() == b"x"
+
+    def test_file_permissions_come_from_the_zip(self, tmp_path):
+        zip_path = tmp_path / "perm.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(_entry("script.sh", 0o750), b"#!/bin/sh")
+            zf.writestr(_entry("plain.txt"), b"no mode")
+        dest = tmp_path / "out"
+
+        Extractor(dest_path=dest).extract(zip_path)
+
+        assert (dest / "script.sh").stat().st_mode & 0o777 == 0o750
+        assert (dest / "plain.txt").read_bytes() == b"no mode"
+
+    def test_a_failing_chmod_does_not_fail_the_extraction(self, tmp_path):
+        zip_path = tmp_path / "perm.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(_entry("file.txt", 0o640), b"data")
+        dest = tmp_path / "out"
+
+        with patch.object(Path, "chmod", side_effect=PermissionError("read-only")):
+            Extractor(dest_path=dest).extract(zip_path)
+
+        assert (dest / "file.txt").read_bytes() == b"data"
+
+    @pytest.mark.parametrize(
+        "name", ["../escape.txt", "a/../../escape.txt", "/tmp/escape.txt"]
+    )
+    def test_entries_outside_the_destination_are_refused(self, tmp_path, name):
+        zip_path = _make_zip(
+            tmp_path / "evil.zip", {"first.txt": b"ok", name: b"pwned"}
+        )
+        dest = tmp_path / "out"
+
+        with pytest.raises(ValueError, match="Unsafe path"):
+            Extractor(dest_path=dest).extract(zip_path)
+
+        assert not (tmp_path / "escape.txt").exists()
+        # Checked before anything is written
+        assert not (dest / "first.txt").exists()

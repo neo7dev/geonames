@@ -16,6 +16,14 @@ class Extractor:
         self.dest_path.mkdir(parents=True, exist_ok=True)
 
         with zipfile.ZipFile(zip_path, "r") as zf:
+            # Refuse the whole archive if any entry would land outside dest_path
+            dest_root = self.dest_path.resolve()
+            for info in zf.infolist():
+                if not (dest_root / info.filename).resolve().is_relative_to(dest_root):
+                    raise ValueError(
+                        f"Unsafe path in {zip_path.name}: {info.filename!r}"
+                    )
+
             # collect file entries (skip directories) and total size
             entries = [info for info in zf.infolist() if not info.is_dir()]
             total_bytes = sum(info.file_size for info in entries)
