@@ -23,13 +23,13 @@ from geonames_server.database.models.accounts import ApiKey, Profile
 router = APIRouter(tags=["Portal"])
 
 
-def _active_keys(user_id: uuid.UUID):
-    return select(ApiKey).where(ApiKey.user_id == user_id, ApiKey.revoked_at.is_(None))
+def _is_active_key_of(user_id: uuid.UUID):
+    return ApiKey.user_id == user_id, ApiKey.revoked_at.is_(None)
 
 
 async def _count_active_keys(session: AsyncSession, user_id: uuid.UUID) -> int:
     return await session.scalar(
-        select(func.count()).select_from(_active_keys(user_id).subquery())
+        select(func.count(ApiKey.id)).where(*_is_active_key_of(user_id))
     )
 
 
@@ -59,7 +59,9 @@ async def list_keys(
     session: AsyncSession = Depends(get_session),
 ):
     keys = await session.scalars(
-        _active_keys(principal.user_id).order_by(ApiKey.created_at.desc())
+        select(ApiKey)
+        .where(*_is_active_key_of(principal.user_id))
+        .order_by(ApiKey.created_at.desc())
     )
     return keys.all()
 
@@ -93,8 +95,8 @@ async def create_key(
     session.add(api_key)
     # The INSERT returns the server-generated id and created_at
     await session.flush()
-    created = CreatedApiKeyResponse.model_validate(
-        {**ApiKeyResponse.model_validate(api_key).model_dump(), "key": key}
+    created = CreatedApiKeyResponse(
+        **ApiKeyResponse.model_validate(api_key).model_dump(), key=key
     )
     await session.commit()
     return created
