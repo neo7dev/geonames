@@ -24,7 +24,12 @@ from geonames_server.database.models.cities5000 import Cities5000
 from geonames_server.database.models.dataset_metadata import DatasetMetaData
 from geonames_server.database.models.deletions import Deletions
 from geonames_server.database.models.modifications import Modifications
-from geonames_server.ingestion import daily_update, pipeline
+from geonames_server.ingestion import (
+    daily_update,
+    pipeline,
+    sync_tracker,
+    tracked_daily_update,
+)
 from geonames_server.ingestion.daily_update import MAX_CATCHUP_DAYS, apply_daily_updates
 from geonames_server.ingestion.registry import ALL_DATASETS
 
@@ -362,3 +367,118 @@ def test_one_unpublished_day_does_not_flag_rebuild(engine, remote):
     assert meta["out_of_sync"] is True
     assert meta["needs_rebuild"] is False
     assert meta["last_applied_date"] == Y - timedelta(days=1)
+
+
+# ---------------------------------------------------------------------------
+# Tracked sync (POST /sync): the same pipeline, reported through sync_tracker
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def tracked(remote):
+    """Run the tracked sync over allcountries and cities5000, both enabled.
+
+    Only the remote HEAD check is stubbed; the metadata it would write is seeded.
+    """
+    sync_tracker.clear()
+    with (
+        patch.object(tracked_daily_update, "get_session", remote.session),
+        patch.object(
+            tracked_daily_update,
+            "get_all_datasets",
+            return_value=[ALLCOUNTRIES, CITIES5000],
+        ),
+        patch.object(tracked_daily_update, "check_remote_metadata") as check,
+        patch.object(
+            daily_update.settings, "enabled_datasets", ["allcountries", "cities5000"]
+        ),
+    ):
+        remote.check_remote_metadata = check
+        yield remote
+    sync_tracker.clear()
+
+
+def _seed_in_sync(remote, ds):
+    with remote.session() as s:
+        s.add(
+            DatasetMetaData(
+                dataset=ds.name,
+                zip_file=ds.zip_file,
+                txt_file=ds.txt_file,
+                etag='"same"',
+                remote_etag='"same"',
+                last_modified=datetime(2026, 3, 18, 4, 0, tzinfo=timezone.utc),
+                remote_last_modified=datetime(2026, 3, 18, 3, 0, tzinfo=timezone.utc),
+                last_applied_date=Y,
+            )
+        )
+
+
+def _statuses(sync_id) -> dict[str, tuple[str, bool | None]]:
+    return {
+        ds.name: (ds.status, ds.out_of_sync)
+        for ds in sync_tracker.get_sync(sync_id).datasets
+    }
+
+
+def test_tracked_sync_applies_out_of_sync_and_skips_the_rest(engine, tracked):
+    _seed_rows(engine, AllCountries, [_geo(1, "Old1")])
+    _seed_metadata(tracked, ALLCOUNTRIES, last_applied=Y - timedelta(days=1))
+    _seed_in_sync(tracked, CITIES5000)
+    tracked.publish(Y, [_row(1, "New1", Y)], deletes=[])
+    sync_id = sync_tracker.create_sync()
+
+    tracked_daily_update.run_tracked_sync(sync_id)
+
+    entry = sync_tracker.get_sync(sync_id)
+    assert entry.status == "completed"
+    assert entry.error is None
+    # Refreshed from the database after the run, not the values read before it
+    assert _statuses(sync_id) == {
+        "allcountries": ("synced", False),
+        "cities5000": ("skipped", False),
+    }
+    assert _names(engine, AllCountries) == {1: "New1"}
+    tracked.check_remote_metadata.assert_called_once()
+
+
+def test_tracked_sync_with_nothing_out_of_sync_skips_everything(engine, tracked):
+    _seed_in_sync(tracked, ALLCOUNTRIES)
+    _seed_in_sync(tracked, CITIES5000)
+    sync_id = sync_tracker.create_sync()
+
+    with patch.object(tracked_daily_update, "apply_daily_updates") as apply:
+        tracked_daily_update.run_tracked_sync(sync_id)
+
+    apply.assert_not_called()
+    assert sync_tracker.get_sync(sync_id).status == "completed"
+    assert _statuses(sync_id) == {
+        "allcountries": ("skipped", False),
+        "cities5000": ("skipped", False),
+    }
+
+
+def test_tracked_sync_lists_datasets_without_metadata(engine, tracked):
+    _seed_in_sync(tracked, ALLCOUNTRIES)
+    sync_id = sync_tracker.create_sync()
+
+    tracked_daily_update.run_tracked_sync(sync_id)
+
+    datasets = {ds.name: ds for ds in sync_tracker.get_sync(sync_id).datasets}
+    assert datasets["cities5000"].status == "skipped"
+    assert datasets["cities5000"].last_modified is None
+    assert datasets["cities5000"].out_of_sync is None
+
+
+def test_tracked_sync_reports_a_failure(engine, tracked):
+    tracked.check_remote_metadata.side_effect = RuntimeError("GeoNames unreachable")
+    sync_id = sync_tracker.create_sync()
+
+    tracked_daily_update.run_tracked_sync(sync_id)
+
+    entry = sync_tracker.get_sync(sync_id)
+    assert entry.status == "failed"
+    assert entry.current_step == "failed"
+    assert entry.error == "GeoNames unreachable"
+    assert entry.completed_at is not None
+    assert not sync_tracker.is_running()
