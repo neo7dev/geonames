@@ -18,6 +18,7 @@ from geonames_server.utils.utils import rfc2822_to_datetime
 log = get_logger()
 
 _DEFAULT_TIMEOUT = 30
+_MISSING_STATUSES = frozenset({404, 410})
 
 
 class RemoteFileMeta(BaseModel):
@@ -116,9 +117,13 @@ class RemoteFileClient:
         return resp.status_code != 304
 
     def exists(self, url: str) -> bool:
-        """Return True if the remote URL responds with 2xx to a HEAD request."""
-        try:
-            resp = self._session.head(url, timeout=self._timeout, allow_redirects=True)
-            return resp.ok
-        except requests.RequestException:
+        """Return True on 2xx, False on 404/410.
+
+        Any other status or a network error raises, so a transient failure is
+        never mistaken for a missing file.
+        """
+        resp = self._session.head(url, timeout=self._timeout, allow_redirects=True)
+        if resp.status_code in _MISSING_STATUSES:
             return False
+        resp.raise_for_status()
+        return True

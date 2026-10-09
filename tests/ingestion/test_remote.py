@@ -2,6 +2,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+import pytest
 import requests
 
 from geonames_server.ingestion.remote import RemoteFileClient
@@ -28,9 +29,10 @@ class TestRemoteFileClient:
         assert meta.etag == '"abc123"'
         assert meta.supports_resume is True
 
-    def test_exists_returns_false_on_404(self):
+    @pytest.mark.parametrize("status", [404, 410])
+    def test_exists_returns_false_when_missing(self, status):
         mock_resp = MagicMock()
-        mock_resp.ok = False
+        mock_resp.status_code = status
         with patch("geonames_server.ingestion.remote.requests.Session") as MockSession:
             MockSession.return_value.head.return_value = mock_resp
             with RemoteFileClient() as client:
@@ -38,19 +40,30 @@ class TestRemoteFileClient:
 
     def test_exists_returns_true_on_200(self):
         mock_resp = MagicMock()
-        mock_resp.ok = True
+        mock_resp.status_code = 200
         with patch("geonames_server.ingestion.remote.requests.Session") as MockSession:
             MockSession.return_value.head.return_value = mock_resp
             with RemoteFileClient() as client:
                 assert client.exists("https://example.com/file.zip") is True
 
-    def test_exists_returns_false_on_network_error(self):
+    def test_exists_raises_on_server_error(self):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 503
+        mock_resp.raise_for_status.side_effect = requests.HTTPError("503")
+        with patch("geonames_server.ingestion.remote.requests.Session") as MockSession:
+            MockSession.return_value.head.return_value = mock_resp
+            with RemoteFileClient() as client:
+                with pytest.raises(requests.HTTPError):
+                    client.exists("https://example.com/file.zip")
+
+    def test_exists_raises_on_network_error(self):
         with patch("geonames_server.ingestion.remote.requests.Session") as MockSession:
             MockSession.return_value.head.side_effect = requests.RequestException(
                 "timeout"
             )
             with RemoteFileClient() as client:
-                assert client.exists("https://example.com/file.zip") is False
+                with pytest.raises(requests.RequestException):
+                    client.exists("https://example.com/file.zip")
 
     def test_has_changed_returns_true_when_no_baseline(self):
         with patch("geonames_server.ingestion.remote.requests.Session"):
