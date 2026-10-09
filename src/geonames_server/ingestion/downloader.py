@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import errno
+import json
 import os
+import random
+import re
 import shutil
 import time
 from dataclasses import dataclass
@@ -15,6 +19,14 @@ from geonames_server.utils.utils import rfc2822_to_datetime
 
 log = get_logger()
 
+CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+TIMEOUT = (10, 60)  # connect, read (seconds)
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+MAX_BACKOFF = 60.0
+
+_CONTENT_RANGE = re.compile(r"bytes (\d+)-\d+/(\d+|\*)")
+_UNSATISFIED_RANGE = re.compile(r"bytes \*/(\d+)")
+
 
 @dataclass
 class DownloadResult:
@@ -23,9 +35,23 @@ class DownloadResult:
     path: Path
     etag: str | None = None
     last_modified: datetime | None = None
+    not_modified: bool = False
 
 
-CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+class _Transient(Exception):
+    """Retryable failure (5xx/429, stale partial, short body)."""
+
+    def __init__(self, msg: str, retry_after: float | None = None) -> None:
+        super().__init__(msg)
+        self.retry_after = retry_after
+
+
+_RETRYABLE = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+    _Transient,
+)
 
 
 def _create_directory(path: Path | str) -> Path:
@@ -70,16 +96,45 @@ def _human_readable_bytes(num: int | None) -> str:
     return f"{size:.2f} PB"
 
 
+def _unlink(path: Path) -> None:
+    path.unlink(missing_ok=True)
+
+
+def _atomic_move(src: Path, dest: Path) -> None:
+    """Atomically replace *dest* with *src*, copying first across filesystems."""
+    try:
+        os.replace(src, dest)
+    except OSError as e:
+        if e.errno != errno.EXDEV:
+            raise
+        tmp = dest.with_name(dest.name + ".tmp")
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, dest)
+        _unlink(src)
+
+
 class Downloader:
+    """Resumable, verified HTTP downloader.
+
+    Streams to ``<cache_dir>/<file>.part`` with a ``.meta`` sidecar holding the
+    validator (ETag / Last-Modified). Resumes with ``Range`` + ``If-Range``,
+    verifies the size, then atomically moves into ``data_dir``. Transient
+    failures are retried with exponential backoff and jitter.
+    """
+
     def __init__(
         self,
         cache_dir: Path | str,
         data_dir: Path | str,
         force: bool = False,
+        max_attempts: int = 5,
+        backoff: float = 1.0,
     ) -> None:
         self.cache_dir = Path(cache_dir)
         self.data_dir = Path(data_dir)
         self.force = force
+        self.max_attempts = max_attempts
+        self.backoff = backoff
         self._session = requests.Session()
 
     def __enter__(self) -> Downloader:
@@ -91,13 +146,20 @@ class Downloader:
     def close(self) -> None:
         self._session.close()
 
-    def download(self, url: str, file_name: str) -> DownloadResult:
+    def download(
+        self, url: str, file_name: str, known_etag: str | None = None
+    ) -> DownloadResult:
+        """Download *url* into ``data_dir/file_name``.
+
+        If *known_etag* is given and the local file exists, a conditional GET is
+        sent and a 304 returns ``DownloadResult(not_modified=True)``.
+        """
         _create_directory(self.cache_dir)
         _create_directory(self.data_dir)
 
         dest = self.data_dir / file_name
         part = self.cache_dir / f"{file_name}.part"
-        cache_final = self.cache_dir / file_name
+        meta = self.cache_dir / f"{file_name}.part.meta"
 
         if dest.exists() and not self.force:
             if not _has_read_access(dest):
@@ -110,92 +172,152 @@ class Downloader:
         if not _has_write_access(dest):
             raise PermissionError(f"No write access to {dest}")
 
-        existing_size = part.stat().st_size if part.exists() else 0
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                return self._attempt(url, dest, part, meta, known_etag)
+            except _RETRYABLE as e:
+                if attempt == self.max_attempts:
+                    log.error(f"Download failed after {attempt} attempts: {url}: {e}")
+                    raise
+                delay = self._delay(attempt, getattr(e, "retry_after", None))
+                log.warning(
+                    f"Download attempt {attempt}/{self.max_attempts} failed ({e}); "
+                    f"retrying in {delay:.1f}s"
+                )
+                time.sleep(delay)
+
+        raise AssertionError("unreachable")
+
+    def _delay(self, attempt: int, retry_after: float | None) -> float:
+        cap = min(MAX_BACKOFF, self.backoff * 2 ** (attempt - 1))
+        delay = random.uniform(cap / 2, cap)
+        if retry_after is not None:
+            delay = max(delay, min(retry_after, MAX_BACKOFF))
+        return delay
+
+    @staticmethod
+    def _read_meta(meta: Path, url: str) -> dict:
+        try:
+            data = json.loads(meta.read_text())
+        except (OSError, ValueError):
+            return {}
+        return data if data.get("url") == url else {}
+
+    def _attempt(
+        self,
+        url: str,
+        dest: Path,
+        part: Path,
+        meta: Path,
+        known_etag: str | None,
+    ) -> DownloadResult:
+        offset = part.stat().st_size if part.exists() else 0
+        saved = self._read_meta(meta, url)
+        validator = saved.get("etag") or saved.get("last_modified")
+
+        if offset and not validator:
+            # Cannot prove the partial belongs to the current remote file.
+            _unlink(part)
+            offset = 0
 
         headers: dict[str, str] = {"Accept-Encoding": "identity"}
+        if offset:
+            headers["Range"] = f"bytes={offset}-"
+            headers["If-Range"] = validator
+        elif known_etag and dest.exists():
+            headers["If-None-Match"] = known_etag
 
-        if existing_size > 0:
-            headers["Range"] = f"bytes={existing_size}-"
+        with self._session.get(
+            url, stream=True, headers=headers, timeout=TIMEOUT
+        ) as resp:
+            status = resp.status_code
 
-        try:
-            with self._session.get(url, stream=True, headers=headers) as resp:
-                if resp.status_code not in (200, 206):
-                    resp.raise_for_status()
+            if status == 304:
+                return DownloadResult(path=dest, etag=known_etag, not_modified=True)
 
-                # determine total size
-                total_bytes = None
+            if status == 416:
+                m = _UNSATISFIED_RANGE.match(resp.headers.get("Content-Range", ""))
+                if offset and m and int(m.group(1)) == offset:
+                    return self._finalize(part, meta, dest, saved)
+                _unlink(part)
+                _unlink(meta)
+                raise _Transient("416, discarded stale partial")
 
-                if resp.status_code == 206:
-                    content_range = resp.headers.get("Content-Range")
+            if status in RETRY_STATUSES:
+                ra = resp.headers.get("Retry-After", "")
+                raise _Transient(f"HTTP {status}", float(ra) if ra.isdigit() else None)
 
-                    if content_range and "/" in content_range:
-                        total_bytes = int(content_range.split("/")[-1])
+            if status not in (200, 206):
+                resp.raise_for_status()
+                raise requests.HTTPError(f"Unexpected status {status} for {url}")
 
-                else:
-                    content_length = resp.headers.get("content-length")
+            total: int | None = None
+            if status == 206:
+                m = _CONTENT_RANGE.match(resp.headers.get("Content-Range", ""))
+                if not m or int(m.group(1)) != offset:
+                    _unlink(part)
+                    _unlink(meta)
+                    raise _Transient("Content-Range does not match requested offset")
+                total = int(m.group(2)) if m.group(2) != "*" else None
+                mode = "ab"
+            else:
+                length = resp.headers.get("content-length")
+                total = int(length) if length else None
+                offset = 0
+                mode = "wb"
 
-                    if content_length:
-                        total_bytes = int(content_length)
+            etag = resp.headers.get("ETag")
+            raw_lm = resp.headers.get("Last-Modified")
+            info = {
+                "url": url,
+                "etag": etag,
+                "last_modified": raw_lm,
+            }
+            meta.write_text(json.dumps(info))
 
-                        if existing_size:
-                            total_bytes += existing_size
+            log.info(
+                f"Starting download: {url} -> {dest} "
+                f"(size: {_human_readable_bytes(total)}"
+                f"{f', resumed_at: {_human_readable_bytes(offset)}' if offset else ''})"
+            )
 
-                log.info(
-                    f"Starting download: {url} -> {dest} "
-                    f"(size: {_human_readable_bytes(total_bytes)} "
-                    f"{'' if existing_size == 0 else f', resumed_at: {_human_readable_bytes(existing_size)}'})"
+            start = time.perf_counter()
+            written = 0
+            with DownloadProgressbar() as progress:
+                progress.add(
+                    f"Downloading {dest.name}", total=total, completed=offset
                 )
+                with part.open(mode, buffering=CHUNK_SIZE) as fh:
+                    for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
+                        if not chunk:
+                            continue
+                        fh.write(chunk)
+                        written += len(chunk)
+                        progress.update(advance=len(chunk))
+                    fh.flush()
+                    os.fsync(fh.fileno())
 
-                start = time.perf_counter()
-                downloaded = 0
+        size = part.stat().st_size
+        if total is not None and size != total:
+            if size > total:
+                _unlink(part)
+                _unlink(meta)
+            raise _Transient(f"incomplete download ({size}/{total} bytes)")
 
-                mode = "ab" if existing_size else "wb"
+        elapsed = time.perf_counter() - start
+        log.info(
+            f"Finished download: {dest} ({_human_readable_bytes(size)}) "
+            f"avg speed: {_human_readable_bytes(int(written / elapsed) if elapsed else 0)}/s"
+        )
+        return self._finalize(part, meta, dest, info)
 
-                with DownloadProgressbar() as progress:
-                    progress.add(
-                        f"Downloading {file_name}",
-                        total=total_bytes,
-                        completed=existing_size,
-                    )
-
-                    with part.open(mode, buffering=1024 * 1024) as fh:
-                        for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
-                            if not chunk:
-                                continue
-
-                            fh.write(chunk)
-
-                            size = len(chunk)
-                            downloaded += size
-
-                            progress.update(advance=size)
-
-                elapsed = time.perf_counter() - start
-                total_downloaded = existing_size + downloaded
-
-                avg_speed = total_downloaded / elapsed if elapsed > 0 else 0
-
-                log.info(
-                    f"Finished download: {dest} "
-                    f"({_human_readable_bytes(total_downloaded)}) "
-                    f"avg speed: {_human_readable_bytes(int(avg_speed))}/s"
-                )
-
-        except requests.RequestException as e:
-            log.exception(f"Download failed: {url}")
-            raise e
-
-        except KeyboardInterrupt:
-            log.warning("Download interrupted by user")
-            return DownloadResult(path=dest)
-
-        # Parse remote metadata from response headers
-        etag = resp.headers.get("ETag")
-        raw_lm = resp.headers.get("Last-Modified")
-        last_modified = rfc2822_to_datetime(raw_lm) if raw_lm else None
-
-        if part.exists():
-            part.rename(cache_final)
-            shutil.move(str(cache_final), str(dest))
-
-        return DownloadResult(path=dest, etag=etag, last_modified=last_modified)
+    @staticmethod
+    def _finalize(part: Path, meta: Path, dest: Path, info: dict) -> DownloadResult:
+        _atomic_move(part, dest)
+        _unlink(meta)
+        raw_lm = info.get("last_modified")
+        return DownloadResult(
+            path=dest,
+            etag=info.get("etag"),
+            last_modified=rfc2822_to_datetime(raw_lm) if raw_lm else None,
+        )

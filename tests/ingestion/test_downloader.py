@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -187,6 +188,9 @@ class TestDownloaderDownload:
         part_file = cache / "test.txt.part"
         part_file.write_bytes(b"partial")
         existing_size = part_file.stat().st_size
+        (cache / "test.txt.part.meta").write_text(
+            json.dumps({"url": "http://example.com/test.txt", "etag": '"abc"'})
+        )
 
         remaining = b" data"
 
@@ -216,9 +220,9 @@ class TestDownloaderDownload:
 
         # Verify Range header was sent
         call_kwargs = dl._session.get.call_args
-        assert f"bytes={existing_size}-" in call_kwargs.kwargs.get("headers", {}).get(
-            "Range", ""
-        )
+        headers = call_kwargs.kwargs["headers"]
+        assert headers["Range"] == f"bytes={existing_size}-"
+        assert headers["If-Range"] == '"abc"'
 
     @patch("geonames_server.ingestion.downloader.DownloadProgressbar")
     def test_force_redownloads_existing_file(self, mock_progress_cls, tmp_path):
@@ -272,8 +276,9 @@ class TestDownloaderDownload:
             with pytest.raises(requests.HTTPError):
                 dl.download("http://example.com/missing.txt", "missing.txt")
 
+    @patch("geonames_server.ingestion.downloader.time.sleep")
     @patch("geonames_server.ingestion.downloader.DownloadProgressbar")
-    def test_raises_on_request_exception(self, mock_progress_cls, tmp_path):
+    def test_raises_on_request_exception(self, mock_progress_cls, _sleep, tmp_path):
         cache = tmp_path / "cache"
         data = tmp_path / "data"
         cache.mkdir()
@@ -302,3 +307,190 @@ class TestDownloaderDownload:
 
         assert isinstance(result, DownloadResult)
         assert result.path == dest
+
+
+# ---------------------------------------------------------------------------
+# Resume / retry / verification
+# ---------------------------------------------------------------------------
+
+URL = "http://example.com/test.txt"
+
+
+def _resp(status=200, headers=None, chunks=(), raises=None):
+    r = MagicMock()
+    r.status_code = status
+    r.headers = headers or {}
+    if raises:
+        r.iter_content.side_effect = raises
+    else:
+        r.iter_content.return_value = list(chunks)
+    r.__enter__ = MagicMock(return_value=r)
+    r.__exit__ = MagicMock(return_value=False)
+    return r
+
+
+@pytest.fixture
+def dirs(tmp_path):
+    cache, data = tmp_path / "cache", tmp_path / "data"
+    cache.mkdir()
+    data.mkdir()
+    return cache, data
+
+
+@pytest.fixture(autouse=True)
+def _no_ui_or_sleep():
+    with (
+        patch("geonames_server.ingestion.downloader.DownloadProgressbar"),
+        patch("geonames_server.ingestion.downloader.time.sleep") as sleep,
+    ):
+        yield sleep
+
+
+def _dl(dirs, responses, **kw):
+    dl = Downloader(cache_dir=dirs[0], data_dir=dirs[1], **kw)
+    dl._session = MagicMock()
+    dl._session.get.side_effect = responses
+    return dl
+
+
+def _seed_part(dirs, data=b"partial", etag='"abc"'):
+    (dirs[0] / "test.txt.part").write_bytes(data)
+    (dirs[0] / "test.txt.part.meta").write_text(json.dumps({"url": URL, "etag": etag}))
+
+
+class TestAtomicVerified:
+    def test_success_removes_part_and_meta(self, dirs):
+        dl = _dl(dirs, [_resp(200, {"content-length": "5", "ETag": '"e1"'}, [b"hello"])])
+        result = dl.download(URL, "test.txt")
+        assert result.etag == '"e1"'
+        assert (dirs[1] / "test.txt").read_bytes() == b"hello"
+        assert not (dirs[0] / "test.txt.part").exists()
+        assert not (dirs[0] / "test.txt.part.meta").exists()
+
+    def test_size_mismatch_never_publishes_dest(self, dirs, _no_ui_or_sleep):
+        dl = _dl(dirs, [_resp(200, {"content-length": "10"}, [b"short"])] * 5)
+        with pytest.raises(Exception, match="incomplete"):
+            dl.download(URL, "test.txt")
+        assert not (dirs[1] / "test.txt").exists()
+
+    def test_force_failure_keeps_old_dest(self, dirs):
+        (dirs[1] / "test.txt").write_text("old")
+        dl = _dl(dirs, [requests.ConnectionError("x")] * 5, force=True)
+        with pytest.raises(requests.ConnectionError):
+            dl.download(URL, "test.txt")
+        assert (dirs[1] / "test.txt").read_text() == "old"
+
+
+class TestResume:
+    def test_part_without_validator_restarts(self, dirs):
+        (dirs[0] / "test.txt.part").write_bytes(b"junk")
+        dl = _dl(dirs, [_resp(200, {"content-length": "2"}, [b"ok"])])
+        dl.download(URL, "test.txt")
+        assert "Range" not in dl._session.get.call_args.kwargs["headers"]
+        assert (dirs[1] / "test.txt").read_bytes() == b"ok"
+
+    def test_200_in_reply_to_range_overwrites(self, dirs):
+        _seed_part(dirs)
+        dl = _dl(dirs, [_resp(200, {"content-length": "3"}, [b"new"])])
+        dl.download(URL, "test.txt")
+        assert (dirs[1] / "test.txt").read_bytes() == b"new"
+
+    def test_416_with_complete_part_finalizes(self, dirs):
+        _seed_part(dirs, b"complete")
+        dl = _dl(dirs, [_resp(416, {"Content-Range": "bytes */8"})])
+        result = dl.download(URL, "test.txt")
+        assert result.etag == '"abc"'
+        assert (dirs[1] / "test.txt").read_bytes() == b"complete"
+
+    def test_416_with_stale_part_restarts(self, dirs):
+        _seed_part(dirs, b"stale-and-longer")
+        dl = _dl(
+            dirs,
+            [
+                _resp(416, {"Content-Range": "bytes */5"}),
+                _resp(200, {"content-length": "5"}, [b"fresh"]),
+            ],
+        )
+        dl.download(URL, "test.txt")
+        assert (dirs[1] / "test.txt").read_bytes() == b"fresh"
+
+    def test_206_wrong_offset_restarts(self, dirs):
+        _seed_part(dirs)
+        dl = _dl(
+            dirs,
+            [
+                _resp(206, {"Content-Range": "bytes 0-4/5"}, [b"xxxxx"]),
+                _resp(200, {"content-length": "5"}, [b"clean"]),
+            ],
+        )
+        dl.download(URL, "test.txt")
+        assert (dirs[1] / "test.txt").read_bytes() == b"clean"
+
+    def test_midstream_failure_resumes_from_part(self, dirs):
+        dl = _dl(
+            dirs,
+            [
+                _resp(
+                    200,
+                    {"content-length": "10", "ETag": '"v1"'},
+                    raises=requests.exceptions.ChunkedEncodingError("cut"),
+                ),
+                _resp(206, {"Content-Range": "bytes 0-9/10"}, [b"0123456789"]),
+            ],
+        )
+        # first response writes nothing; second sees empty part and no Range
+        dl.download(URL, "test.txt")
+        assert (dirs[1] / "test.txt").read_bytes() == b"0123456789"
+
+
+class TestConditional:
+    def test_304_returns_not_modified(self, dirs):
+        (dirs[1] / "test.txt").write_text("cached")
+        dl = _dl(dirs, [_resp(304)], force=True)
+        result = dl.download(URL, "test.txt", known_etag='"e1"')
+        assert result.not_modified is True
+        assert dl._session.get.call_args.kwargs["headers"]["If-None-Match"] == '"e1"'
+        assert (dirs[1] / "test.txt").read_text() == "cached"
+
+
+class TestRetries:
+    def test_retries_5xx_then_succeeds(self, dirs, _no_ui_or_sleep):
+        dl = _dl(
+            dirs,
+            [
+                _resp(503, {"Retry-After": "7"}),
+                _resp(200, {"content-length": "2"}, [b"ok"]),
+            ],
+        )
+        dl.download(URL, "test.txt")
+        assert dl._session.get.call_count == 2
+        assert _no_ui_or_sleep.call_args.args[0] >= 7
+
+    def test_gives_up_after_max_attempts(self, dirs):
+        dl = _dl(dirs, [_resp(500)] * 3, max_attempts=3)
+        with pytest.raises(Exception, match="HTTP 500"):
+            dl.download(URL, "test.txt")
+        assert dl._session.get.call_count == 3
+
+    def test_4xx_not_retried(self, dirs):
+        r = _resp(404)
+        r.raise_for_status.side_effect = requests.HTTPError("404")
+        dl = _dl(dirs, [r])
+        with pytest.raises(requests.HTTPError):
+            dl.download(URL, "test.txt")
+        assert dl._session.get.call_count == 1
+
+    def test_timeout_passed_on_every_request(self, dirs):
+        dl = _dl(dirs, [_resp(200, {"content-length": "2"}, [b"ok"])])
+        dl.download(URL, "test.txt")
+        assert dl._session.get.call_args.kwargs["timeout"] == (10, 60)
+
+    def test_keyboard_interrupt_propagates_and_keeps_part(self, dirs):
+        dl = _dl(
+            dirs,
+            [_resp(200, {"content-length": "9", "ETag": '"v"'}, raises=KeyboardInterrupt())],
+        )
+        with pytest.raises(KeyboardInterrupt):
+            dl.download(URL, "test.txt")
+        assert not (dirs[1] / "test.txt").exists()
+        assert (dirs[0] / "test.txt.part.meta").exists()
