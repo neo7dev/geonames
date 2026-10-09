@@ -1,5 +1,5 @@
 """While Redis is down the limiter counts and limits in memory; afterwards the
-outage users' counters are rebuilt from Postgres with the outage included.
+outage requests are added to the users' Redis counters.
 
 Needs TEST_REDIS_URL and the Supabase database the other API tests use.
 """
@@ -174,6 +174,13 @@ async def test_with_postgres_down_too_counts_wait_in_memory(
     assert await _stored_total(async_session, user_id) == 10
 
 
+async def _counters(redis, user_id, now: float) -> list[int | None]:
+    return [
+        None if value is None else int(value)
+        for value in await redis.mget(Windows.at(now).counter_keys(user_id))
+    ]
+
+
 @pytest.mark.asyncio
 async def test_after_the_outage_counters_include_the_outage_calls(
     auth_client,
@@ -201,14 +208,87 @@ async def test_after_the_outage_counters_include_the_outage_calls(
 
     assert await flush_usage(redis, session_factory, limiter) == 6
     assert await _stored_total(async_session, user_id) == 6
-    windows = Windows.at(clock.now)
-    month_key = windows.counter_keys(user_id)[2]
-    assert await redis.exists(month_key) == 0
+    # The outage minute has ended; the hour and month gained the 3 outage calls
+    assert await _counters(redis, user_id, clock.now) == [1, 6, 6]
+    assert limiter.local.users == set()
 
     assert await _calls(auth_client, key, 1) == [200]
-    # Rebuilt from Postgres (6), plus this call
-    assert int(await redis.get(month_key)) == 7
+    assert await _counters(redis, user_id, clock.now) == [2, 7, 7]
+
+
+@pytest.mark.asyncio
+async def test_outage_calls_count_in_the_minute_they_were_made(
+    auth_client, limiter, break_redis, redis, session_factory, make_user, make_key
+):
+    key = await make_key(await make_user("free"))
+    break_redis.broken = False
+    assert await _calls(auth_client, key, 4) == [200] * 4  # In Redis
+    break_redis.broken = True
+    assert await _calls(auth_client, key, 5) == [200] * 5  # In memory
+
+    # Redis answers again within the same minute
+    break_redis.broken = False
+    limiter._down_until = 0
+    assert await _calls(auth_client, key, 1) == [200]  # In Redis
+    await flush_usage(redis, session_factory, limiter)
+
+    # The free tier allows 10 a minute: all used
+    assert await _calls(auth_client, key, 1) == [429]
+
+
+@pytest.mark.asyncio
+async def test_counters_redis_lost_are_rebuilt_with_the_unflushed_outage_calls(
+    auth_client,
+    limiter,
+    break_redis,
+    redis,
+    async_session,
+    session_factory,
+    make_user,
+    make_key,
+    clock,
+):
+    user_id = await make_user("free")
+    key = await make_key(user_id)
+    assert await _calls(auth_client, key, 3) == [200] * 3  # In memory
+    await redis.flushdb()  # Redis restarted empty
+
+    break_redis.broken = False
+    clock.now += BACKOFF_SECONDS
+    # Nothing is in Postgres yet: the rebuild uses the in-memory counts
+    assert await _calls(auth_client, key, 1) == [200]
+    assert await _counters(redis, user_id, clock.now) == [1, 4, 4]
     assert limiter.local.users == set()
+
+    await flush_usage(redis, session_factory, limiter)
+    assert await _stored_total(async_session, user_id) == 4
+    assert await _counters(redis, user_id, clock.now) == [1, 4, 4]
+
+
+@pytest.mark.asyncio
+async def test_a_rebuild_and_the_reconcile_add_the_outage_calls_once(
+    auth_client,
+    limiter,
+    break_redis,
+    redis,
+    session_factory,
+    make_user,
+    make_key,
+    clock,
+):
+    user_id = await make_user("free")
+    key = await make_key(user_id)
+    assert await _calls(auth_client, key, 3) == [200] * 3  # In memory
+    break_redis.broken = False
+    clock.now += BACKOFF_SECONDS
+
+    # A request rebuilds while the flush runs; whichever goes second adds nothing
+    await asyncio.gather(
+        _calls(auth_client, key, 1), flush_usage(redis, session_factory, limiter)
+    )
+    await flush_usage(redis, session_factory, limiter)
+
+    assert await _counters(redis, user_id, clock.now) == [1, 4, 4]
 
 
 @pytest.mark.asyncio
@@ -225,11 +305,13 @@ async def test_counters_stay_when_the_write_fails_and_the_next_flush_finishes(
 ):
     user_id = await make_user("free")
     key = await make_key(user_id)
+    break_redis.broken = False
+    await _calls(auth_client, key, 1)  # In Redis
+    break_redis.broken = True
     await _calls(auth_client, key, 2)  # In memory
     break_redis.broken = False
     clock.now += BACKOFF_SECONDS
     await _calls(auth_client, key, 1)
-    month_key = Windows.at(clock.now).counter_keys(user_id)[2]
 
     real_write = usage_flush.write_usage
     with patch.object(
@@ -239,12 +321,13 @@ async def test_counters_stay_when_the_write_fails_and_the_next_flush_finishes(
     ):
         with pytest.raises(OSError):
             await flush_usage(redis, session_factory, limiter)
-    assert await redis.exists(month_key) == 1
+    # Not added before the outage calls are in Postgres
+    assert (await _counters(redis, user_id, clock.now))[2] == 2
     assert limiter.local.users == {user_id}
 
     with patch.object(usage_flush, "write_usage", real_write):
         await flush_usage(redis, session_factory, limiter)
-    assert await redis.exists(month_key) == 0
+    assert (await _counters(redis, user_id, clock.now))[2] == 4
     assert await _stored_total(async_session, user_id) == 2
 
 

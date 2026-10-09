@@ -8,9 +8,9 @@ whose write failed stays in Redis for the next flush; one that was written but
 not deleted is found in usage_flushes and only deleted, so nothing counts twice.
 
 While Redis is down, the rate limiter counts in memory; each flush writes
-those counts too. Once Redis answers again, the flush deletes the hour and
-month counters of the users seen during the outage, after their usage is in
-Postgres, so their next request rebuilds the counters with it.
+those counts too. Once Redis answers again and the outage usage is in
+Postgres, the flush adds the outage users' in-memory requests to their Redis
+counters (RateLimiter.reconcile).
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from geonames_server.api.rate_limit import (
     RateLimiter,
     SessionFactory,
     Usage,
-    Windows,
 )
 from geonames_server.database.models.accounts import UsageFlush
 from geonames_server.log.mylogger import get_logger
@@ -145,21 +144,9 @@ async def _flush_local(limiter: RateLimiter, session_factory: SessionFactory) ->
 
 
 async def _reconcile(limiter: RateLimiter) -> None:
-    """Delete the outage users' hour and month counters, to be rebuilt from Postgres."""
-    users = limiter.local.take_users()
-    if not users:
-        return
-    windows = Windows.at(rate_limit._now())
-    try:
-        await limiter.redis.delete(
-            *(key for user in users for key in windows.counter_keys(user)[1:])
-        )
-    except BaseException:
-        limiter.local.users |= users
-        raise
-    log.info(
-        f"Rebuilding the rate limit counters of {len(users)} user(s) after the outage"
-    )
+    users = await limiter.reconcile()
+    if users:
+        log.info(f"Added the outage requests of {users} user(s) to Redis")
 
 
 async def flush_usage(

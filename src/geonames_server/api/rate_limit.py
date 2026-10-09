@@ -14,10 +14,10 @@ If Redis fails, a warning is logged once and Redis is skipped for
 BACKOFF_SECONDS, so requests do not each wait for a timeout. Meanwhile
 LocalLimiter counts and limits in process memory, starting each user from
 their flushed usage, and the usage flush writes its counts to Postgres. Once
-Redis answers again, the flush writes everything and deletes the hour and
-month counters of the users seen during the outage, so they are rebuilt with
-the outage requests included. One app instance runs, so one process's
-counters are all of them.
+Redis answers again, the flush writes everything and adds each outage user's
+in-memory requests to their Redis counters. A user whose counters Redis lost
+is rebuilt from the in-memory counts instead, which already include the
+outage. One app instance runs, so one process's counters are all of them.
 """
 
 from __future__ import annotations
@@ -80,6 +80,22 @@ end
 redis.call('HINCRBY', KEYS[4], ARGV[7], 1)
 redis.call('HSET', KEYS[4], ARGV[8], ARGV[9])
 return 0
+"""
+
+# KEYS: minute, hour and month counters. ARGV: the requests to add to each, then
+# the three TTLs. Adds nothing when the month counter is missing: the next
+# request rebuilds the counters. Returns 1 when added, else 0.
+_ADD_SCRIPT = """
+if redis.call('EXISTS', KEYS[3]) == 0 then
+  return 0
+end
+for i = 1, 3 do
+  local n = tonumber(ARGV[i])
+  if n > 0 and redis.call('INCRBY', KEYS[i], n) == n then
+    redis.call('EXPIRE', KEYS[i], ARGV[3 + i])
+  end
+end
+return 1
 """
 
 
@@ -196,10 +212,11 @@ class LocalLimiter:
     """
 
     def __init__(self) -> None:
-        # Counter key (as in Redis) -> [count, end of its window]
+        # Counter key (as in Redis) -> [count, end of its window, requests
+        # counted here that are not in the Redis counter yet]
         self._counts: dict[str, list[int]] = {}
         self.usage = Usage()
-        # Users counted here, whose Redis counters must be rebuilt afterwards
+        # Users counted here, whose requests must be added to Redis afterwards
         self.users: set[uuid.UUID] = set()
 
     def is_loaded(self, user_id, windows: Windows) -> bool:
@@ -207,11 +224,18 @@ class LocalLimiter:
 
     def load(self, user_id, windows: Windows, month: int, hour: int) -> None:
         keys = windows.counter_keys(user_id)
-        self._counts.setdefault(keys[2], [month, windows.ends[2]])
-        self._counts.setdefault(keys[1], [hour, windows.ends[1]])
+        self._counts.setdefault(keys[2], [month, windows.ends[2], 0])
+        self._counts.setdefault(keys[1], [hour, windows.ends[1], 0])
 
     def counts(self, user_id, windows: Windows) -> list[int]:
         return [self._counts.get(key, [0])[0] for key in windows.counter_keys(user_id)]
+
+    def unsent(self, user_id, windows: Windows) -> list[int]:
+        """Requests counted here that the user's Redis counters lack."""
+        return [
+            self._counts[key][2] if key in self._counts else 0
+            for key in windows.counter_keys(user_id)
+        ]
 
     def hit(self, principal: Principal, windows: Windows, now: float) -> int | None:
         """Count a request; return the exhausted window (0-2) instead if any."""
@@ -220,7 +244,9 @@ class LocalLimiter:
             if limit is not None and counts[window] >= limit:
                 return window
         for window, key in enumerate(windows.counter_keys(principal.user_id)):
-            self._counts.setdefault(key, [0, windows.ends[window]])[0] += 1
+            counter = self._counts.setdefault(key, [0, windows.ends[window], 0])
+            counter[0] += 1
+            counter[2] += 1
         slot = (principal.key_id, windows.hour_start)
         self.usage.requests[slot] = self.usage.requests.get(slot, 0) + 1
         self.usage.last_used[principal.key_id] = datetime.fromtimestamp(
@@ -231,7 +257,7 @@ class LocalLimiter:
 
     def prune(self, now: float) -> None:
         """Forget counters whose window has ended."""
-        for key in [k for k, (_, end) in self._counts.items() if end <= now]:
+        for key in [k for k, (_, end, _) in self._counts.items() if end <= now]:
             del self._counts[key]
 
     def take_usage(self) -> Usage:
@@ -242,15 +268,15 @@ class LocalLimiter:
         """Put back usage that could not be written."""
         self.usage.add(usage)
 
-    def take_users(self) -> set[uuid.UUID]:
-        """The outage's users, for their Redis counters to be rebuilt.
+    def forget(self, user_id) -> None:
+        """Drop a user whose requests are in Redis now.
 
-        The in-memory counters are dropped too: a later outage starts again
-        from Postgres.
+        Their in-memory counters go too: a later outage starts again from Postgres.
         """
-        users, self.users = self.users, set()
-        self._counts.clear()
-        return users
+        self.users.discard(user_id)
+        prefix = f"rl:{user_id}:"
+        for key in [k for k in self._counts if k.startswith(prefix)]:
+            del self._counts[key]
 
 
 async def stored_usage(
@@ -288,6 +314,10 @@ class RateLimiter:
         self.redis = redis
         self._session_factory = session_factory
         self._script = redis.register_script(_SCRIPT)
+        self._add_script = redis.register_script(_ADD_SCRIPT)
+        # Held while outage counts move to Redis, so a user's are added once:
+        # by a rebuild or by reconcile, never both.
+        self._moving = asyncio.Lock()
         # Redis is skipped until this time (epoch seconds) after a failure.
         self._down_until = 0.0
         self.outage = False
@@ -361,17 +391,61 @@ class RateLimiter:
     async def _rebuild(
         self, principal: Principal, windows: Windows, now: float
     ) -> bool:
-        """Set the user's month and hour counters from Postgres, unless set meanwhile."""
-        stored = await self._stored_usage(principal.user_id, windows)
+        """Set the user's counters, unless set meanwhile.
+
+        From the in-memory counts if the user has outage requests not in Redis
+        yet (Postgres may lack them), else from Postgres.
+        """
+        user_id = principal.user_id
+        keys, ttls = windows.counter_keys(user_id), windows.ttls(now)
+        if user_id in self.local.users:
+            async with self._moving:
+                if user_id in self.local.users and self.local.is_loaded(
+                    user_id, windows
+                ):
+                    counts = self.local.counts(user_id, windows)
+                    async with self.redis.pipeline(transaction=False) as pipe:
+                        for key, count, ttl in reversed(list(zip(keys, counts, ttls))):
+                            pipe.set(key, count, nx=True, ex=ttl)
+                        month_set, *_ = await pipe.execute()
+                    if month_set:
+                        self.local.forget(user_id)
+                    return True
+        stored = await self._stored_usage(user_id, windows)
         if stored is None:
             return False
         month, hour = stored
-        keys, ttls = windows.counter_keys(principal.user_id), windows.ttls(now)
         async with self.redis.pipeline(transaction=False) as pipe:
             pipe.set(keys[2], month, nx=True, ex=ttls[2])
             pipe.set(keys[1], hour, nx=True, ex=ttls[1])
             await pipe.execute()
         return True
+
+    async def reconcile(self) -> int:
+        """Add the outage users' in-memory requests to their Redis counters.
+
+        Call once their usage is in Postgres: a user whose month counter is
+        missing is only dropped, and rebuilt from Postgres on their next request.
+        Returns the users reconciled.
+        """
+        async with self._moving:
+            users = list(self.local.users)
+            if not users:
+                return 0
+            now = _now()
+            windows = Windows.at(now)
+            ttls = windows.ttls(now)
+            async with self.redis.pipeline(transaction=False) as pipe:
+                for user_id in users:
+                    await self._add_script(
+                        keys=windows.counter_keys(user_id),
+                        args=[*self.local.unsent(user_id, windows), *ttls],
+                        client=pipe,
+                    )
+                await pipe.execute()
+            for user_id in users:
+                self.local.forget(user_id)
+            return len(users)
 
     async def hit(self, principal: Principal, now: float) -> int | None:
         """Count a request; return the exhausted window (0-2) instead if any."""
