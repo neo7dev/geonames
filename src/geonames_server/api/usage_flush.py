@@ -1,9 +1,11 @@
 """Copy the usage counted in Redis to Postgres every few minutes.
 
 The rate limiter adds each request to the hash USAGE_PENDING. A flush renames
-it to a batch key (new requests start a fresh hash), writes the batch to
+it to a batch key (new requests start a fresh hash) listed in the set BATCHES,
+writes the batch to
 app.api_key_usage and api_keys.last_used_at in one transaction that also
-records the batch in app.usage_flushes, then deletes the batch key. A batch
+records the batch in app.usage_flushes, then deletes the batch key and its
+BATCHES entry. A batch
 whose write failed stays in Redis for the next flush; one that was written but
 not deleted is found in usage_flushes and only deleted, so nothing counts twice.
 
@@ -20,7 +22,7 @@ import uuid
 from contextlib import suppress
 
 from redis.asyncio import Redis
-from redis.exceptions import RedisError, ResponseError
+from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +40,18 @@ from geonames_server.log.mylogger import get_logger
 log = get_logger()
 
 FLUSHING_PREFIX = "usage:flushing:"
+# Set of the batch keys not yet deleted
+BATCHES = "usage:batches"
+
+# KEYS: the pending hash, the new batch key, BATCHES. Renames the pending hash
+# (if any) to the batch key and lists it; returns all listed batches.
+_TAKE_PENDING = """
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  redis.call('RENAME', KEYS[1], KEYS[2])
+  redis.call('SADD', KEYS[3], KEYS[2])
+end
+return redis.call('SMEMBERS', KEYS[3])
+"""
 
 # Keys deleted since (their user was deleted) are dropped by the join instead of
 # failing the batch on the foreign key.
@@ -113,20 +127,19 @@ async def write_usage(
 
 
 async def _flush_redis(redis: Redis, session_factory: SessionFactory) -> int:
-    try:
-        await redis.rename(USAGE_PENDING, f"{FLUSHING_PREFIX}{uuid.uuid4()}")
-    except ResponseError as e:
-        if "no such key" not in str(e).lower():
-            raise
     # This flush's batch, plus any a failed flush left behind
-    batches = [name async for name in redis.scan_iter(match=f"{FLUSHING_PREFIX}*")]
+    batches = await redis.register_script(_TAKE_PENDING)(
+        keys=[USAGE_PENDING, f"{FLUSHING_PREFIX}{uuid.uuid4()}", BATCHES]
+    )
     written = 0
     for name in batches:
         usage = Usage.from_hash(await redis.hgetall(name))
-        async with session_factory() as session:
-            if await write_usage(session, usage, batch=name.decode()):
-                written += usage.total()
-        await redis.delete(name)
+        if usage:
+            async with session_factory() as session:
+                if await write_usage(session, usage, batch=name.decode()):
+                    written += usage.total()
+        async with redis.pipeline(transaction=True) as pipe:
+            await pipe.delete(name).srem(BATCHES, name).execute()
     return written
 
 

@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from geonames_server.api import usage_flush
 from geonames_server.api.rate_limit import USAGE_PENDING
-from geonames_server.api.usage_flush import FLUSHING_PREFIX, flush_usage
+from geonames_server.api.usage_flush import BATCHES, FLUSHING_PREFIX, flush_usage
 from geonames_server.database.models.accounts import ApiKey, ApiKeyUsage, UsageFlush
 
 PATH = "/metadata/"
@@ -116,6 +116,7 @@ async def test_a_failed_write_keeps_the_batch_for_the_next_flush(
         with pytest.raises(OSError):
             await flush_usage(redis, session_factory)
     assert len(await redis.keys(f"{FLUSHING_PREFIX}*")) == 1
+    assert await redis.scard(BATCHES) == 1
 
     await auth_client.get(PATH, headers={"X-API-Key": key})
     assert await flush_usage(redis, session_factory) == 2
@@ -130,6 +131,7 @@ async def test_a_batch_written_before_is_only_deleted(
     _, key_id = await _key(make_user, make_key, async_session)
     batch = f"{FLUSHING_PREFIX}already-written"
     await redis.hset(batch, f"n:{key_id}:{int(clock.now) // 3600}", 5)
+    await redis.sadd(BATCHES, batch)
     async_session.add(UsageFlush(batch=batch))
     await async_session.commit()
 
