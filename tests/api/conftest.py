@@ -1,14 +1,19 @@
-from datetime import date, datetime, timezone
+import uuid
+from datetime import date, datetime, timedelta, timezone
 
+import jwt
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event
+from sqlalchemy import event, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api import dependencies
 from geonames_server.api.app import app
+from geonames_server.api.auth import Principal, generate_api_key, require_api_key
 from geonames_server.api.dependencies import get_session
+from geonames_server.config.config import settings
+from geonames_server.database.models.accounts import ApiKey, Profile
 from geonames_server.database.models.cities15000 import Cities15000
 from geonames_server.database.models.dataset_metadata import DatasetMetaData
 from geonames_server.database.models.deletions import Deletions
@@ -42,8 +47,29 @@ async def async_session():
     await connection.close()
 
 
+ADMIN = Principal(
+    user_id=uuid.UUID(int=1),
+    email="admin@example.com",
+    key_id=uuid.UUID(int=2),
+    role="admin",
+    is_admin=True,
+    tier="max",
+    per_minute=600,
+    per_hour=None,
+    per_month=None,
+    max_keys=None,
+)
+
+
+@pytest.fixture
+def admin() -> Principal:
+    return ADMIN
+
+
 @pytest_asyncio.fixture
-async def client(async_session):
+async def auth_client(async_session):
+    """Client that checks API keys and login tokens for real."""
+
     async def _override_get_session():
         yield async_session
 
@@ -55,6 +81,80 @@ async def client(async_session):
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def client(auth_client):
+    """Client whose requests carry an admin's API key; test_api_key_auth.py covers the check."""
+    app.dependency_overrides[require_api_key] = lambda: ADMIN
+    return auth_client
+
+
+@pytest_asyncio.fixture
+async def make_user(async_session):
+    """Sign up a user the way Supabase Auth does: a row in auth.users.
+
+    The signup trigger creates the profile. Everything rolls back with the test.
+    """
+
+    async def _make_user(role: str = "free", email: str | None = None) -> uuid.UUID:
+        user_id = uuid.uuid4()
+        await async_session.execute(
+            text("INSERT INTO auth.users (id, email) VALUES (:id, :email)"),
+            {"id": user_id, "email": email or f"{user_id}@example.com"},
+        )
+        if role != "free":
+            await async_session.execute(
+                update(Profile).where(Profile.id == user_id).values(role=role)
+            )
+        await async_session.commit()
+        return user_id
+
+    return _make_user
+
+
+@pytest_asyncio.fixture
+async def make_key(async_session):
+    """Create an API key for a user and return the key."""
+
+    async def _make_key(user_id: uuid.UUID, name: str = "test key") -> str:
+        key, prefix, key_hash = generate_api_key()
+        async_session.add(
+            ApiKey(user_id=user_id, name=name, prefix=prefix, key_hash=key_hash)
+        )
+        await async_session.commit()
+        return key
+
+    return _make_key
+
+
+@pytest.fixture
+def make_jwt():
+    """Sign a login token like Supabase Auth's access tokens."""
+
+    def _make_jwt(
+        sub: uuid.UUID | str | None,
+        secret: str | None = None,
+        expires_in: timedelta = timedelta(hours=1),
+        **claims,
+    ) -> str:
+        """Claims set to None are left out."""
+        now = datetime.now(timezone.utc)
+        payload = {
+            "sub": None if sub is None else str(sub),
+            "aud": "authenticated",
+            "role": "authenticated",
+            "iat": now,
+            "exp": now + expires_in,
+            "is_anonymous": False,
+        }
+        payload.update(claims)
+        payload = {k: v for k, v in payload.items() if v is not None}
+        return jwt.encode(
+            payload, secret or settings.jwt_secret.get_secret_value(), algorithm="HS256"
+        )
+
+    return _make_jwt
 
 
 @pytest_asyncio.fixture

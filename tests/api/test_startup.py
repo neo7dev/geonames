@@ -142,3 +142,12 @@ def test_prepare_datasets_tolerates_closed_loop():
         app_module._prepare_datasets(app, [], loop, threading.Event())
 
     assert app.state.dataset_startup == "done"
+
+
+@pytest.mark.asyncio
+async def test_startup_fails_without_jwt_secret(startup_mocks):
+    with patch(f"{MODULE}.settings.jwt_secret", None), pytest.raises(SystemExit):
+        async with app_module.lifespan(FastAPI()):
+            pass
+
+    startup_mocks["build"].assert_not_called()

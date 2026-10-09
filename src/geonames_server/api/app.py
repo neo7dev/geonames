@@ -13,14 +13,16 @@ import sys
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from redis.asyncio import Redis
 
+from geonames_server.api.auth import require_admin, require_api_key
 from geonames_server.api.routers import (
     dataset_metadata,
     deletions,
     health,
     modifications,
+    portal,
     sync,
 )
 from geonames_server.api.routers.geonames import create_geoname_router
@@ -73,6 +75,10 @@ async def lifespan(app: FastAPI):
         log.critical("Database is not available — cannot start the server")
         sys.exit(1)
     log.info("Database connection verified")
+
+    if settings.jwt_secret is None:
+        log.critical("JWT_SECRET is not set — cannot verify login tokens")
+        sys.exit(1)
 
     # 2. Initialize database (force drops all tables + re-migrates)
     force = settings.force_rebuild
@@ -167,8 +173,12 @@ def _prepare_datasets(
 
 app = FastAPI(title="GeoNames Server", version=settings.app_version, lifespan=lifespan)
 
-# Health router
+# Health router, public like the docs
 app.include_router(health.router, prefix="/health")
+
+# Data routes need an API key. Router-level dependencies run before the routers'
+# own, so a request without a key gets 401 before any dataset check.
+_api_key = [Depends(require_api_key)]
 
 # Geo dataset routers
 for _model, _tag, _name in [
@@ -178,16 +188,23 @@ for _model, _tag, _name in [
     (Cities5000, "Cities 5000", "cities5000"),
     (Cities15000, "Cities 15000", "cities15000"),
 ]:
-    app.include_router(create_geoname_router(_model, _tag, _name), prefix=f"/{_name}")
+    app.include_router(
+        create_geoname_router(_model, _tag, _name),
+        prefix=f"/{_name}",
+        dependencies=_api_key,
+    )
 
 # Modifications router
-app.include_router(modifications.router, prefix="/modifications")
+app.include_router(modifications.router, prefix="/modifications", dependencies=_api_key)
 
 # Deletions router
-app.include_router(deletions.router, prefix="/deletions")
+app.include_router(deletions.router, prefix="/deletions", dependencies=_api_key)
 
 # Dataset metadata router
-app.include_router(dataset_metadata.router, prefix="/metadata")
+app.include_router(dataset_metadata.router, prefix="/metadata", dependencies=_api_key)
 
-# Sync router
-app.include_router(sync.router, prefix="/sync")
+# Sync router: admins only
+app.include_router(sync.router, prefix="/sync", dependencies=[Depends(require_admin)])
+
+# Account pages, authenticated with the Supabase Auth login token
+app.include_router(portal.router, prefix="/portal")

@@ -37,6 +37,7 @@ dependencies = [
     "pydantic-core==2.41.5",
     "pydantic-settings==2.12.0",
     "pygments==2.19.2",
+    "pyjwt==2.15.1",
     "pytest==9.0.2",
     "pytest-asyncio==1.3.0",
     "python-dotenv==1.2.1",

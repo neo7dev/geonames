@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import update
 
 from geonames_server.api.app import app
+from geonames_server.api.auth import require_api_key
 from geonames_server.api.dependencies import _is_built as _is_built_unpatched
 from geonames_server.api.dependencies import get_session
 from geonames_server.database.models.dataset_metadata import DatasetMetaData
@@ -24,11 +25,12 @@ def _built():
 
 
 @pytest_asyncio.fixture
-async def http():
+async def http(admin):
     async def _no_db():
         yield None
 
     app.dependency_overrides[get_session] = _no_db
+    app.dependency_overrides[require_api_key] = lambda: admin
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:

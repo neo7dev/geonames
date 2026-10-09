@@ -1,8 +1,10 @@
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import update
 
 from geonames_server.api.app import app
+from geonames_server.database.models.accounts import Role
 from geonames_server.ingestion.sync_tracker import (
     DatasetStatus,
     OverallStatus,
@@ -112,3 +114,56 @@ class TestGetSyncStatus:
         response = await client.get("/sync/nonexistent")
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]
+
+
+class TestAdminOnly:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("role", ["free", "tester", "dev", "sr_dev"])
+    async def test_non_admin_cannot_start_or_inspect_a_sync(
+        self, auth_client, make_user, make_key, role
+    ):
+        key = await make_key(await make_user(role))
+        sync_id = create_sync()
+        headers = {"X-API-Key": key}
+
+        with patch("geonames_server.api.routers.sync.run_tracked_sync") as mock_run:
+            started = await auth_client.post("/sync/", headers=headers)
+        status = await auth_client.get(f"/sync/{sync_id}", headers=headers)
+
+        assert started.status_code == 403
+        assert status.status_code == 403
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_admin_can_start_and_inspect_a_sync(
+        self, auth_client, make_user, make_key
+    ):
+        headers = {"X-API-Key": await make_key(await make_user("admin"))}
+
+        with patch("geonames_server.api.routers.sync.run_tracked_sync"):
+            started = await auth_client.post("/sync/", headers=headers)
+        status = await auth_client.get(
+            f"/sync/{started.json()['sync_id']}", headers=headers
+        )
+
+        assert started.status_code == 202
+        assert status.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_admin_flag_on_a_role_grants_access(
+        self, auth_client, async_session, make_user, make_key
+    ):
+        headers = {"X-API-Key": await make_key(await make_user("dev"))}
+        await async_session.execute(
+            update(Role).where(Role.name == "dev").values(is_admin=True)
+        )
+        await async_session.commit()
+
+        with patch("geonames_server.api.routers.sync.run_tracked_sync"):
+            resp = await auth_client.post("/sync/", headers=headers)
+
+        assert resp.status_code == 202
+
+    @pytest.mark.asyncio
+    async def test_sync_needs_a_key(self, auth_client):
+        assert (await auth_client.post("/sync/")).status_code == 401

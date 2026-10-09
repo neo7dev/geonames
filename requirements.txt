@@ -119,6 +119,8 @@ pygments==2.19.2
     #   geonames-server
     #   pytest
     #   rich
+pyjwt==2.15.1
+    # via geonames-server
 pytest==9.0.2
     # via
     #   geonames-server
