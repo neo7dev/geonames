@@ -64,8 +64,12 @@ class TestAsyncModificationsCRUD:
 
     async def test_different_geonameid_same_date(self, async_session):
         repo = self._repo(async_session)
-        await repo.add(_make_modification(geonameid=8000001, modification_date=date(2025, 7, 1)))
-        await repo.add(_make_modification(geonameid=8000002, modification_date=date(2025, 7, 1)))
+        await repo.add(
+            _make_modification(geonameid=8000001, modification_date=date(2025, 7, 1))
+        )
+        await repo.add(
+            _make_modification(geonameid=8000002, modification_date=date(2025, 7, 1))
+        )
 
         fetched1 = await repo.get_by_id((8000001, date(2025, 7, 1)))
         fetched2 = await repo.get_by_id((8000002, date(2025, 7, 1)))
@@ -106,14 +110,20 @@ class TestAsyncModificationsCRUD:
     async def test_list_with_limit(self, async_session):
         repo = self._repo(async_session)
         for i in range(3):
-            await repo.add(_make_modification(geonameid=8000001 + i, modification_date=date(2025, 7, 1)))
+            await repo.add(
+                _make_modification(
+                    geonameid=8000001 + i, modification_date=date(2025, 7, 1)
+                )
+            )
         results = await repo.list(limit=2)
         assert len(results) == 2
 
     async def test_bulk_insert(self, async_session):
         repo = self._repo(async_session)
         mods = [
-            _make_modification(geonameid=8000010 + i, modification_date=date(2025, 7, 1))
+            _make_modification(
+                geonameid=8000010 + i, modification_date=date(2025, 7, 1)
+            )
             for i in range(5)
         ]
         await repo.bulk_insert(mods)
@@ -158,11 +168,19 @@ class TestAsyncModificationsCRUD:
 
     async def test_query_by_modification_date(self, async_session):
         repo = self._repo(async_session)
-        await repo.add(_make_modification(geonameid=8000051, modification_date=date(2025, 6, 1)))
-        await repo.add(_make_modification(geonameid=8000052, modification_date=date(2025, 7, 1)))
-        await repo.add(_make_modification(geonameid=8000053, modification_date=date(2025, 7, 1)))
+        await repo.add(
+            _make_modification(geonameid=8000051, modification_date=date(2025, 6, 1))
+        )
+        await repo.add(
+            _make_modification(geonameid=8000052, modification_date=date(2025, 7, 1))
+        )
+        await repo.add(
+            _make_modification(geonameid=8000053, modification_date=date(2025, 7, 1))
+        )
 
-        stmt = select(Modifications).where(Modifications.modification_date == date(2025, 7, 1))
+        stmt = select(Modifications).where(
+            Modifications.modification_date == date(2025, 7, 1)
+        )
         result = await async_session.scalars(stmt)
         results = list(result.all())
         assert len(results) == 2

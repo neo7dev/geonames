@@ -71,7 +71,9 @@ def _tables(schema: str) -> set[str]:
 
 def _reset() -> None:
     for schema in (APP_SCHEMA, settings.postgres_schema):
-        _query(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
+        _query(
+            sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema))
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +87,9 @@ def test_fresh_database_creates_app_tables_and_seeds():
     command.upgrade(_config(), "head")
 
     assert _tables(APP_SCHEMA) == APP_TABLES
-    assert _query("SELECT name, per_minute, per_hour, per_month, max_keys FROM app.tiers ORDER BY per_minute") == [
+    assert _query(
+        "SELECT name, per_minute, per_hour, per_month, max_keys FROM app.tiers ORDER BY per_minute"
+    ) == [
         ("basic", 10, 100, 5000, 1),
         ("plus", 30, 500, 50000, 3),
         ("pro", 120, 2500, 500000, 5),
@@ -159,7 +163,9 @@ def test_force_rebuild_keeps_user_data():
     try:
         with (
             patch.object(
-                migrations, "_alembic_config", lambda section="alembic": _config(section)
+                migrations,
+                "_alembic_config",
+                lambda section="alembic": _config(section),
             ),
             patch.object(migrations, "sync_engine", engine),
         ):
@@ -173,7 +179,9 @@ def test_force_rebuild_keeps_user_data():
     finally:
         engine.dispose()
 
-    assert _query("SELECT email, role FROM app.profiles") == [("kept@example.com", "dev")]
+    assert _query("SELECT email, role FROM app.profiles") == [
+        ("kept@example.com", "dev")
+    ]
     assert "dataset_metadata" in _tables(settings.postgres_schema)
 
 
@@ -202,7 +210,9 @@ def test_profiles_are_linked_once_auth_users_appears(late_auth_schema):
         "VALUES ('00000000-0000-0000-0000-000000000001', 'early@example.com')"
     )
 
-    engine = create_engine(_config().get_main_option("sqlalchemy.url").replace("%%", "%"))
+    engine = create_engine(
+        _config().get_main_option("sqlalchemy.url").replace("%%", "%")
+    )
     try:
         for _ in range(2):  # the second run finds everything in place
             with engine.begin() as conn:
@@ -227,7 +237,9 @@ def test_profiles_are_linked_once_auth_users_appears(late_auth_schema):
 def test_linking_is_skipped_without_auth_users():
     command.upgrade(_config(), "head")
 
-    engine = create_engine(_config().get_main_option("sqlalchemy.url").replace("%%", "%"))
+    engine = create_engine(
+        _config().get_main_option("sqlalchemy.url").replace("%%", "%")
+    )
     try:
         with engine.begin() as conn:
             assert not link_profiles_to_auth(conn)
@@ -272,12 +284,16 @@ def test_app_migrations_wait_for_the_migration_lock():
     try:
         with (
             patch.object(
-                migrations, "_alembic_config", lambda section="alembic": _config(section)
+                migrations,
+                "_alembic_config",
+                lambda section="alembic": _config(section),
             ),
             patch.object(migrations, "sync_engine", engine),
         ):
             with holder.cursor() as cur:
-                cur.execute("SELECT pg_advisory_lock(%s)", (migrations._MIGRATION_LOCK_KEY,))
+                cur.execute(
+                    "SELECT pg_advisory_lock(%s)", (migrations._MIGRATION_LOCK_KEY,)
+                )
             worker = threading.Thread(target=migrations.upgrade_app_schema)
             worker.start()
 
@@ -286,7 +302,9 @@ def test_app_migrations_wait_for_the_migration_lock():
             assert _tables(APP_SCHEMA) == set()
 
             with holder.cursor() as cur:
-                cur.execute("SELECT pg_advisory_unlock(%s)", (migrations._MIGRATION_LOCK_KEY,))
+                cur.execute(
+                    "SELECT pg_advisory_unlock(%s)", (migrations._MIGRATION_LOCK_KEY,)
+                )
             worker.join(timeout=10)
             assert not worker.is_alive()
     finally:

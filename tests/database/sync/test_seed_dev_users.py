@@ -42,7 +42,9 @@ def gotrue(sync_session):
         )
         return httpx.Response(200, json={})
 
-    client = httpx.Client(base_url="http://auth", transport=httpx.MockTransport(handler))
+    client = httpx.Client(
+        base_url="http://auth", transport=httpx.MockTransport(handler)
+    )
     client.calls = calls
     yield client
     client.close()
@@ -64,12 +66,21 @@ def test_creates_confirmed_users_with_roles_and_keys(sync_session, gotrue):
     assert gotrue.calls == [
         (
             "/admin/users",
-            {"email": email, "password": seed_dev_users.PASSWORD, "email_confirm": True},
+            {
+                "email": email,
+                "password": seed_dev_users.PASSWORD,
+                "email_confirm": True,
+            },
         )
         for _, email, _ in TEST_USERS
     ]
     assert _seeded(sync_session) == [
-        ("seed-test-admin@example.com", "admin", hash_api_key("gn_seed_test_admin"), None),
+        (
+            "seed-test-admin@example.com",
+            "admin",
+            hash_api_key("gn_seed_test_admin"),
+            None,
+        ),
         ("seed-test-free@example.com", "free", hash_api_key("gn_seed_test_free"), None),
     ]
 
@@ -85,7 +96,9 @@ def test_rerun_restores_roles_and_keys_without_new_users(sync_session, gotrue):
         Profile.email.in_([email for _, email, _ in TEST_USERS])
     )
     sync_session.execute(
-        update(ApiKey).where(ApiKey.user_id.in_(test_users)).values(revoked_at=text("now()"))
+        update(ApiKey)
+        .where(ApiKey.user_id.in_(test_users))
+        .values(revoked_at=text("now()"))
     )
     sync_session.commit()
     gotrue.calls.clear()
@@ -93,7 +106,9 @@ def test_rerun_restores_roles_and_keys_without_new_users(sync_session, gotrue):
     seed_dev_users.seed(sync_session, gotrue, KEYS)
 
     assert gotrue.calls == []
-    assert [(email, role, revoked) for email, role, _, revoked in _seeded(sync_session)] == [
+    assert [
+        (email, role, revoked) for email, role, _, revoked in _seeded(sync_session)
+    ] == [
         ("seed-test-admin@example.com", "admin", None),
         ("seed-test-free@example.com", "free", None),
     ]
@@ -106,7 +121,9 @@ def test_rerun_does_not_exceed_the_tier_key_limit(sync_session, gotrue):
     )
     # The free user (basic tier, 1 key) revokes the seed key and creates another.
     sync_session.execute(
-        update(ApiKey).where(ApiKey.user_id == free_user).values(revoked_at=text("now()"))
+        update(ApiKey)
+        .where(ApiKey.user_id == free_user)
+        .values(revoked_at=text("now()"))
     )
     sync_session.add(
         ApiKey(user_id=free_user, name="own key", prefix="gn_own", key_hash="own-hash")
@@ -117,7 +134,9 @@ def test_rerun_does_not_exceed_the_tier_key_limit(sync_session, gotrue):
 
     assert skipped == ["seed-test-free@example.com"]
     active = sync_session.scalars(
-        select(ApiKey.name).where(ApiKey.user_id == free_user, ApiKey.revoked_at.is_(None))
+        select(ApiKey.name).where(
+            ApiKey.user_id == free_user, ApiKey.revoked_at.is_(None)
+        )
     ).all()
     assert active == ["own key"]
 

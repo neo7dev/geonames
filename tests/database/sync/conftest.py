@@ -63,9 +63,7 @@ def seed_deletions(sync_session):
 def seed_metadata(sync_session):
     now = datetime.now(timezone.utc)
     # Clear any pre-existing rows to avoid UniqueViolation
-    sync_session.execute(
-        DatasetMetaData.__table__.delete()
-    )
+    sync_session.execute(DatasetMetaData.__table__.delete())
     metadata = [
         DatasetMetaData(
             dataset="cities15000",

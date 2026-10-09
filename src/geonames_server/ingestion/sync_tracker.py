@@ -113,7 +113,9 @@ def set_datasets(sync_id: str, datasets: list[DatasetStatus]) -> None:
             entry.datasets = datasets
 
 
-def update_dataset_status(sync_id: str, dataset_name: str, status: DatasetSyncStatus) -> None:
+def update_dataset_status(
+    sync_id: str, dataset_name: str, status: DatasetSyncStatus
+) -> None:
     with _lock:
         entry = _syncs.get(sync_id)
         if entry is None:

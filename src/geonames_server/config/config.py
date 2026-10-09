@@ -69,7 +69,6 @@ class Settings(BaseSettings):
         description="Base URL for GeoNames data dumps",
     )
 
-
     root_dir: Path = Field(
         default=Path(find_dotenv()).parent,
         description="Root directory of the project",

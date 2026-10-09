@@ -80,7 +80,9 @@ def _user_id(session: Session, email: str):
 def _has_free_key_slot(session: Session, user_id, role: str, key_hash: str) -> bool:
     """Whether the seed key fits in the tier's key limit next to the user's other keys."""
     max_keys = session.scalar(
-        select(Tier.max_keys).join(Role, Role.tier == Tier.name).where(Role.name == role)
+        select(Tier.max_keys)
+        .join(Role, Role.tier == Tier.name)
+        .where(Role.name == role)
     )
     if max_keys is None:
         return True
@@ -182,7 +184,9 @@ def main(argv: list[str] | None = None) -> None:
         note = "  (not restored: tier key limit reached)" if email in skipped else ""
         print(f"  {role:<7} {email:<24} {var}={keys[var]}{note}")
     if skipped:
-        print("Revoke a key for those users on /portal/keys, then rerun to restore the seed key.")
+        print(
+            "Revoke a key for those users on /portal/keys, then rerun to restore the seed key."
+        )
 
 
 if __name__ == "__main__":

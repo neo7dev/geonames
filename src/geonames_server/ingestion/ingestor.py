@@ -38,7 +38,9 @@ class Ingestor:
         return [column_names[0]]
 
     @staticmethod
-    def _copy_to_temp(cur, target_table: str, temp_table: str, columns: list[str], source) -> None:
+    def _copy_to_temp(
+        cur, target_table: str, temp_table: str, columns: list[str], source
+    ) -> None:
         create_temp_sql = sql.SQL(
             "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
         ).format(

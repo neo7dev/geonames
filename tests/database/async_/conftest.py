@@ -58,9 +58,7 @@ async def seed_deletions_async(async_session):
 async def seed_metadata_async(async_session):
     now = datetime.now(timezone.utc)
     # Clear any pre-existing rows to avoid UniqueViolation
-    await async_session.execute(
-        DatasetMetaData.__table__.delete()
-    )
+    await async_session.execute(DatasetMetaData.__table__.delete())
     metadata = [
         DatasetMetaData(
             dataset="cities15000",

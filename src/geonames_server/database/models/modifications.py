@@ -27,5 +27,4 @@ class Modifications(GeoBase):
         Date,
         primary_key=True,
         sort_order=100,
-
     )

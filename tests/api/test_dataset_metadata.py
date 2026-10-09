@@ -150,9 +150,7 @@ class TestFilterMetadata:
 
     @pytest.mark.asyncio
     async def test_filter_with_ordering_desc(self, client):
-        response = await client.get(
-            "/metadata/filter", params={"order_by": "-dataset"}
-        )
+        response = await client.get("/metadata/filter", params={"order_by": "-dataset"})
         assert response.status_code == 200
         data = response.json()
         datasets = [r["dataset"] for r in data]
@@ -160,9 +158,7 @@ class TestFilterMetadata:
 
     @pytest.mark.asyncio
     async def test_filter_with_ordering_asc(self, client):
-        response = await client.get(
-            "/metadata/filter", params={"order_by": "dataset"}
-        )
+        response = await client.get("/metadata/filter", params={"order_by": "dataset"})
         assert response.status_code == 200
         data = response.json()
         datasets = [r["dataset"] for r in data]

@@ -34,9 +34,7 @@ def _startup_done():
 class TestPostSync:
     @pytest.mark.asyncio
     async def test_post_sync_returns_202(self, client):
-        with patch(
-            "geonames_server.api.routers.sync.run_tracked_sync"
-        ) as mock_run:
+        with patch("geonames_server.api.routers.sync.run_tracked_sync") as mock_run:
             response = await client.post("/sync/")
             assert response.status_code == 202
             data = response.json()

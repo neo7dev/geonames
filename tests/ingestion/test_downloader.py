@@ -361,7 +361,9 @@ def _seed_part(dirs, data=b"partial", etag='"abc"'):
 
 class TestAtomicVerified:
     def test_success_removes_part_and_meta(self, dirs):
-        dl = _dl(dirs, [_resp(200, {"content-length": "5", "ETag": '"e1"'}, [b"hello"])])
+        dl = _dl(
+            dirs, [_resp(200, {"content-length": "5", "ETag": '"e1"'}, [b"hello"])]
+        )
         result = dl.download(URL, "test.txt")
         assert result.etag == '"e1"'
         assert (dirs[1] / "test.txt").read_bytes() == b"hello"
@@ -604,7 +606,13 @@ class TestRetries:
     def test_keyboard_interrupt_propagates_and_keeps_part(self, dirs):
         dl = _dl(
             dirs,
-            [_resp(200, {"content-length": "9", "ETag": '"v"'}, raises=KeyboardInterrupt())],
+            [
+                _resp(
+                    200,
+                    {"content-length": "9", "ETag": '"v"'},
+                    raises=KeyboardInterrupt(),
+                )
+            ],
         )
         with pytest.raises(KeyboardInterrupt):
             dl.download(URL, "test.txt")

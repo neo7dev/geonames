@@ -91,10 +91,11 @@ class TestLoginToken:
 
     @pytest.mark.asyncio
     async def test_user_without_profile_is_forbidden(self, auth_client, make_jwt):
-        resp = await auth_client.get("/portal/me", headers=_bearer(make_jwt(uuid.uuid4())))
+        resp = await auth_client.get(
+            "/portal/me", headers=_bearer(make_jwt(uuid.uuid4()))
+        )
 
         assert resp.status_code == 403
-
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -148,9 +149,9 @@ class TestMe:
 
         _, headers = await login()
 
-        assert (await auth_client.get("/portal/me", headers=headers)).json()["role"] == (
-            "basic_user"
-        )
+        assert (await auth_client.get("/portal/me", headers=headers)).json()[
+            "role"
+        ] == ("basic_user")
 
     @pytest.mark.asyncio
     async def test_signups_get_whichever_role_is_default(
@@ -172,7 +173,9 @@ class TestMe:
         [
             pytest.param(update(Role).values(is_default=False), id="no-default"),
             pytest.param(update(Role).values(is_default=True), id="two-defaults"),
-            pytest.param(delete(Role).where(Role.name == "test_default"), id="delete-default"),
+            pytest.param(
+                delete(Role).where(Role.name == "test_default"), id="delete-default"
+            ),
         ],
     )
     async def test_exactly_one_role_stays_default(self, async_session, change):
@@ -182,7 +185,9 @@ class TestMe:
             update(Role).values(is_default=Role.name == "test_default")
         )
         # Checked now, so the setup passes and the change below is checked as it runs
-        await async_session.execute(text("SET CONSTRAINTS app.roles_one_default IMMEDIATE"))
+        await async_session.execute(
+            text("SET CONSTRAINTS app.roles_one_default IMMEDIATE")
+        )
 
         with pytest.raises(DBAPIError, match="exactly one default role"):
             await async_session.execute(change)
@@ -250,7 +255,9 @@ class TestKeys:
         assert listed.status_code == 200
         assert listed.json() == [{k: v for k, v in body.items() if k != "key"}]
 
-        stored = await async_session.scalar(select(ApiKey).where(ApiKey.user_id == user_id))
+        stored = await async_session.scalar(
+            select(ApiKey).where(ApiKey.user_id == user_id)
+        )
         assert stored.key_hash == hashlib.sha256(key.encode()).hexdigest()
 
     @pytest.mark.asyncio
@@ -302,7 +309,10 @@ class TestKeys:
         )
         await async_session.commit()
 
-        names = [k["name"] for k in (await auth_client.get("/portal/keys", headers=headers)).json()]
+        names = [
+            k["name"]
+            for k in (await auth_client.get("/portal/keys", headers=headers)).json()
+        ]
 
         assert names == ["second", "first"]
 
@@ -311,10 +321,16 @@ class TestKeys:
         _, headers = await login()
         created = (await _create_key(auth_client, headers)).json()
 
-        revoked = await auth_client.delete(f"/portal/keys/{created['id']}", headers=headers)
+        revoked = await auth_client.delete(
+            f"/portal/keys/{created['id']}", headers=headers
+        )
         listed = await auth_client.get("/portal/keys", headers=headers)
-        data = await auth_client.get("/deletions/", headers={"X-API-Key": created["key"]})
-        again = await auth_client.delete(f"/portal/keys/{created['id']}", headers=headers)
+        data = await auth_client.get(
+            "/deletions/", headers={"X-API-Key": created["key"]}
+        )
+        again = await auth_client.delete(
+            f"/portal/keys/{created['id']}", headers=headers
+        )
 
         assert revoked.status_code == 204
         assert listed.json() == []
@@ -330,7 +346,9 @@ class TestKeys:
         resp = await auth_client.delete(f"/portal/keys/{created['id']}", headers=other)
 
         assert resp.status_code == 404
-        data = await auth_client.get("/deletions/", headers={"X-API-Key": created["key"]})
+        data = await auth_client.get(
+            "/deletions/", headers={"X-API-Key": created["key"]}
+        )
         assert data.status_code == 200
 
     @pytest.mark.asyncio
@@ -345,12 +363,15 @@ class TestKeys:
 class TestKeyLimits:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("role", "tier", "limit"), [("free", "basic", 1), ("tester", "plus", 3), ("dev", "pro", 5)]
+        ("role", "tier", "limit"),
+        [("free", "basic", 1), ("tester", "plus", 3), ("dev", "pro", 5)],
     )
     async def test_tier_caps_active_keys(self, auth_client, login, role, tier, limit):
         _, headers = await login(role)
         for i in range(limit):
-            assert (await _create_key(auth_client, headers, f"key {i}")).status_code == 201
+            assert (
+                await _create_key(auth_client, headers, f"key {i}")
+            ).status_code == 201
 
         resp = await _create_key(auth_client, headers, "one too many")
 
@@ -365,7 +386,9 @@ class TestKeyLimits:
         _, headers = await login(role)
 
         for i in range(8):
-            assert (await _create_key(auth_client, headers, f"key {i}")).status_code == 201
+            assert (
+                await _create_key(auth_client, headers, f"key {i}")
+            ).status_code == 201
 
     @pytest.mark.asyncio
     async def test_revoked_keys_do_not_count(self, auth_client, login):
@@ -380,7 +403,10 @@ class TestKeyLimits:
         self, auth_client, async_session, login
     ):
         user_id, headers = await login("dev")
-        keys = [(await _create_key(auth_client, headers, f"key {i}")).json()["key"] for i in range(5)]
+        keys = [
+            (await _create_key(auth_client, headers, f"key {i}")).json()["key"]
+            for i in range(5)
+        ]
         await async_session.execute(
             update(Profile).where(Profile.id == user_id).values(role="free")
         )

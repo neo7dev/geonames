@@ -48,7 +48,9 @@ async def test_unknown_key_is_rejected(auth_client, path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", DATA_PATHS)
-async def test_revoked_key_is_rejected(auth_client, async_session, make_user, make_key, path):
+async def test_revoked_key_is_rejected(
+    auth_client, async_session, make_user, make_key, path
+):
     user_id = await make_user()
     key = await make_key(user_id)
     await async_session.execute(
@@ -63,7 +65,14 @@ async def test_revoked_key_is_rejected(auth_client, async_session, make_user, ma
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "path", ["/cities15000/", "/cities15000/filter", "/modifications/", "/deletions/", "/metadata/"]
+    "path",
+    [
+        "/cities15000/",
+        "/cities15000/filter",
+        "/modifications/",
+        "/deletions/",
+        "/metadata/",
+    ],
 )
 async def test_valid_key_is_served(auth_client, make_user, make_key, path):
     key = await make_key(await make_user())
@@ -77,7 +86,9 @@ async def test_valid_key_is_served(auth_client, make_user, make_key, path):
 async def test_key_is_not_accepted_as_bearer_token(auth_client, make_user, make_key):
     key = await make_key(await make_user())
 
-    resp = await auth_client.get("/deletions/", headers={"Authorization": f"Bearer {key}"})
+    resp = await auth_client.get(
+        "/deletions/", headers={"Authorization": f"Bearer {key}"}
+    )
 
     assert resp.status_code == 401
 
@@ -112,7 +123,9 @@ async def test_deleting_the_user_disables_their_keys(
 ):
     user_id = await make_user()
     key = await make_key(user_id)
-    await async_session.execute(text("DELETE FROM auth.users WHERE id = :id"), {"id": user_id})
+    await async_session.execute(
+        text("DELETE FROM auth.users WHERE id = :id"), {"id": user_id}
+    )
     await async_session.commit()
 
     resp = await auth_client.get("/deletions/", headers={"X-API-Key": key})

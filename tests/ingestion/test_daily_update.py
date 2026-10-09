@@ -218,7 +218,9 @@ class TestDownloadDailyFile:
 class TestIngestDailyFile:
     @patch(f"{MODULE}.psycopg2.connect")
     @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_copies_into_temp_table_and_merges(self, mock_conn_params, mock_connect, tmp_path):
+    def test_copies_into_temp_table_and_merges(
+        self, mock_conn_params, mock_connect, tmp_path
+    ):
         data_file = tmp_path / "modifications-2026-03-18.txt"
         data_file.write_text(
             "123\tName\tAscii\tAlt\t1.0\t2.0\tP\tPPL\tIN\t\tKA\t\t\t\t1000\t\t\tUTC\t2026-03-18\n"
@@ -282,7 +284,9 @@ class TestIngestDeletionsFile:
 
     @patch(f"{MODULE}.psycopg2.connect")
     @patch(f"{MODULE}._get_conn_params", return_value={"host": "localhost"})
-    def test_copy_sql_targets_deletions_table(self, mock_conn_params, mock_connect, tmp_path):
+    def test_copy_sql_targets_deletions_table(
+        self, mock_conn_params, mock_connect, tmp_path
+    ):
         """COPY goes to temp staging table and merge targets deletions."""
         deletes_file = tmp_path / "deletes.txt"
         deletes_file.write_text("123\tSomeName\tsome reason\n")
@@ -499,10 +503,12 @@ class TestSyncMetadata:
 
         with patch(f"{MODULE}.DatasetMetaDataRepository") as MockRepo:
             MockRepo.return_value.get_by_dataset.side_effect = lambda n: records.get(n)
-            _sync_metadata([
-                _make_dataset_info("allcountries"),
-                _make_dataset_info("cities500"),
-            ])
+            _sync_metadata(
+                [
+                    _make_dataset_info("allcountries"),
+                    _make_dataset_info("cities500"),
+                ]
+            )
 
         assert records["allcountries"].etag == '"a"'
         assert records["cities500"].etag == '"b"'
@@ -536,7 +542,9 @@ class TestPendingDays:
         assert days[-1] == self.Y
 
     def test_gap_over_max_needs_rebuild(self):
-        assert _pending_days(self.Y - timedelta(days=MAX_CATCHUP_DAYS + 1), self.Y) is None
+        assert (
+            _pending_days(self.Y - timedelta(days=MAX_CATCHUP_DAYS + 1), self.Y) is None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -587,7 +595,9 @@ class TestApplyDailyUpdates:
 
         staged = [c.args[0] for c in engine["_stage_day"].call_args_list]
         assert staged == [date(2026, 3, 16), date(2026, 3, 17), Y]
-        partial = [c.kwargs["allow_partial"] for c in engine["_stage_day"].call_args_list]
+        partial = [
+            c.kwargs["allow_partial"] for c in engine["_stage_day"].call_args_list
+        ]
         assert partial == [True, True, False]
         advanced = [c.args[1] for c in engine["_set_last_applied"].call_args_list]
         assert advanced == staged
@@ -610,18 +620,27 @@ class TestApplyDailyUpdates:
         seen = []
 
         apply_daily_updates(
-            [ok, bad], {"cities500", "allcountries"}, on_dataset=lambda n, s: seen.append((n, s))
+            [ok, bad],
+            {"cities500", "allcountries"},
+            on_dataset=lambda n, s: seen.append((n, s)),
         )
 
         engine["_sync_metadata"].assert_called_once_with([ok])
         assert ("allcountries", DatasetSyncStatus.FAILED) in seen
         # failed dataset is dropped after its first failure, never advanced
-        assert all(c.args[0] != "allcountries" for c in engine["_set_last_applied"].call_args_list)
-        assert engine["_upsert_modifications"].call_count == 3  # cities500: 2 days; allcountries: 1 (failed, dropped)
+        assert all(
+            c.args[0] != "allcountries"
+            for c in engine["_set_last_applied"].call_args_list
+        )
+        assert (
+            engine["_upsert_modifications"].call_count == 3
+        )  # cities500: 2 days; allcountries: 1 (failed, dropped)
 
     def test_stops_when_yesterdays_files_not_published(self, engine):
         ds = _make_dataset_info()
-        engine["_load_last_applied"].return_value = {"allcountries": Y - timedelta(days=1)}
+        engine["_load_last_applied"].return_value = {
+            "allcountries": Y - timedelta(days=1)
+        }
         engine["_stage_day"].return_value = False
         seen = []
 
@@ -650,7 +669,9 @@ class TestApplyDailyUpdates:
 
     def test_staging_failure_aborts_without_syncing(self, engine):
         ds = _make_dataset_info()
-        engine["_load_last_applied"].return_value = {"allcountries": Y - timedelta(days=1)}
+        engine["_load_last_applied"].return_value = {
+            "allcountries": Y - timedelta(days=1)
+        }
         engine["_stage_day"].side_effect = DailyUpdateError("x")
 
         with pytest.raises(DailyUpdateError):
@@ -966,7 +987,9 @@ class TestRefreshSyncStatus:
             etag='"same"',
             remote_etag='"same"',
             last_modified=datetime(2026, 3, 18, 12, 0, 0, 123456, tzinfo=timezone.utc),
-            remote_last_modified=datetime(2026, 3, 18, 12, 0, 0, 654321, tzinfo=timezone.utc),
+            remote_last_modified=datetime(
+                2026, 3, 18, 12, 0, 0, 654321, tzinfo=timezone.utc
+            ),
         )
         refresh_sync_status(target)
         assert target.out_of_sync is False
@@ -1059,7 +1082,9 @@ class TestCheckRemoteMetadata:
         record.etag = '"old-etag"'
         record.remote_etag = '"old-etag"'
         record.last_modified = datetime(2026, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
-        record.remote_last_modified = datetime(2026, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
+        record.remote_last_modified = datetime(
+            2026, 3, 17, 12, 0, 0, tzinfo=timezone.utc
+        )
         record.out_of_sync = False
         record.needs_rebuild = False
 
@@ -1228,8 +1253,12 @@ class TestCheckRemoteMetadata:
         mock_rfc_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_rfc_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        meta1 = MagicMock(etag='"etag-all"', last_modified=datetime(2026, 3, 18, tzinfo=timezone.utc))
-        meta2 = MagicMock(etag='"etag-500"', last_modified=datetime(2026, 3, 17, tzinfo=timezone.utc))
+        meta1 = MagicMock(
+            etag='"etag-all"', last_modified=datetime(2026, 3, 18, tzinfo=timezone.utc)
+        )
+        meta2 = MagicMock(
+            etag='"etag-500"', last_modified=datetime(2026, 3, 17, tzinfo=timezone.utc)
+        )
         mock_client.head.side_effect = [meta1, meta2]
 
         rec1 = MagicMock(dataset="allcountries", etag=None, remote_etag=None)

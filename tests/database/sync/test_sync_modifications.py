@@ -43,11 +43,25 @@ class TestModificationsModel:
     def test_inherits_geobase_columns(self):
         col_names = {c.name for c in Modifications.__table__.columns}
         expected = {
-            "geonameid", "name", "asciiname", "alternatenames",
-            "latitude", "longitude", "feature_class", "feature_code",
-            "country_code", "cc2", "admin1_code", "admin2_code",
-            "admin3_code", "admin4_code", "population", "elevation",
-            "dem", "timezone", "modification_date",
+            "geonameid",
+            "name",
+            "asciiname",
+            "alternatenames",
+            "latitude",
+            "longitude",
+            "feature_class",
+            "feature_code",
+            "country_code",
+            "cc2",
+            "admin1_code",
+            "admin2_code",
+            "admin3_code",
+            "admin4_code",
+            "population",
+            "elevation",
+            "dem",
+            "timezone",
+            "modification_date",
         }
         assert expected.issubset(col_names)
 
@@ -118,8 +132,12 @@ class TestModificationsCRUD:
 
     def test_different_geonameid_same_date(self, sync_session):
         repo = self._repo(sync_session)
-        repo.add(_make_modification(geonameid=8000001, modification_date=date(2025, 7, 1)))
-        repo.add(_make_modification(geonameid=8000002, modification_date=date(2025, 7, 1)))
+        repo.add(
+            _make_modification(geonameid=8000001, modification_date=date(2025, 7, 1))
+        )
+        repo.add(
+            _make_modification(geonameid=8000002, modification_date=date(2025, 7, 1))
+        )
 
         fetched1 = repo.get_by_id((8000001, date(2025, 7, 1)))
         fetched2 = repo.get_by_id((8000002, date(2025, 7, 1)))
@@ -160,14 +178,20 @@ class TestModificationsCRUD:
     def test_list_with_limit(self, sync_session):
         repo = self._repo(sync_session)
         for i in range(3):
-            repo.add(_make_modification(geonameid=8000001 + i, modification_date=date(2025, 7, 1)))
+            repo.add(
+                _make_modification(
+                    geonameid=8000001 + i, modification_date=date(2025, 7, 1)
+                )
+            )
         results = repo.list(limit=2)
         assert len(results) == 2
 
     def test_bulk_insert(self, sync_session):
         repo = self._repo(sync_session)
         mods = [
-            _make_modification(geonameid=8000010 + i, modification_date=date(2025, 7, 1))
+            _make_modification(
+                geonameid=8000010 + i, modification_date=date(2025, 7, 1)
+            )
             for i in range(5)
         ]
         repo.bulk_insert(mods)
@@ -213,11 +237,19 @@ class TestModificationsCRUD:
     def test_query_by_modification_date(self, sync_session):
         """Direct SQLAlchemy filter on modification_date column."""
         repo = self._repo(sync_session)
-        repo.add(_make_modification(geonameid=8000051, modification_date=date(2025, 6, 1)))
-        repo.add(_make_modification(geonameid=8000052, modification_date=date(2025, 7, 1)))
-        repo.add(_make_modification(geonameid=8000053, modification_date=date(2025, 7, 1)))
+        repo.add(
+            _make_modification(geonameid=8000051, modification_date=date(2025, 6, 1))
+        )
+        repo.add(
+            _make_modification(geonameid=8000052, modification_date=date(2025, 7, 1))
+        )
+        repo.add(
+            _make_modification(geonameid=8000053, modification_date=date(2025, 7, 1))
+        )
 
-        stmt = select(Modifications).where(Modifications.modification_date == date(2025, 7, 1))
+        stmt = select(Modifications).where(
+            Modifications.modification_date == date(2025, 7, 1)
+        )
         results = list(sync_session.scalars(stmt).all())
         assert len(results) == 2
 

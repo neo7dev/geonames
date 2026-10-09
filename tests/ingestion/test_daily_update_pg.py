@@ -49,8 +49,27 @@ CITIES5000 = ALL_DATASETS["cities5000"]
 def _row(geonameid: int, name: str, day: date, population: int = 0) -> str:
     # geonameid name asciiname alternatenames lat lon fc fcode cc cc2 a1-a4 pop elev dem tz moddate
     return "\t".join(
-        [str(geonameid), name, name, "", "1.5", "2.5", "P", "PPL", "US", "",
-         "", "", "", "", str(population), "", "10", "UTC", day.isoformat()]
+        [
+            str(geonameid),
+            name,
+            name,
+            "",
+            "1.5",
+            "2.5",
+            "P",
+            "PPL",
+            "US",
+            "",
+            "",
+            "",
+            "",
+            "",
+            str(population),
+            "",
+            "10",
+            "UTC",
+            day.isoformat(),
+        ]
     )
 
 
@@ -181,7 +200,9 @@ def _names(engine, model) -> dict[int, str]:
 
 
 def test_day_upserts_modified_rows_and_deletes_deleted_rows(engine, remote):
-    _seed_rows(engine, AllCountries, [_geo(1, "Old1"), _geo(2, "Keep2"), _geo(3, "Doomed3")])
+    _seed_rows(
+        engine, AllCountries, [_geo(1, "Old1"), _geo(2, "Keep2"), _geo(3, "Doomed3")]
+    )
     _seed_metadata(remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=1))
     remote.publish(Y, [_row(1, "New1", Y), _row(4, "Added4", Y)], deletes=[3])
 
@@ -212,8 +233,12 @@ def test_city_dataset_only_gets_rows_above_its_population_threshold(engine, remo
 def test_missed_days_are_replayed_in_order(engine, remote):
     _seed_rows(engine, AllCountries, [_geo(1, "Original"), _geo(2, "Keep2")])
     _seed_metadata(remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=3))
-    remote.publish(Y - timedelta(days=2), [_row(1, "Renamed", Y - timedelta(days=2))], deletes=[])
-    remote.publish(Y - timedelta(days=1), [_row(5, "Added5", Y - timedelta(days=1))], deletes=[2])
+    remote.publish(
+        Y - timedelta(days=2), [_row(1, "Renamed", Y - timedelta(days=2))], deletes=[]
+    )
+    remote.publish(
+        Y - timedelta(days=1), [_row(5, "Added5", Y - timedelta(days=1))], deletes=[2]
+    )
     remote.publish(Y, [_row(1, "RenamedAgain", Y)], deletes=[])
 
     apply_daily_updates([ALLCOUNTRIES], {"allcountries"})
@@ -297,7 +322,9 @@ def test_gap_over_max_flags_rebuild_and_flag_survives_remote_check(engine, remot
 
 
 def test_max_gap_is_still_caught_up_without_rebuild(engine, remote):
-    _seed_metadata(remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=MAX_CATCHUP_DAYS))
+    _seed_metadata(
+        remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=MAX_CATCHUP_DAYS)
+    )
     for offset in range(MAX_CATCHUP_DAYS):
         remote.publish(Y - timedelta(days=offset), [], deletes=[])
 

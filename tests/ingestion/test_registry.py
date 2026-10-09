@@ -15,7 +15,13 @@ from geonames_server.ingestion.registry import (
 
 class TestAllDatasets:
     def test_contains_all_expected_keys(self):
-        expected = {"allcountries", "cities500", "cities1000", "cities5000", "cities15000"}
+        expected = {
+            "allcountries",
+            "cities500",
+            "cities1000",
+            "cities5000",
+            "cities15000",
+        }
         assert set(ALL_DATASETS.keys()) == expected
 
     def test_values_are_dataset_info(self):

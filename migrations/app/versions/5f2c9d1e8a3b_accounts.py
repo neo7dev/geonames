@@ -126,7 +126,10 @@ def upgrade() -> None:
     op.create_table(
         "api_keys",
         sa.Column(
-            "id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")
+            "id",
+            sa.Uuid(),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
         ),
         sa.Column(
             "user_id",

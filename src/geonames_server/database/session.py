@@ -15,7 +15,9 @@ from geonames_server.config.config import settings
 _connect_args = {"options": settings.postgres_options}
 
 # sync engine for sync sessions / repositories
-sync_engine = create_engine(settings.postges_url, echo=False, connect_args=_connect_args)
+sync_engine = create_engine(
+    settings.postges_url, echo=False, connect_args=_connect_args
+)
 
 # async engine for async sessions
 async_engine = create_async_engine(

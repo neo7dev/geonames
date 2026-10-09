@@ -23,7 +23,9 @@ class TestListModifications:
     async def test_list_modifications_with_offset(self, client):
         all_resp = await client.get("/modifications/", params={"limit": 1000})
         total = len(all_resp.json())
-        response = await client.get("/modifications/", params={"offset": 1, "limit": 1000})
+        response = await client.get(
+            "/modifications/", params={"offset": 1, "limit": 1000}
+        )
         assert response.status_code == 200
         data = response.json()
         assert len(data) == total - 1
@@ -67,9 +69,7 @@ class TestGetModificationsByGeonameid:
 
     @pytest.mark.asyncio
     async def test_get_by_geonameid_with_limit(self, client):
-        response = await client.get(
-            "/modifications/88000001", params={"limit": 1}
-        )
+        response = await client.get("/modifications/88000001", params={"limit": 1})
         assert response.status_code == 200
         data = response.json()
         assert len(data) <= 1

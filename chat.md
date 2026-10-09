@@ -602,15 +602,17 @@ DATABASE_URL = "postgresql+psycopg2://username:password@localhost/geodb"
 # 2. Set up SQLAlchemy base and engine
 Base = declarative_base()
 
+
 # 3. Define the GeoNames model
 class GeoName(Base):
-    __tablename__ = 'geonames'
-    
+    __tablename__ = "geonames"
+
     geonameid = Column(Integer, primary_key=True)
     name = Column(String)
     latitude = Column(Float)
     longitude = Column(Float)
-    geom = Column(Geometry(geometry_type='POINT', srid=4326))
+    geom = Column(Geometry(geometry_type="POINT", srid=4326))
+
 
 # 4. Create a database connection and session
 engine = create_engine(DATABASE_URL)
@@ -619,6 +621,7 @@ Base.metadata.create_all(engine)  # Creates the table (if not already exists)
 Session = sessionmaker(bind=engine)
 session = Session()
 
+
 # Example: Adding a new record
 def add_geoname(geonameid, name, latitude, longitude):
     new_geoname = GeoName(
@@ -626,27 +629,36 @@ def add_geoname(geonameid, name, latitude, longitude):
         name=name,
         latitude=latitude,
         longitude=longitude,
-        geom=f"SRID=4326;POINT({longitude} {latitude})"  # PostGIS format
+        geom=f"SRID=4326;POINT({longitude} {latitude})",  # PostGIS format
     )
     session.add(new_geoname)
     session.commit()
 
+
 # Adding an example
 add_geoname(1, "Paris", 48.8566, 2.3522)
+
 
 # Example: Querying records
 def get_nearby_cities(lat, lon, radius_km=10):
     from sqlalchemy import func
-    
+
     # 1. Define the point of interest
     point = f"SRID=4326;POINT({lon} {lat})"
-    
+
     # 2. Perform a spatial query to find cities within the radius
-    nearby_cities = session.query(GeoName).filter(
-        func.ST_DWithin(GeoName.geom, func.ST_GeomFromText(point, 4326), radius_km * 1000)
-    ).all()
-    
+    nearby_cities = (
+        session.query(GeoName)
+        .filter(
+            func.ST_DWithin(
+                GeoName.geom, func.ST_GeomFromText(point, 4326), radius_km * 1000
+            )
+        )
+        .all()
+    )
+
     return nearby_cities
+
 
 # Get nearby cities to a point (Example: Paris)
 cities = get_nearby_cities(48.8566, 2.3522, radius_km=10)
@@ -697,7 +709,10 @@ If you need to work with other projections (like UTM or other coordinate systems
 ```python
 from geoalchemy2 import functions as geofunc
 
-def transform_coordinates(geoname_id, target_srid=3857):  # Example: 3857 is Web Mercator
+
+def transform_coordinates(
+    geoname_id, target_srid=3857
+):  # Example: 3857 is Web Mercator
     geoname = session.query(GeoName).filter(GeoName.geonameid == geoname_id).one()
     transformed_geom = geofunc.ST_Transform(geoname.geom, target_srid)
     return transformed_geom

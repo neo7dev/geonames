@@ -335,9 +335,7 @@ class Downloader:
             start = time.perf_counter()
             written = 0
             with DownloadProgressbar() as progress:
-                progress.add(
-                    f"Downloading {dest.name}", total=total, completed=offset
-                )
+                progress.add(f"Downloading {dest.name}", total=total, completed=offset)
                 with part.open(mode, buffering=CHUNK_SIZE) as fh:
                     for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
                         if not chunk:

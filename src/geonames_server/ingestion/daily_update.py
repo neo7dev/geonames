@@ -189,9 +189,7 @@ def _ingest_daily_file(file_path: Path, model) -> None:
 
     # GeoBase-derived daily tables use a composite key in daily updates.
     conflict_columns = ["geonameid", "modification_date"]
-    update_columns = [
-        c for c in columns if c not in set(conflict_columns)
-    ]
+    update_columns = [c for c in columns if c not in set(conflict_columns)]
 
     conn_params = _get_conn_params()
     with psycopg2.connect(**conn_params) as conn:
@@ -355,9 +353,7 @@ def _sync_metadata(datasets: list[DatasetInfo]) -> None:
             record.etag = record.remote_etag
             record.last_modified = now
             session.commit()
-            log.info(
-                f"[{ds.name}] Metadata synced — out_of_sync={record.out_of_sync}"
-            )
+            log.info(f"[{ds.name}] Metadata synced — out_of_sync={record.out_of_sync}")
 
 
 # ---------------------------------------------------------------------------
@@ -473,7 +469,9 @@ def apply_daily_updates(
     conn_params = _get_conn_params()
 
     for day in sorted(set().union(*pending.values())):
-        todo = [ds for ds in targets if ds.name not in failed and day in pending[ds.name]]
+        todo = [
+            ds for ds in targets if ds.name not in failed and day in pending[ds.name]
+        ]
         if not todo:
             continue
 
@@ -496,7 +494,10 @@ def apply_daily_updates(
                     if published:
                         on_dataset(ds.name, DatasetSyncStatus.APPLYING_MODIFICATIONS)
                         count = _upsert_modifications(
-                            conn_params, table, day, POPULATION_THRESHOLDS.get(ds.name, 0)
+                            conn_params,
+                            table,
+                            day,
+                            POPULATION_THRESHOLDS.get(ds.name, 0),
                         )
                         log.info(f"[{ds.name}] {day}: upserted {count} modification(s)")
                         on_dataset(ds.name, DatasetSyncStatus.APPLYING_DELETES)

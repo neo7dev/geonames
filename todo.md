@@ -96,10 +96,12 @@ class ChunkedIngestor:
                 obj = model(**record)
                 valid_rows.append(obj)
             except ValidationError as e:
-                invalid_rows.append({
-                    "raw": record,
-                    "error": str(e),
-                })
+                invalid_rows.append(
+                    {
+                        "raw": record,
+                        "error": str(e),
+                    }
+                )
 
         return valid_rows, invalid_rows
 
@@ -177,14 +179,15 @@ class ChunkedIngestor:
 
         with psycopg2.connect(**self.conn_params) as conn:
             with conn.cursor() as cur:
-
                 # create temp table once
-                cur.execute(sql.SQL(
-                    "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
-                ).format(
-                    temp=sql.Identifier(temp_table),
-                    target=sql.Identifier(table.name),
-                ))
+                cur.execute(
+                    sql.SQL(
+                        "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
+                    ).format(
+                        temp=sql.Identifier(temp_table),
+                        target=sql.Identifier(table.name),
+                    )
+                )
 
                 for chunk in self._read_chunks(path):
                     valid, invalid = self._validate_chunk(chunk, pydantic_model)
@@ -196,11 +199,19 @@ class ChunkedIngestor:
                     self._copy_chunk(cur, mapped_df, temp_table)
 
                 # merge once at end
-                self._merge(cur, temp_table, table.name, list(mapped_df.columns), conflict_columns)
+                self._merge(
+                    cur,
+                    temp_table,
+                    table.name,
+                    list(mapped_df.columns),
+                    conflict_columns,
+                )
 
         # write dead letter file
         if dead_letter_path and dead_letter:
-            pd.DataFrame(dead_letter).to_json(dead_letter_path, lines=True, orient="records")
+            pd.DataFrame(dead_letter).to_json(
+                dead_letter_path, lines=True, orient="records"
+            )
 ```
 
 ---
@@ -308,6 +319,7 @@ Add pluggable components:
 class BaseTransformer:
     def transform(self, row): ...
 
+
 class BaseValidator:
     def validate(self, row): ...
 ```
@@ -398,13 +410,14 @@ class Ingestor:
 
         with psycopg2.connect(**self.conn_params) as conn:
             with conn.cursor() as cur:
-
-                cur.execute(sql.SQL(
-                    "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
-                ).format(
-                    temp=sql.Identifier(temp_table),
-                    target=sql.Identifier(table.name),
-                ))
+                cur.execute(
+                    sql.SQL(
+                        "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
+                    ).format(
+                        temp=sql.Identifier(temp_table),
+                        target=sql.Identifier(table.name),
+                    )
+                )
 
                 last_columns = None
 
@@ -471,10 +484,12 @@ def validate_chunk(df, model: Type[BaseModel]):
             obj = model(**record)
             valid.append(obj)
         except ValidationError as e:
-            invalid.append({
-                "raw": record,
-                "error": str(e),
-            })
+            invalid.append(
+                {
+                    "raw": record,
+                    "error": str(e),
+                }
+            )
 
     return valid, invalid
 ```
@@ -672,9 +687,7 @@ ingestor.run(
         "geonameid": "id",
         "name": "name",
     },
-    computed={
-        "slug": lambda r: r.name.lower().replace(" ", "-")
-    },
+    computed={"slug": lambda r: r.name.lower().replace(" ", "-")},
     conflict_keys=["id"],
     dlq_path="bad_rows.jsonl",
 )
@@ -732,13 +745,16 @@ If your Pydantic and SQLAlchemy fields have the same names (or close), you can m
 from typing import Dict
 from sqlalchemy.orm import DeclarativeMeta
 
-def auto_map_fields(pydantic_model: type, sqlalchemy_model: DeclarativeMeta) -> Dict[str, str]:
+
+def auto_map_fields(
+    pydantic_model: type, sqlalchemy_model: DeclarativeMeta
+) -> Dict[str, str]:
     # Get SQLAlchemy column names
     sa_columns = {c.name for c in sqlalchemy_model.__table__.columns}
-    
+
     # Get Pydantic field names
     pydantic_fields = set(pydantic_model.model_fields.keys())
-    
+
     # Auto-map fields with matching names
     return {field: field for field in pydantic_fields if field in sa_columns}
 ```
@@ -760,16 +776,18 @@ You can combine **explicit mapping + automatic mapping**:
 def build_mapping(
     pydantic_model: type,
     sqlalchemy_model: DeclarativeMeta,
-    explicit_mapping: dict[str, str] | None = None
+    explicit_mapping: dict[str, str] | None = None,
 ) -> dict[str, str]:
     explicit_mapping = explicit_mapping or {}
-    
+
     # auto-map the rest
     sa_columns = {c.name for c in sqlalchemy_model.__table__.columns}
     pyd_fields = set(pydantic_model.model_fields.keys())
-    
-    auto_mapped = {f: f for f in pyd_fields if f in sa_columns and f not in explicit_mapping}
-    
+
+    auto_mapped = {
+        f: f for f in pyd_fields if f in sa_columns and f not in explicit_mapping
+    }
+
     # combine explicit and auto-mapped
     final_mapping = {**auto_mapped, **explicit_mapping}
     return final_mapping
@@ -779,9 +797,7 @@ Usage:
 
 ```python
 mapping = build_mapping(
-    GeoNameIn,
-    GeoName,
-    explicit_mapping={"geonameid": "id", "lat": "latitude"}
+    GeoNameIn, GeoName, explicit_mapping={"geonameid": "id", "lat": "latitude"}
 )
 ```
 
@@ -882,12 +898,14 @@ def build_mapping(
 
     # SQLAlchemy table columns
     sa_columns = {c.name for c in sqlalchemy_model.__table__.columns}
-    
+
     # Pydantic model fields
     pyd_fields = set(pydantic_model.model_fields.keys())
 
     # auto-map fields with matching names
-    auto_mapped = {f: f for f in pyd_fields if f in sa_columns and f not in explicit_mapping}
+    auto_mapped = {
+        f: f for f in pyd_fields if f in sa_columns and f not in explicit_mapping
+    }
 
     # combine explicit + automatic
     return {**auto_mapped, **explicit_mapping}
@@ -916,7 +934,9 @@ def map_rows(
     field_mapping: dict[str, str],
     computed_fields: dict[str, Callable] | None = None,
 ) -> pd.DataFrame:
-    mapped = [map_pydantic_to_sqlalchemy(r, field_mapping, computed_fields) for r in rows]
+    mapped = [
+        map_pydantic_to_sqlalchemy(r, field_mapping, computed_fields) for r in rows
+    ]
     return pd.DataFrame(mapped)
 ```
 
@@ -972,14 +992,15 @@ class Ingestor:
 
         with psycopg2.connect(**self.conn_params) as conn:
             with conn.cursor() as cur:
-
                 # Create staging table once
-                cur.execute(sql.SQL(
-                    "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
-                ).format(
-                    temp=sql.Identifier(temp_table),
-                    target=sql.Identifier(table.name),
-                ))
+                cur.execute(
+                    sql.SQL(
+                        "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
+                    ).format(
+                        temp=sql.Identifier(temp_table),
+                        target=sql.Identifier(table.name),
+                    )
+                )
 
                 last_columns = None
 
@@ -1020,12 +1041,12 @@ ingestor = Ingestor(conn_params, config)
 
 explicit_mapping = {
     "geonameid": "id",  # Pydantic field → SQLAlchemy field
-    "lat": "latitude"
+    "lat": "latitude",
 }
 
 computed_fields = {
     "slug": lambda r: r.name.lower().replace(" ", "-"),
-    "created_at": lambda _: datetime.utcnow()
+    "created_at": lambda _: datetime.utcnow(),
 }
 
 ingestor.run(
@@ -1142,14 +1163,15 @@ class Ingestor:
 
         with psycopg2.connect(**self.conn_params) as conn:
             with conn.cursor() as cur:
-
                 # Create temp staging table once
-                cur.execute(sql.SQL(
-                    "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
-                ).format(
-                    temp=sql.Identifier(temp_table),
-                    target=sql.Identifier(table.name),
-                ))
+                cur.execute(
+                    sql.SQL(
+                        "CREATE TEMP TABLE {temp} (LIKE {target} INCLUDING DEFAULTS) ON COMMIT DROP"
+                    ).format(
+                        temp=sql.Identifier(temp_table),
+                        target=sql.Identifier(table.name),
+                    )
+                )
 
                 last_columns = None
 
@@ -1215,10 +1237,12 @@ def validate_chunk(df, model: Type[BaseModel]):
             obj = model(**record)
             valid.append(obj)
         except ValidationError as e:
-            invalid.append({
-                "raw": record,
-                "error": str(e),
-            })
+            invalid.append(
+                {
+                    "raw": record,
+                    "error": str(e),
+                }
+            )
 
     return valid, invalid
 ```
@@ -1242,7 +1266,9 @@ def build_mapping(
     sa_columns = {c.name for c in sqlalchemy_model.__table__.columns}
     pyd_fields = set(pydantic_model.model_fields.keys())
 
-    auto_mapped = {f: f for f in pyd_fields if f in sa_columns and f not in explicit_mapping}
+    auto_mapped = {
+        f: f for f in pyd_fields if f in sa_columns and f not in explicit_mapping
+    }
 
     return {**auto_mapped, **explicit_mapping}
 
@@ -1267,7 +1293,9 @@ def map_rows(
     field_mapping: dict[str, str],
     computed_fields: dict[str, Callable] | None = None,
 ) -> pd.DataFrame:
-    mapped = [map_pydantic_to_sqlalchemy(r, field_mapping, computed_fields) for r in rows]
+    mapped = [
+        map_pydantic_to_sqlalchemy(r, field_mapping, computed_fields) for r in rows
+    ]
     return pd.DataFrame(mapped)
 ```
 
@@ -1308,12 +1336,19 @@ def copy_dataframe(cur, df, temp_table: str):
 from psycopg2 import sql
 
 
-def merge_tables(cur, temp_table: str, target_table: str, columns: list[str], conflict_columns: list[str]):
+def merge_tables(
+    cur,
+    temp_table: str,
+    target_table: str,
+    columns: list[str],
+    conflict_columns: list[str],
+):
     update_columns = [c for c in columns if c not in conflict_columns]
 
     if update_columns:
         updates = sql.SQL(", ").join(
-            sql.SQL("{c}=EXCLUDED.{c}").format(c=sql.Identifier(c)) for c in update_columns
+            sql.SQL("{c}=EXCLUDED.{c}").format(c=sql.Identifier(c))
+            for c in update_columns
         )
         action = sql.SQL("DO UPDATE SET {updates}").format(updates=updates)
     else:
@@ -1341,7 +1376,13 @@ def merge_tables(cur, temp_table: str, target_table: str, columns: list[str], co
 
 ```python
 class IngestionConfig:
-    def __init__(self, chunk_size: int = 10000, separator: str = "\t", has_header: bool = True, encoding: str = "utf-8"):
+    def __init__(
+        self,
+        chunk_size: int = 10000,
+        separator: str = "\t",
+        has_header: bool = True,
+        encoding: str = "utf-8",
+    ):
         self.chunk_size = chunk_size
         self.separator = separator
         self.has_header = has_header

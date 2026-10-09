@@ -29,6 +29,7 @@ from geonames_server.ingestion.registry import DatasetInfo
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _no_dataset_lock():
     """build_dataset takes a Postgres advisory lock; there is no DB here."""
@@ -53,6 +54,7 @@ def _make_dataset_info(**overrides) -> DatasetInfo:
 # ---------------------------------------------------------------------------
 # _get_conn_params
 # ---------------------------------------------------------------------------
+
 
 class TestGetConnParams:
     def test_returns_dict_with_required_keys(self):
@@ -84,8 +86,12 @@ class TestGetConnParams:
 # truncate_table
 # ---------------------------------------------------------------------------
 
+
 class TestTruncateTable:
-    @patch("geonames_server.ingestion.pipeline._get_conn_params", return_value={"dbname": "testdb"})
+    @patch(
+        "geonames_server.ingestion.pipeline._get_conn_params",
+        return_value={"dbname": "testdb"},
+    )
     @patch("geonames_server.ingestion.pipeline.psycopg2.connect")
     def test_executes_truncate_sql(self, mock_connect, mock_params):
         mock_conn = MagicMock()
@@ -98,7 +104,10 @@ class TestTruncateTable:
         mock_cur.__exit__ = MagicMock(return_value=False)
 
         # Patch as_string on Composed to avoid needing a real connection
-        with patch("psycopg2.sql.Composed.as_string", return_value="TRUNCATE TABLE \"test_table\" CASCADE"):
+        with patch(
+            "psycopg2.sql.Composed.as_string",
+            return_value='TRUNCATE TABLE "test_table" CASCADE',
+        ):
             truncate_table("test_table")
 
         mock_connect.assert_called_once_with(dbname="testdb")
@@ -111,10 +120,13 @@ class TestTruncateTable:
 # seed_dataset_metadata
 # ---------------------------------------------------------------------------
 
+
 class TestSeedDatasetMetadata:
     @patch("geonames_server.ingestion.pipeline.DatasetMetaDataRepository")
     @patch("geonames_server.ingestion.pipeline.get_session")
-    def test_creates_metadata_for_missing_datasets(self, mock_get_session, mock_repo_cls):
+    def test_creates_metadata_for_missing_datasets(
+        self, mock_get_session, mock_repo_cls
+    ):
         mock_session = MagicMock()
         mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
         mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
@@ -164,7 +176,9 @@ class TestSeedDatasetMetadata:
         mock_repo_cls.return_value = mock_repo
 
         ds1 = _make_dataset_info(name="cities15000")
-        ds2 = _make_dataset_info(name="cities500", zip_file="cities500.zip", txt_file="cities500.txt")
+        ds2 = _make_dataset_info(
+            name="cities500", zip_file="cities500.zip", txt_file="cities500.txt"
+        )
         seed_dataset_metadata([ds1, ds2])
 
         assert mock_repo.get_by_dataset.call_count == 2
@@ -174,6 +188,7 @@ class TestSeedDatasetMetadata:
 # ---------------------------------------------------------------------------
 # check_remote_metadata
 # ---------------------------------------------------------------------------
+
 
 class TestCheckRemoteMetadata:
     @patch("geonames_server.ingestion.pipeline.settings")
@@ -213,7 +228,9 @@ class TestCheckRemoteMetadata:
         ds = _make_dataset_info()
         check_remote_metadata([ds])
 
-        mock_client.head.assert_called_once_with("https://example.com/dump/cities15000.zip")
+        mock_client.head.assert_called_once_with(
+            "https://example.com/dump/cities15000.zip"
+        )
         assert mock_record.remote_etag == '"abc123"'
         assert mock_record.remote_last_modified == now
         mock_session.commit.assert_called_once()
@@ -241,10 +258,18 @@ class TestCheckRemoteMetadata:
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         mock_repo = MagicMock()
-        mock_repo.get_by_dataset.return_value = MagicMock(dataset="nozip", etag=None, remote_etag=None, last_modified=None, remote_last_modified=None)
+        mock_repo.get_by_dataset.return_value = MagicMock(
+            dataset="nozip",
+            etag=None,
+            remote_etag=None,
+            last_modified=None,
+            remote_last_modified=None,
+        )
         mock_repo_cls.return_value = mock_repo
 
-        ds = DatasetInfo(name="nozip", zip_file="", txt_file="nozip.txt", model=Cities15000)
+        ds = DatasetInfo(
+            name="nozip", zip_file="", txt_file="nozip.txt", model=Cities15000
+        )
         check_remote_metadata([ds])
 
         mock_client.head.assert_called_once_with("https://example.com/dump/nozip.txt")
@@ -310,6 +335,7 @@ class TestCheckRemoteMetadata:
 # build_dataset
 # ---------------------------------------------------------------------------
 
+
 class TestBuildDataset:
     @patch("geonames_server.ingestion.pipeline.DatasetMetaDataRepository")
     @patch("geonames_server.ingestion.pipeline.get_session")
@@ -318,14 +344,22 @@ class TestBuildDataset:
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_full_pipeline_with_zip(
-        self, mock_settings, mock_dl_cls, mock_ext_cls, mock_ingest, mock_get_session, mock_repo_cls
+        self,
+        mock_settings,
+        mock_dl_cls,
+        mock_ext_cls,
+        mock_ingest,
+        mock_get_session,
+        mock_repo_cls,
     ):
         mock_settings.cache_dir = Path("/tmp/cache")
         mock_settings.data_dir = Path("/tmp/data")
         mock_settings.geonames_url = "https://example.com/dump/"
 
         now = datetime(2025, 7, 1, tzinfo=timezone.utc)
-        dl_result = DownloadResult(path=Path("/tmp/data/cities15000.zip"), etag='"etag1"', last_modified=now)
+        dl_result = DownloadResult(
+            path=Path("/tmp/data/cities15000.zip"), etag='"etag1"', last_modified=now
+        )
 
         mock_dl = MagicMock()
         mock_dl.download.return_value = dl_result
@@ -338,7 +372,9 @@ class TestBuildDataset:
         # Make the txt file appear to exist
         with patch.object(Path, "exists", return_value=True):
             mock_session = MagicMock()
-            mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_session.return_value.__enter__ = MagicMock(
+                return_value=mock_session
+            )
             mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
 
             mock_metadata = MagicMock()
@@ -377,7 +413,9 @@ class TestBuildDataset:
         mock_settings.data_dir = Path("/tmp/data")
         mock_settings.geonames_url = "https://example.com/dump/"
 
-        dl_result = DownloadResult(path=Path("/tmp/data/plain.txt"), etag=None, last_modified=None)
+        dl_result = DownloadResult(
+            path=Path("/tmp/data/plain.txt"), etag=None, last_modified=None
+        )
 
         mock_dl = MagicMock()
         mock_dl.download.return_value = dl_result
@@ -386,14 +424,18 @@ class TestBuildDataset:
 
         with patch.object(Path, "exists", return_value=True):
             mock_session = MagicMock()
-            mock_get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_session.return_value.__enter__ = MagicMock(
+                return_value=mock_session
+            )
             mock_get_session.return_value.__exit__ = MagicMock(return_value=False)
 
             mock_repo = MagicMock()
             mock_repo.get_by_dataset.return_value = MagicMock()
             mock_repo_cls.return_value = mock_repo
 
-            ds = DatasetInfo(name="plain", zip_file="", txt_file="plain.txt", model=Cities15000)
+            ds = DatasetInfo(
+                name="plain", zip_file="", txt_file="plain.txt", model=Cities15000
+            )
             build_dataset(ds)
 
         mock_dl.download.assert_called_once_with(
@@ -422,7 +464,9 @@ class TestBuildDataset:
     @patch("geonames_server.ingestion.pipeline.Extractor")
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
-    def test_raises_on_extraction_failure(self, mock_settings, mock_dl_cls, mock_ext_cls):
+    def test_raises_on_extraction_failure(
+        self, mock_settings, mock_dl_cls, mock_ext_cls
+    ):
         mock_settings.cache_dir = Path("/tmp/cache")
         mock_settings.data_dir = Path("/tmp/data")
         mock_settings.geonames_url = "https://example.com/dump/"
@@ -441,7 +485,9 @@ class TestBuildDataset:
     @patch("geonames_server.ingestion.pipeline._load_and_swap")
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
-    def test_raises_when_txt_file_missing(self, mock_settings, mock_dl_cls, mock_ingest):
+    def test_raises_when_txt_file_missing(
+        self, mock_settings, mock_dl_cls, mock_ingest
+    ):
         mock_settings.cache_dir = Path("/tmp/cache")
         mock_settings.data_dir = Path("/tmp/data")
         mock_settings.geonames_url = "https://example.com/dump/"
@@ -451,7 +497,9 @@ class TestBuildDataset:
         mock_dl_cls.return_value.__enter__ = MagicMock(return_value=mock_dl)
         mock_dl_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        ds = DatasetInfo(name="nofile", zip_file="", txt_file="nofile.txt", model=Cities15000)
+        ds = DatasetInfo(
+            name="nofile", zip_file="", txt_file="nofile.txt", model=Cities15000
+        )
         with patch.object(Path, "exists", return_value=False):
             with pytest.raises(FileNotFoundError, match="Extracted file not found"):
                 build_dataset(ds)
@@ -471,7 +519,9 @@ class TestBuildDataset:
 
         mock_ingest.side_effect = RuntimeError("ingest boom")
 
-        ds = DatasetInfo(name="boom", zip_file="", txt_file="boom.txt", model=Cities15000)
+        ds = DatasetInfo(
+            name="boom", zip_file="", txt_file="boom.txt", model=Cities15000
+        )
         with patch.object(Path, "exists", return_value=True):
             with pytest.raises(RuntimeError, match="ingest boom"):
                 build_dataset(ds)
@@ -481,6 +531,7 @@ class TestBuildDataset:
 # build_all_datasets
 # ---------------------------------------------------------------------------
 
+
 class TestBuildAllDatasets:
     @patch("geonames_server.ingestion.pipeline.build_dataset")
     @patch("geonames_server.ingestion.pipeline.DatasetMetaDataRepository")
@@ -488,7 +539,12 @@ class TestBuildAllDatasets:
     @patch("geonames_server.ingestion.pipeline.get_enabled_datasets")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_builds_datasets_needing_rebuild(
-        self, mock_settings, mock_get_enabled, mock_get_session, mock_repo_cls, mock_build
+        self,
+        mock_settings,
+        mock_get_enabled,
+        mock_get_session,
+        mock_repo_cls,
+        mock_build,
     ):
         mock_settings.enabled_datasets = ["cities15000"]
 
@@ -515,7 +571,12 @@ class TestBuildAllDatasets:
     @patch("geonames_server.ingestion.pipeline.get_enabled_datasets")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_skips_datasets_not_needing_rebuild(
-        self, mock_settings, mock_get_enabled, mock_get_session, mock_repo_cls, mock_build
+        self,
+        mock_settings,
+        mock_get_enabled,
+        mock_get_session,
+        mock_repo_cls,
+        mock_build,
     ):
         mock_settings.enabled_datasets = ["cities15000"]
 
@@ -542,7 +603,12 @@ class TestBuildAllDatasets:
     @patch("geonames_server.ingestion.pipeline.get_enabled_datasets")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_builds_when_metadata_is_none(
-        self, mock_settings, mock_get_enabled, mock_get_session, mock_repo_cls, mock_build
+        self,
+        mock_settings,
+        mock_get_enabled,
+        mock_get_session,
+        mock_repo_cls,
+        mock_build,
     ):
         mock_settings.enabled_datasets = ["cities15000"]
 
@@ -567,12 +633,19 @@ class TestBuildAllDatasets:
     @patch("geonames_server.ingestion.pipeline.get_enabled_datasets")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_continues_on_individual_build_failure(
-        self, mock_settings, mock_get_enabled, mock_get_session, mock_repo_cls, mock_build
+        self,
+        mock_settings,
+        mock_get_enabled,
+        mock_get_session,
+        mock_repo_cls,
+        mock_build,
     ):
         mock_settings.enabled_datasets = ["cities15000", "cities500"]
 
         ds1 = _make_dataset_info(name="cities15000")
-        ds2 = _make_dataset_info(name="cities500", zip_file="cities500.zip", txt_file="cities500.txt")
+        ds2 = _make_dataset_info(
+            name="cities500", zip_file="cities500.zip", txt_file="cities500.txt"
+        )
         mock_get_enabled.return_value = [ds1, ds2]
 
         mock_session = MagicMock()
@@ -597,7 +670,12 @@ class TestBuildAllDatasets:
     @patch("geonames_server.ingestion.pipeline.get_enabled_datasets")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_empty_enabled_no_rebuild(
-        self, mock_settings, mock_get_enabled, mock_get_session, mock_repo_cls, mock_build
+        self,
+        mock_settings,
+        mock_get_enabled,
+        mock_get_session,
+        mock_repo_cls,
+        mock_build,
     ):
         mock_settings.enabled_datasets = []
         mock_get_enabled.return_value = []
@@ -617,6 +695,7 @@ class TestBuildAllDatasets:
 # ---------------------------------------------------------------------------
 # _truncate_and_ingest
 # ---------------------------------------------------------------------------
+
 
 class TestLoadAndSwap:
     PB = "geonames_server.rich_console.ingestion_progressbar"
@@ -648,8 +727,12 @@ class TestLoadAndSwap:
         with (
             patch(f"{self.PB}._ProgressFileWrapper") as wrapper_cls,
             patch(f"{self.PB}.IngestionProgressBar", new=_MockProgressBarClass),
-            patch("geonames_server.ingestion.pipeline._get_conn_params", return_value={}),
-            patch("geonames_server.ingestion.pipeline.psycopg2.connect", return_value=conn),
+            patch(
+                "geonames_server.ingestion.pipeline._get_conn_params", return_value={}
+            ),
+            patch(
+                "geonames_server.ingestion.pipeline.psycopg2.connect", return_value=conn
+            ),
         ):
             try:
                 _load_and_swap(Cities15000, "cities15000", txt)
@@ -714,7 +797,9 @@ class TestLoadAndSwap:
         with (
             patch(f"{self.PB}._ProgressFileWrapper"),
             patch(f"{self.PB}.IngestionProgressBar", new=_MockProgressBarClass),
-            patch("geonames_server.ingestion.pipeline._get_conn_params", return_value={}),
+            patch(
+                "geonames_server.ingestion.pipeline._get_conn_params", return_value={}
+            ),
             patch(
                 "geonames_server.ingestion.pipeline.psycopg2.connect",
                 side_effect=psycopg2.OperationalError("down"),
@@ -728,8 +813,10 @@ class TestLoadAndSwap:
 # Helpers for mocking IngestionProgressBar context manager
 # ---------------------------------------------------------------------------
 
+
 class _MockProgressBarClass:
     """Factory that returns a class whose instances are no-op context managers."""
+
     def __init__(self, total, description):
         pass
 

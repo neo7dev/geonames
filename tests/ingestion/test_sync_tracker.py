@@ -1,4 +1,3 @@
-
 import pytest
 
 from geonames_server.ingestion.sync_tracker import (
@@ -112,9 +111,13 @@ class TestUpdateDatasetStatus:
                 DatasetStatus(name="cities15000"),
             ],
         )
-        update_dataset_status(sync_id, "cities500", DatasetSyncStatus.APPLYING_MODIFICATIONS)
+        update_dataset_status(
+            sync_id, "cities500", DatasetSyncStatus.APPLYING_MODIFICATIONS
+        )
         entry = get_sync(sync_id)
-        assert entry.datasets[0].status == DatasetSyncStatus.APPLYING_MODIFICATIONS.value
+        assert (
+            entry.datasets[0].status == DatasetSyncStatus.APPLYING_MODIFICATIONS.value
+        )
         assert entry.datasets[1].status == DatasetSyncStatus.PENDING.value
 
     def test_noop_for_unknown_dataset(self):

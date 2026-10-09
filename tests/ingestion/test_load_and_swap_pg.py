@@ -27,8 +27,27 @@ TABLE = "cities500"
 def _row(i: int, name: str = "City") -> str:
     # geonameid name asciiname alternatenames lat lon fc fcode cc cc2 a1-a4 pop elev dem tz moddate
     return "\t".join(
-        [str(i), f"{name}{i}", f"{name}{i}", "", "1.5", "2.5", "P", "PPL", "US", "",
-         "", "", "", "", "1000", "", "10", "UTC", "2026-01-01"]
+        [
+            str(i),
+            f"{name}{i}",
+            f"{name}{i}",
+            "",
+            "1.5",
+            "2.5",
+            "P",
+            "PPL",
+            "US",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "1000",
+            "",
+            "10",
+            "UTC",
+            "2026-01-01",
+        ]
     )
 
 
@@ -39,7 +58,9 @@ def conn():
     with c.cursor() as cur:
         cur.execute(f"DROP TABLE IF EXISTS {TABLE}, {TABLE}_new, {TABLE}_old CASCADE")
     Cities500.__table__.create(
-        bind=create_engine("postgresql+psycopg2://", creator=lambda: psycopg2.connect(DSN))
+        bind=create_engine(
+            "postgresql+psycopg2://", creator=lambda: psycopg2.connect(DSN)
+        )
     )
     yield c
     with c.cursor() as cur:
@@ -76,7 +97,12 @@ def test_replaces_contents_and_keeps_schema(conn, tmp_path):
 
 def test_swapped_table_is_analysed(conn, tmp_path):
     _run(_file(tmp_path, [_row(i) for i in range(1, 6)]))
-    assert _scalar(conn, "SELECT reltuples FROM pg_class WHERE oid = 'cities500'::regclass") == 5
+    assert (
+        _scalar(
+            conn, "SELECT reltuples FROM pg_class WHERE oid = 'cities500'::regclass"
+        )
+        == 5
+    )
 
 
 def test_duplicate_keys_are_dropped(conn, tmp_path):

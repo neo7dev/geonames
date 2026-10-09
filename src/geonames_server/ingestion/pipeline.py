@@ -238,7 +238,9 @@ def _live_rows(cur, table: str) -> int:
     return cur.fetchone()[0]
 
 
-def _clone_indexes(cur, table: str, staged: str, pk_name: str | None) -> list[tuple[str, str]]:
+def _clone_indexes(
+    cur, table: str, staged: str, pk_name: str | None
+) -> list[tuple[str, str]]:
     """Recreate *table*'s secondary indexes on *staged* under temporary names.
 
     Returns ``(temporary_name, final_name)`` pairs to rename after the swap.
@@ -383,9 +385,7 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                 cur.execute(sql.SQL("DROP TABLE {o}").format(o=ident(old)))
                 if pk_name:
                     cur.execute(
-                        sql.SQL(
-                            "ALTER TABLE {t} RENAME CONSTRAINT {s} TO {p}"
-                        ).format(
+                        sql.SQL("ALTER TABLE {t} RENAME CONSTRAINT {s} TO {p}").format(
                             t=ident(table_name),
                             s=ident(f"{staged}_pkey"),
                             p=ident(pk_name),

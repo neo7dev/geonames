@@ -100,7 +100,9 @@ def _alembic_config(section: str = "alembic") -> Config:
 def _migration_lock() -> Iterator[None]:
     """Wait for, then hold, the database-wide migration lock."""
     with sync_engine.connect() as conn:
-        conn.execute(text("SELECT pg_advisory_lock(:key)"), {"key": _MIGRATION_LOCK_KEY})
+        conn.execute(
+            text("SELECT pg_advisory_lock(:key)"), {"key": _MIGRATION_LOCK_KEY}
+        )
         conn.commit()
         try:
             yield
@@ -115,7 +117,9 @@ def _upgrade_app_schema() -> None:
     command.upgrade(_alembic_config("app"), "head")
     with sync_engine.begin() as conn:
         if not link_profiles_to_auth(conn):
-            log.warning("auth.users not found: app.profiles is not linked to Supabase Auth")
+            log.warning(
+                "auth.users not found: app.profiles is not linked to Supabase Auth"
+            )
 
 
 def upgrade_app_schema() -> None:
