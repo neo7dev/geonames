@@ -112,6 +112,11 @@ class Settings(BaseSettings):
         ge=0,
         description="Seconds an API key lookup is cached; role, tier and Studio revoke changes apply within this. 0 turns the cache off",
     )
+    usage_flush_seconds: int = Field(
+        default=300,
+        ge=10,
+        description="Seconds between copies of the request counts from Redis to Postgres",
+    )
     dev_seed_users: bool = Field(
         default=False,
         description="Allow `make seed-users` to create dev users with known passwords and API keys. Dev only",

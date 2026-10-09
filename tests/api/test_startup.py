@@ -102,13 +102,34 @@ async def test_lifespan_shares_one_redis_client(startup_mocks):
     with (
         patch.object(app_module.settings, "redis_url", "redis://redis:6379/0"),
         patch(f"{MODULE}.Redis.from_url", return_value=redis) as from_url,
+        patch(f"{MODULE}.flush_usage", AsyncMock(return_value=0)) as flush,
     ):
         async with app_module.lifespan(app):
             assert app.state.redis is redis
             assert app.state.rate_limiter.redis is redis
             startup_mocks["release_build"].set()
+        # Shutdown flushes what is left, before closing Redis
+        flush.assert_awaited_once()
+        assert flush.await_args.args[0] is redis
 
     from_url.assert_called_once()
+    redis.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_final_flush_does_not_stop_shutdown(startup_mocks):
+    app = FastAPI()
+    redis = AsyncMock()
+    redis.register_script = MagicMock()
+
+    with (
+        patch.object(app_module.settings, "redis_url", "redis://redis:6379/0"),
+        patch(f"{MODULE}.Redis.from_url", return_value=redis),
+        patch(f"{MODULE}.flush_usage", AsyncMock(side_effect=OSError("db down"))),
+    ):
+        async with app_module.lifespan(app):
+            startup_mocks["release_build"].set()
+
     redis.aclose.assert_awaited_once()
 
 

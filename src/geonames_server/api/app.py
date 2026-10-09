@@ -11,7 +11,7 @@ import asyncio
 import logging
 import sys
 import threading
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import Depends, FastAPI
 from redis.asyncio import Redis
@@ -27,6 +27,7 @@ from geonames_server.api.routers import (
     sync,
 )
 from geonames_server.api.routers.geonames import create_geoname_router
+from geonames_server.api.usage_flush import flush_usage, run_usage_flusher
 from geonames_server.config.config import settings
 from geonames_server.database.connection.connection import Connection
 from geonames_server.database.migrations import db_migrations
@@ -35,6 +36,7 @@ from geonames_server.database.models.cities500 import Cities500
 from geonames_server.database.models.cities1000 import Cities1000
 from geonames_server.database.models.cities5000 import Cities5000
 from geonames_server.database.models.cities15000 import Cities15000
+from geonames_server.database.session import asyncSessionLocal
 from geonames_server.ingestion.pipeline import (
     build_all_datasets,
     check_remote_metadata,
@@ -100,11 +102,20 @@ async def lifespan(app: FastAPI):
         if settings.redis_url
         else None
     )
+    flusher = None
     if app.state.redis is None:
         log.warning("REDIS_URL is not set — rate limits are off, usage is not counted")
         app.state.rate_limiter = None
     else:
         app.state.rate_limiter = RateLimiter(app.state.redis)
+        # Copies the request counts to Postgres every USAGE_FLUSH_SECONDS. Not an
+        # APScheduler job: the scheduler starts only after the dataset rebuilds.
+        flusher = asyncio.create_task(
+            run_usage_flusher(
+                app.state.redis, asyncSessionLocal, settings.usage_flush_seconds
+            ),
+            name="usage-flusher",
+        )
 
     # 4-6. Remote check, rebuilds and scheduler run in the background, so the API
     #      (and /health) answer while large datasets download and load.
@@ -126,9 +137,22 @@ async def lifespan(app: FastAPI):
         log.info("Shutting down GeoNames Server")
         stopping.set()
         stop_scheduler()
+        if flusher is not None:
+            flusher.cancel()
+            with suppress(asyncio.CancelledError):
+                await flusher
+            await _final_usage_flush(app)
         if app.state.redis is not None:
             await app.state.redis.aclose()
         log.info("Scheduler stopped — shutdown complete")
+
+
+async def _final_usage_flush(app: FastAPI) -> None:
+    try:
+        written = await flush_usage(app.state.redis, asyncSessionLocal)
+        log.info(f"Final usage flush wrote {written} request(s)")
+    except Exception as e:
+        log.warning(f"Final usage flush failed; the next start flushes it: {e!r}")
 
 
 def _prepare_datasets(
