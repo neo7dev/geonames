@@ -7,6 +7,7 @@ from typing import Annotated, override
 from dotenv import find_dotenv
 from pydantic import Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from sqlalchemy import URL
 
 from geonames_server.log.mylogger import get_logger
 
@@ -136,8 +137,20 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def postges_url(self) -> str:
-        return f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        # return f"postgresql://{self.postges_user}:{self.postges_password}@{self.postges_host}:{self.postges_port}/{self.postges_db}"
+        # URL.create percent-encodes the parts, so a password with @, : or / works.
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.postgres_user,
+            password=self.postgres_password,
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        ).render_as_string(hide_password=False)
+
+    @property
+    def alembic_url(self) -> str:
+        """postges_url escaped for Alembic's config, where ConfigParser reads % as interpolation."""
+        return self.postges_url.replace("%", "%%")
 
     @property
     def postgres_options(self) -> str:

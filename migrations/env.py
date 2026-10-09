@@ -15,7 +15,7 @@ config = context.config
 
 # use the application's database unless the caller supplied a URL
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", settings.postges_url)
+    config.set_main_option("sqlalchemy.url", settings.alembic_url)
 
 # Every table, including alembic_version, lives in this schema rather than Supabase's
 # public schema, where anon/authenticated get access to every new table.

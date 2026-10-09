@@ -92,7 +92,7 @@ def _check_search_path() -> None:
 def _alembic_config(section: str = "alembic") -> Config:
     """Config for one migration chain: ``alembic`` (geonames) or ``app`` (user data)."""
     cfg = Config(str(_alembic_ini), ini_section=section)
-    cfg.set_main_option("sqlalchemy.url", settings.postges_url)
+    cfg.set_main_option("sqlalchemy.url", settings.alembic_url)
     return cfg
 
 

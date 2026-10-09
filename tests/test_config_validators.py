@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import make_url
 
 from geonames_server.config.config import Settings
 from geonames_server.config.validators import (
@@ -100,3 +101,23 @@ class TestJwtSecret:
     def test_accepts_long_secret(self):
         secret = "s" * 32
         assert Settings(jwt_secret=secret).jwt_secret.get_secret_value() == secret
+
+
+class TestPostgresUrl:
+    PASSWORD = "p%40ss@w:rd/x"
+
+    def test_password_with_special_characters_round_trips(self):
+        url = make_url(Settings(postgres_password=self.PASSWORD).postges_url)
+
+        assert url.password == self.PASSWORD
+        assert url.host == Settings().postgres_host
+
+    def test_alembic_config_reads_back_the_same_url(self, monkeypatch):
+        from geonames_server.database import migrations
+
+        monkeypatch.setattr(
+            migrations, "settings", Settings(postgres_password=self.PASSWORD)
+        )
+
+        url = make_url(migrations._alembic_config().get_main_option("sqlalchemy.url"))
+        assert url.password == self.PASSWORD
