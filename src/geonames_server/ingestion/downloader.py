@@ -35,7 +35,6 @@ class DownloadResult:
     path: Path
     etag: str | None = None
     last_modified: datetime | None = None
-    not_modified: bool = False
 
 
 class _Transient(Exception):
@@ -146,14 +145,8 @@ class Downloader:
     def close(self) -> None:
         self._session.close()
 
-    def download(
-        self, url: str, file_name: str, known_etag: str | None = None
-    ) -> DownloadResult:
-        """Download *url* into ``data_dir/file_name``.
-
-        If *known_etag* is given and the local file exists, a conditional GET is
-        sent and a 304 returns ``DownloadResult(not_modified=True)``.
-        """
+    def download(self, url: str, file_name: str) -> DownloadResult:
+        """Download *url* into ``data_dir/file_name``."""
         _create_directory(self.cache_dir)
         _create_directory(self.data_dir)
 
@@ -174,7 +167,7 @@ class Downloader:
 
         for attempt in range(1, self.max_attempts + 1):
             try:
-                return self._attempt(url, dest, part, meta, known_etag)
+                return self._attempt(url, dest, part, meta)
             except _RETRYABLE as e:
                 if attempt == self.max_attempts:
                     log.error(f"Download failed after {attempt} attempts: {url}: {e}")
@@ -209,7 +202,6 @@ class Downloader:
         dest: Path,
         part: Path,
         meta: Path,
-        known_etag: str | None,
     ) -> DownloadResult:
         offset = part.stat().st_size if part.exists() else 0
         saved = self._read_meta(meta, url)
@@ -224,16 +216,11 @@ class Downloader:
         if offset:
             headers["Range"] = f"bytes={offset}-"
             headers["If-Range"] = validator
-        elif known_etag and dest.exists():
-            headers["If-None-Match"] = known_etag
 
         with self._session.get(
             url, stream=True, headers=headers, timeout=TIMEOUT
         ) as resp:
             status = resp.status_code
-
-            if status == 304:
-                return DownloadResult(path=dest, etag=known_etag, not_modified=True)
 
             if status == 416:
                 m = _UNSATISFIED_RANGE.match(resp.headers.get("Content-Range", ""))

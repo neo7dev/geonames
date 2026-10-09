@@ -443,16 +443,6 @@ class TestResume:
         assert (dirs[1] / "test.txt").read_bytes() == b"0123456789"
 
 
-class TestConditional:
-    def test_304_returns_not_modified(self, dirs):
-        (dirs[1] / "test.txt").write_text("cached")
-        dl = _dl(dirs, [_resp(304)], force=True)
-        result = dl.download(URL, "test.txt", known_etag='"e1"')
-        assert result.not_modified is True
-        assert dl._session.get.call_args.kwargs["headers"]["If-None-Match"] == '"e1"'
-        assert (dirs[1] / "test.txt").read_text() == "cached"
-
-
 class TestRetries:
     def test_retries_5xx_then_succeeds(self, dirs, _no_ui_or_sleep):
         dl = _dl(
