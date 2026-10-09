@@ -117,9 +117,11 @@ env_value = $(strip $(shell sed -n 's/^$(1) *= *//p' .env 2>/dev/null))
 TEST_PG_DSN ?= host=$(call env_value,POSTGRES_HOST) port=$(call env_value,POSTGRES_PORT) user=$(call env_value,POSTGRES_USER) password=$(call env_value,POSTGRES_PASSWORD) dbname=$(TEST_PG_DB)
 
 # Spare Redis database for the rate limit tests, which flush it: REDIS_URL from
-# .env with database TEST_REDIS_DB.
+# .env with database TEST_REDIS_DB (query options kept). Empty, so the Redis
+# tests skip, when .env has no REDIS_URL.
 TEST_REDIS_DB ?= 15
-TEST_REDIS_URL ?= $(shell echo '$(call env_value,REDIS_URL)' | sed -E 's#(/[0-9]+)?$$#/$(TEST_REDIS_DB)#')
+env_redis_url = $(call env_value,REDIS_URL)
+TEST_REDIS_URL ?= $(if $(env_redis_url),$(shell echo '$(env_redis_url)' | sed -E 's#^([^/]*//[^/?]*)(/[0-9]*)?(\?.*)?$$#\1/$(TEST_REDIS_DB)\3#'))
 
 ## Run the whole test suite, including the Postgres tests against TEST_PG_DB
 ## (default geonames_test, on the server in .env) and the Redis tests against
