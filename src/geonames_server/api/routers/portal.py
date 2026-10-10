@@ -94,11 +94,12 @@ async def update_me(
     session: AsyncSession = Depends(get_session),
 ):
     """Change your display name. Email and password are changed in Supabase Auth."""
-    await session.execute(
-        update(Profile)
-        .where(Profile.id == principal.user_id)
-        .values(display_name=body.display_name or None)
-    )
+    if "display_name" in body.model_fields_set:
+        await session.execute(
+            update(Profile)
+            .where(Profile.id == principal.user_id)
+            .values(display_name=body.display_name or None)
+        )
     updated = await _me(session, principal)
     await session.commit()
     return updated

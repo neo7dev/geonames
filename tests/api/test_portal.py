@@ -325,6 +325,17 @@ class TestDisplayName:
         assert me.json()["display_name"] == stored
 
     @pytest.mark.asyncio
+    async def test_leaving_the_name_out_keeps_it(self, auth_client, login):
+        _, headers = await login()
+        await auth_client.patch(
+            "/portal/me", json={"display_name": "Before"}, headers=headers
+        )
+
+        resp = await auth_client.patch("/portal/me", json={}, headers=headers)
+
+        assert resp.json()["display_name"] == "Before"
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("name", ["x" * 101, "tab\there"], ids=["long", "control"])
     async def test_invalid_names_are_refused(self, auth_client, login, name):
         _, headers = await login()

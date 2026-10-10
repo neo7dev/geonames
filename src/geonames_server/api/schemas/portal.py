@@ -37,7 +37,7 @@ class MeResponse(BaseModel):
 
 
 class UpdateMeRequest(BaseModel):
-    # Empty or null clears it
+    # Empty or null clears it; left out keeps it
     display_name: DisplayName | None = None
 
 
