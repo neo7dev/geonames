@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 
 import { SUSPENDED_EVENT } from '@/api/client'
@@ -13,6 +13,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [suspended, setSuspended] = useState(false)
   const [signedOutByUser, setSignedOutByUser] = useState(false)
+  const userId = useRef<string | null>(null)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
@@ -23,10 +24,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(next)
       setLoading(false)
       if (event === 'SIGNED_IN') setSignedOutByUser(false)
-      if (event === 'SIGNED_OUT') {
-        // Nothing from the last user may show for the next one.
-        queryClient.clear()
-        setSuspended(false)
+      // Nothing from the last user may show for the next one: on sign-out, and
+      // when another tab signs in as someone else without signing out first.
+      const nextId = next?.user.id ?? null
+      if (nextId !== userId.current) {
+        if (userId.current !== null) {
+          queryClient.clear()
+          setSuspended(false)
+        }
+        userId.current = nextId
       }
       // A recovery link that landed elsewhere (GoTrue's fallback to SITE_URL).
       // Other tabs get the event too, and must stay where they are.

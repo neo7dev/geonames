@@ -67,6 +67,24 @@ describe('route guard', () => {
   })
 })
 
+describe('switching user', () => {
+  it("drops the last user's suspension and data when another signs in", async () => {
+    fakeAuth.setSession(fakeSession())
+    mockFetch({ ...baseRoutes, '/portal/me': { status: 403, body: { detail: 'suspended' } } })
+    renderApp('/')
+    expect(await screen.findByText('Account suspended')).toBeInTheDocument()
+
+    // Another tab signs in as someone else, without signing out first
+    const bob = fakeSession('bob@example.com')
+    fakeAuth.setSession({ ...bob, user: { ...bob.user, id: '00000000-0000-0000-0000-000000000002' } })
+    mockFetch(baseRoutes)
+    fakeAuth.emit('SIGNED_IN')
+
+    expect((await screen.findAllByRole('navigation', { name: 'Main' })).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Account suspended')).not.toBeInTheDocument()
+  })
+})
+
 describe('login', () => {
   it('says when the email or password is wrong', async () => {
     fakeAuth.signInWithPassword.mockResolvedValueOnce({
