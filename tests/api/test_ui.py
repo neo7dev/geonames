@@ -131,6 +131,18 @@ class TestFiles:
         assert OUTSIDE not in response.text
 
     @pytest.mark.asyncio
+    async def test_overlong_path_is_index_or_404_not_500(self, client):
+        # Over NAME_MAX: stat() fails with ENAMETOOLONG, which is_file() re-raises.
+        name = "a" * 300
+
+        page = await client.get(f"/ui/{name}")
+        asset = await client.get(f"/ui/{name}.js")
+
+        assert page.status_code == 200
+        assert page.text == INDEX
+        assert asset.status_code == 404
+
+    @pytest.mark.asyncio
     async def test_symlink_out_of_the_ui_dir_is_404(self, client, ui_dir):
         (ui_dir / "leak.txt").symlink_to(ui_dir.parent / "secret.txt")
 

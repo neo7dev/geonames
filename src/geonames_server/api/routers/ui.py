@@ -52,13 +52,14 @@ def _not_found(detail: str) -> Response:
 
 def _file(root: Path, path: str) -> Path | None:
     """The file at `path` under `root`, or None if missing or outside it."""
+    # is_file() re-raises some OSErrors too, e.g. ENAMETOOLONG for a long segment.
     try:
         candidate = (root / path).resolve()
+        if candidate.is_relative_to(root) and candidate.is_file():
+            return candidate
     except (OSError, ValueError):
-        return None
-    if not candidate.is_relative_to(root) or not candidate.is_file():
-        return None
-    return candidate
+        pass
+    return None
 
 
 @router.get("/")
