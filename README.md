@@ -174,7 +174,7 @@ The API serves a web UI at `/ui` (and redirects `/` there): http://localhost:950
 - **API keys**: create a key (shown once, with a copy button), see each key's prefix and last use, revoke keys. The tier's key limit is enforced.
 - **Usage**: requests per day for the last 7, 30 or 90 UTC days (also as a table), and this month's requests per key.
 
-There is no admin page: admins use Supabase Studio, as described below. Light and dark mode follow the system until switched in the sidebar.
+Admins also get an **Administration** page: find users, change their role (and so their plan), deactivate, delete, restore or remove them, and create users. Light and dark mode follow the system until switched in the sidebar.
 
 How it is served:
 - The UI is a React single-page app in `frontend/`, built with Vite into static files. The Docker image builds it in a Node stage and the API serves the files from `UI_DIR` (`/app/ui` in the image); nothing Node runs in production.
@@ -197,7 +197,7 @@ Every signup gets the default role: the one marked `is_default` in `app.roles`, 
 | pro | dev | 120 | 2,500 | 500,000 | 5 |
 | max | sr_dev, admin | unlimited | unlimited | unlimited | unlimited |
 
-Tiers, roles and the role -> tier mapping are rows in the `app` schema (`app.tiers`, `app.roles`), editable in Studio. The read-only view `app.user_tiers` shows every user's role, tier, limits (empty = unlimited) and active/revoked key counts in one table (Studio: Table Editor, schema `app`). Admin access (`/sync`) comes from `app.roles.is_admin`. To change a user's role, edit their row in `app.profiles` in Studio; it applies within `AUTH_CACHE_SECONDS` (60 s), as do changes to a tier's limits, bans and revoking a key in Studio. To make the first admin, sign up, then set that profile's `role` to `admin`.
+Tiers, roles and the role -> tier mapping are rows in the `app` schema (`app.tiers`, `app.roles`), editable in Studio. The read-only view `app.user_tiers` shows every user's role, tier, limits (empty = unlimited) and active/revoked key counts in one table (Studio: Table Editor, schema `app`). Admin access (`/sync`) comes from `app.roles.is_admin`. To change a user's role, edit their row in `app.profiles` in Studio; it applies within `AUTH_CACHE_SECONDS` (60 s), as do changes to a tier's limits, bans and revoking a key in Studio. The first admin comes from `ADMIN_EMAIL` and `ADMIN_PASSWORD`: on startup, while no profile has an admin role, the server creates that user (confirmed, so they can log in at once) with the `admin` role, or makes the user admin if the email is already registered. Once an admin exists both settings are ignored; remove the password from `.env`. Further admins are made on the Administration page.
 
 In the devcontainer, `make seed-users` (also run on every container start) creates one confirmed user per tier, all with password `dev-password`, each with a real API key kept in `.env.dev` (and so in `.env` after `make switch2dev`):
 
@@ -310,19 +310,26 @@ Generate the Supabase secrets and fill in the empty secret values in `.env` with
 make supabase-keys
 ```
 
-Also set the public URLs (`SUPABASE_PUBLIC_URL`, `API_EXTERNAL_URL`, `SITE_URL`) and the SMTP settings for confirmation emails. Keep `POSTGRES_USER=postgres`, `POSTGRES_HOST=db` and `POSTGRES_DB=postgres`: Supabase expects that database name.
+Also set:
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD`: the first start creates this admin account, so you can log in at `/ui` and manage users. Ignored once an admin exists; remove the password afterwards.
+- The public URLs (`SUPABASE_PUBLIC_URL`, `API_EXTERNAL_URL`, `SITE_URL`) and the SMTP settings for confirmation emails.
+- `APP_PORT` (default `9500`) and `KONG_HTTP_PORT` (default `8000`) if those host ports are taken.
 
-### 2) Build and Start
+TLS is not part of the stack: put your own reverse proxy (Caddy, nginx, Traefik) in front of the app port and Kong's `/auth/v1`, and use the `https://` addresses in the public URLs. Keep `POSTGRES_USER=postgres`, `POSTGRES_HOST=db` and `POSTGRES_DB=postgres`: Supabase expects that database name.
+
+### 2) Start
+
+The stack needs only `docker-compose.yml`, the `supabase/` directory and `.env`; the app runs the image `GEONAMES_IMAGE` (default `ghcr.io/neo7dev/geonames-server:latest`). To run the code in this checkout instead, build that image locally first with `make build-image`.
 
 ```bash
-docker compose up --build
+docker compose up -d
 ```
 
 This starts:
-- `app` (FastAPI on port `9500`, with the web UI at `/ui`)
+- `app` (FastAPI on port `APP_PORT`, `9500`, with the web UI at `/ui`)
 - `db` (Supabase Postgres 17, internal network). Holds geonames data and Supabase auth
 - `auth` (Supabase Auth: signup, login, OAuth), `meta` and `studio`
-- `kong` on port `8000`: Supabase Studio admin dashboard at `/` (basic auth `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`) and the Auth API at `/auth/v1`
+- `kong` on port `KONG_HTTP_PORT` (`8000`): Supabase Studio admin dashboard at `/` (basic auth `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`) and the Auth API at `/auth/v1`
 - `redis` (internal network) for rate limiting and quotas
 
 **Run one app instance only.** Keep a single `app` container with the image's single uvicorn worker: no `--workers`, no `docker compose up --scale app=N`, no second replica against the same database. The daily-update scheduler runs inside the process, so a second instance would run every sync twice. Rate limiting also keeps its API key cache and its fallback counters for Redis outages in process memory, so a second instance would let a key revoked on `/portal` keep working for up to `AUTH_CACHE_SECONDS` (60 s) longer and double the limits during a Redis outage.
@@ -351,10 +358,9 @@ Quick API check:
 curl -H "X-API-Key: $API_KEY" "http://localhost:9500/allcountries/?limit=5"
 ```
 
-### 4) Run in Background
+### 4) Follow the Logs
 
 ```bash
-docker compose up -d
 docker compose logs -f app
 ```
 
@@ -385,6 +391,7 @@ Main runtime settings (environment variables):
 - `JWT_SECRET` (Supabase Auth's JWT secret; required, used to verify login tokens on `/portal`)
 - `SUPABASE_PUBLIC_URL` (Supabase's address as users' browsers reach it, e.g. `https://auth.example.com`; the web UI calls Supabase Auth there. Unset: `/ui/config.json` answers 503)
 - `ANON_KEY` (Supabase's public anon key, passed to the web UI)
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD` (the first admin account, created on startup while no admin exists; ignored afterwards)
 - `PASSWORD_MIN_LENGTH` (default `8`; also passed to Supabase Auth as `GOTRUE_PASSWORD_MIN_LENGTH`, so the signup form and the server agree)
 - `UI_DIR` (default `frontend/dist`; the built web UI. The image sets `/app/ui`)
 - `GEONAMES_URL`

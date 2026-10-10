@@ -179,7 +179,7 @@ services:
       auth:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "${KONG_HTTP_PORT:-8000}:8000"
     volumes:
       - ./kong.yml:/home/kong/temp.yml:ro,z
       - ./kong-entrypoint.sh:/home/kong/kong-entrypoint.sh:ro,z

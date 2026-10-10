@@ -1,11 +1,16 @@
-# Deployment stack: geonames-server app + trimmed self-hosted Supabase.
+# Deployment stack: the geonames-server image, Redis and a trimmed self-hosted Supabase.
 # The Supabase services (db, auth, meta, studio, kong) live in supabase/docker-compose.yml,
-# shared with the devcontainer.
-# Generate secrets with `make supabase-keys` and put them in .env before the first start.
+# shared with the devcontainer; deploy this file together with the supabase/ directory.
+# Generate secrets with `make supabase-keys` and put them in .env before the first start,
+# along with ADMIN_EMAIL / ADMIN_PASSWORD for the first admin account.
 # Compose refuses to start while any secret is empty (`${VAR:?...}` in the Supabase file).
 #
-#   API:            http://localhost:9500 (health: /health)
-#   Studio + Auth:  http://localhost:8000 (basic auth DASHBOARD_USERNAME / DASHBOARD_PASSWORD)
+#   API + web UI:   http://localhost:${APP_PORT:-9500} (health: /health, UI: /ui)
+#   Studio + Auth:  http://localhost:${KONG_HTTP_PORT:-8000} (Studio: basic auth DASHBOARD_USERNAME / DASHBOARD_PASSWORD)
+#
+# The app runs the published image; `make build-image` tags a local build with the same
+# name, so `docker compose up` runs the current code without pulling.
+# TLS is up to you: put your own reverse proxy in front of both ports.
 
 include:
   - path: supabase/docker-compose.yml
@@ -13,9 +18,7 @@ include:
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${GEONAMES_IMAGE:-ghcr.io/neo7dev/geonames-server:latest}
     hostname: geonames-server
     restart: unless-stopped
     tty: true
@@ -31,7 +34,7 @@ services:
     networks:
       - geonames
     ports:
-      - "9500:9500"
+      - "${APP_PORT:-9500}:9500"
     env_file:
       - .env
     environment:
