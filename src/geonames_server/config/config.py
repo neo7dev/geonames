@@ -17,6 +17,11 @@ _SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 
 # Supabase Auth (GoTrue) needs a JWT secret of at least 32 characters.
 _MIN_JWT_SECRET_LENGTH = 32
+# An http(s) origin: host name or [IPv6] address, optional port, optional "/".
+_ORIGIN = (
+    r"https?://(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])"
+    r"(?::\d{1,5})?/?"
+)
 
 # Schemas owned by Postgres or Supabase. postgres_schema must not be one of them.
 _RESERVED_SCHEMAS = frozenset(
@@ -290,8 +295,10 @@ class Settings(BaseSettings):
     def validate_supabase_public_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        # The web UI's CSP lists it in connect-src, which needs a plain origin.
-        if not re.fullmatch(r"https?://[^/\s;'\"]+/?", value):
+        # The web UI's CSP lists it in connect-src, which needs a plain origin:
+        # a host name or [IPv6] address and an optional port, nothing else
+        # (no user:password@, ?query, #fragment or * wildcard).
+        if not re.fullmatch(_ORIGIN, value):
             raise ValueError(
                 f"supabase_public_url {value!r} must be an http(s) origin, "
                 "e.g. https://auth.example.com, without a path"

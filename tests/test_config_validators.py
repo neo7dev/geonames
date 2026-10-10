@@ -114,6 +114,8 @@ class TestUiSettings:
         [
             ("http://localhost:8000", "http://localhost:8000"),
             ("https://auth.example.com/", "https://auth.example.com"),
+            ("http://127.0.0.1:8000", "http://127.0.0.1:8000"),
+            ("http://[::1]:8000", "http://[::1]:8000"),
         ],
     )
     def test_supabase_url_is_an_origin(self, url, expected):
@@ -126,6 +128,12 @@ class TestUiSettings:
             "ftp://example.com",
             "https://example.com/auth/v1",
             "https://example.com; script-src *",
+            # Valid URLs, but not origins: a CSP source cannot hold them
+            "https://user:pw@auth.example.com",
+            "https://auth.example.com?x=1",
+            "https://auth.example.com#top",
+            "https://*",
+            "https://*.example.com",
         ],
     )
     def test_rejects_supabase_url_that_is_not_an_origin(self, url):
