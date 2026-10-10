@@ -610,6 +610,30 @@ class TestCreateUser:
         assert fake_gotrue == []
 
     @pytest.mark.asyncio
+    async def test_failure_after_supabase_auth_removes_the_user(
+        self, auth_client, admin, async_session, domain
+    ):
+        user_id = uuid.uuid4()
+        create = AsyncMock(return_value=user_id)  # no auth.users row, so no profile
+        delete = AsyncMock()
+        with (
+            patch.object(gotrue, "create_user", create),
+            patch.object(gotrue, "delete_user", delete),
+        ):
+            resp = await auth_client.post(
+                "/portal/admin/users",
+                json={
+                    "email": f"half@{domain}",
+                    "password": "long-enough",
+                    "role": "tester",
+                },
+                headers=admin[1],
+            )
+
+        assert resp.status_code == 500
+        delete.assert_awaited_once_with(user_id)
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("error", "status"),
         [

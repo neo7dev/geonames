@@ -54,8 +54,12 @@ async def admin_session(
     Endpoints build their response before committing: after the commit the
     session is back to the server's own database user.
     """
-    await session.execute(text(f"SET LOCAL ROLE {ADMIN_DB_ROLE}"))
+    await _act_as_admin(session)
     return session
+
+
+async def _act_as_admin(session: AsyncSession) -> None:
+    await session.execute(text(f"SET LOCAL ROLE {ADMIN_DB_ROLE}"))
 
 
 def _active_keys():
@@ -213,6 +217,8 @@ async def create_user(
     if body.role is not None:
         await _check_role(session, body.role)
 
+    # Do not keep a transaction open across the call to Supabase Auth.
+    await session.commit()
     try:
         user_id = await gotrue.create_user(
             body.email, body.password, display_name=body.display_name or None
@@ -220,18 +226,29 @@ async def create_user(
     except gotrue.GoTrueError as e:
         raise _gotrue_failed(e) from None
 
-    # The signup trigger created the profile with the default role.
-    if body.role is not None:
-        result = await session.execute(
-            update(Profile).where(Profile.id == user_id).values(role=body.role)
-        )
-        if result.rowcount == 0:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="The user was created but has no profile; is the signup trigger installed?",
+    try:
+        await _act_as_admin(session)
+        # The signup trigger created the profile with the default role.
+        if body.role is not None:
+            result = await session.execute(
+                update(Profile).where(Profile.id == user_id).values(role=body.role)
             )
-    created = await _user(session, user_id)
-    await session.commit()
+            if result.rowcount == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="The user was created but has no profile; is the signup trigger installed?",
+                )
+        created = await _user(session, user_id)
+        await session.commit()
+    except Exception:
+        # Undo the half-made user, so that trying again does not find the
+        # email address already registered.
+        await session.rollback()
+        try:
+            await gotrue.delete_user(user_id)
+        except gotrue.GoTrueError:
+            pass
+        raise
     return created
 
 
