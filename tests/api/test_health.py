@@ -1,3 +1,5 @@
+import tomllib
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -11,6 +13,10 @@ from geonames_server.config.config import settings
 from geonames_server.database.models.dataset_metadata import DatasetMetaData
 
 ROUTER = "geonames_server.api.routers.health"
+# The one place the version is set; the image is tagged with it too
+PROJECT_VERSION = tomllib.loads(
+    (Path(__file__).parents[2] / "pyproject.toml").read_text()
+)["project"]["version"]
 
 
 @pytest_asyncio.fixture
@@ -41,6 +47,7 @@ class TestHealth:
         assert response.status_code == 200
         assert response.json() == {
             "status": "ok",
+            "version": PROJECT_VERSION,
             "database": "ok",
             "redis": "not_configured",
             "datasets": {"startup": "done", "ready": ["cities15000"], "pending": []},

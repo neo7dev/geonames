@@ -15,6 +15,8 @@ class HealthResponse(BaseModel):
     # error: database unreachable (HTTP 503). degraded: serving, but Redis is down,
     # startup failed or some datasets are not built yet.
     status: Literal["ok", "degraded", "error"]
+    # The app version, also the Docker image's tag
+    version: str
     database: Literal["ok", "error"]
     redis: Literal["ok", "error", "not_configured"]
     datasets: DatasetsHealth

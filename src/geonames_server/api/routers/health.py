@@ -66,6 +66,7 @@ async def health(
 
     return HealthResponse(
         status=overall,
+        version=settings.app_version,
         database=database,
         redis=redis,
         datasets=DatasetsHealth(startup=startup, ready=ready, pending=pending),

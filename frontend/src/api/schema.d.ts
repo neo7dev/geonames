@@ -932,6 +932,8 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "degraded" | "error";
+            /** Version */
+            version: string;
             /**
              * Database
              * @enum {string}

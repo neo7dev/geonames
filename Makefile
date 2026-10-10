@@ -8,7 +8,6 @@ UVX = uvx
 PROJECT_NAME := $(shell grep -m 1 "name =" pyproject.toml | cut -d '"' -f 2)
 VERSION := $(shell grep -m 1 "version =" pyproject.toml | tr -s ' ' | cut -d '"' -f 2)
 MESSAGE ?= "manual_revision"
-VERSION ?= $(shell grep -m 1 "version =" pyproject.toml | tr -s ' ' | cut -d '"' -f 2)
 APP_NAME ?= $(shell grep -m 1 "name =" pyproject.toml | tr -s ' ' | cut -d '"' -f 2)
 
 # Help text comes from comments: `##@ Section` starts a section, and `## text` lines
@@ -331,19 +330,22 @@ remote-etag:
 
 IMAGE ?= ghcr.io/neo7dev/$(APP_NAME)
 
-## Build the image tagged latest and $(VERSION)
+## Build the image tagged $(VERSION) and latest. The version comes from
+## pyproject.toml, as does the app's own (/health, /docs).
 build-image: build-image-version
-	docker build -t $(IMAGE):latest .
+	docker tag $(IMAGE):$(VERSION) $(IMAGE):latest
 
 ## Build the image tagged $(VERSION)
 build-image-version:
-	docker build -t $(IMAGE):$(VERSION) .
+	docker build --label org.opencontainers.image.version=$(VERSION) -t $(IMAGE):$(VERSION) .
 
-## Build the image and smoke-test it before pushing: the app imports, each
-## migration chain (geonames, app) has exactly one head, and the web UI is built
-## in. Needs no database.
-image-check: build-image-version
+## Build the image and smoke-test it before pushing: the app imports and reports
+## the image's version, each migration chain (geonames, app) has exactly one head,
+## and the web UI is built in. Tags latest too, so both tags are the checked image. Needs no database.
+image-check: build-image
 	docker run --rm --entrypoint python $(IMAGE):$(VERSION) -c "import geonames_server.api.app"
+	@app_version=$$(docker run --rm --entrypoint python $(IMAGE):$(VERSION) -c "from geonames_server.config.config import settings; print(settings.app_version)" 2>/dev/null | tail -1); \
+	if [ "$$app_version" != "$(VERSION)" ]; then echo "image-check: app reports version '$$app_version', image is $(VERSION)"; exit 1; fi
 	@for chain in alembic app; do \
 		heads=$$(docker run --rm --entrypoint alembic $(IMAGE):$(VERSION) -n $$chain heads 2>/dev/null | grep -c '(head)'); \
 		if [ "$$heads" != 1 ]; then echo "image-check: $$chain chain has $$heads heads, expected 1"; exit 1; fi; \

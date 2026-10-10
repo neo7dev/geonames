@@ -1,6 +1,6 @@
 import re
-from functools import lru_cache
-from importlib.metadata import PackageNotFoundError, version
+import tomllib
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import Annotated, override
 
@@ -14,6 +14,18 @@ from geonames_server.log.mylogger import get_logger
 log = get_logger()
 
 _SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]{0,62}")
+
+# The app version lives only in pyproject.toml, which the image also ships (in /app,
+# next to src/). The project is not installed as a package, so there is no package
+# metadata to read it from.
+_PYPROJECT = Path(__file__).resolve().parents[3] / "pyproject.toml"
+
+
+@cache
+def _project_version() -> str:
+    with _PYPROJECT.open("rb") as f:
+        return tomllib.load(f)["project"]["version"]
+
 
 # Supabase Auth (GoTrue) needs a JWT secret of at least 32 characters.
 _MIN_JWT_SECRET_LENGTH = 32
@@ -63,11 +75,8 @@ class Settings(BaseSettings):
 
     @property
     def app_version(self) -> str:
-        try:
-            __version__ = version("geonames_server")
-            return __version__
-        except PackageNotFoundError:
-            return "0.1.0"  # Default version if package metadata is not available
+        # Also the Docker image's tag (Makefile VERSION)
+        return _project_version()
 
     geonames_url: str = Field(
         default="https://download.geonames.org/export/dump/",
