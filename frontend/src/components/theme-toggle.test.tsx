@@ -27,3 +27,17 @@ it('starts from the system theme', () => {
 
   expect(screen.getByRole('button', { name: 'Switch to light mode' })).toBeInTheDocument()
 })
+
+it('keeps every toggle in step, e.g. the menu one and the sidebar one', async () => {
+  prefersColorScheme('light')
+  render(
+    <>
+      <ThemeToggle />
+      <ThemeToggle />
+    </>,
+  )
+
+  await userEvent.click(screen.getAllByRole('button', { name: 'Switch to dark mode' })[0])
+
+  expect(screen.getAllByRole('button', { name: 'Switch to light mode' })).toHaveLength(2)
+})
