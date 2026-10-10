@@ -1,7 +1,9 @@
-import { BookOpen, ChartColumn, KeyRound, LayoutDashboard, Menu, X } from 'lucide-react'
+import { BookOpen, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
 
+import { useMe } from '@/api/queries'
+import { useAuth } from '@/auth/use-auth'
 import { Logo } from '@/components/logo'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -15,7 +17,7 @@ const NAV = [
 
 function Sidebar({ onNavigate, logo = true }: { onNavigate?: () => void; logo?: boolean }) {
   return (
-    <div className="flex h-full flex-col gap-4 p-3">
+    <div className="flex h-full min-w-0 flex-col gap-4 p-3">
       {logo && <Logo className="px-2 pt-1 pb-2" />}
       <nav aria-label="Main" className="flex flex-col gap-0.5">
         {NAV.map(({ to, label, icon: Icon, end }) => (
@@ -36,18 +38,46 @@ function Sidebar({ onNavigate, logo = true }: { onNavigate?: () => void; logo?: 
           </NavLink>
         ))}
       </nav>
-      <div className="mt-auto flex items-center justify-between gap-2">
-        <a
-          href="/docs"
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-        >
-          <BookOpen className="size-4" aria-hidden="true" />
-          API docs
-        </a>
-        <ThemeToggle />
+      <div className="mt-auto flex min-w-0 flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <a
+            href="/docs"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+          >
+            <BookOpen className="size-4" aria-hidden="true" />
+            API docs
+          </a>
+          <ThemeToggle />
+        </div>
+        <Account />
       </div>
+    </div>
+  )
+}
+
+function Account() {
+  const { session, signOut } = useAuth()
+  const me = useMe()
+
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-2 border-t pt-3 pl-2">
+      <div className="min-w-0 text-sm">
+        <p className="truncate font-medium" title={session?.user.email}>
+          {session?.user.email}
+        </p>
+        <p className="text-xs text-muted-foreground">{me.data ? `${me.data.tier} tier` : '\u00a0'}</p>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Sign out"
+        title="Sign out"
+        onClick={signOut}
+      >
+        <LogOut />
+      </Button>
     </div>
   )
 }

@@ -5,6 +5,8 @@ export type UiConfig = {
   password_min_length: number
 }
 
+let current: UiConfig | null = null
+
 export async function loadConfig(): Promise<UiConfig> {
   // The API's route, not a file in the build; Vite's dev server proxies it.
   const response = await fetch('/ui/config.json', {
@@ -14,5 +16,17 @@ export async function loadConfig(): Promise<UiConfig> {
     const body = await response.json().catch(() => null)
     throw new Error(body?.detail ?? `Could not load the UI config (${response.status})`)
   }
-  return response.json()
+  current = await response.json()
+  return current!
+}
+
+/** The config loaded at startup (main.tsx renders nothing before it). */
+export function uiConfig(): UiConfig {
+  if (current === null) throw new Error('The UI config is not loaded')
+  return current
+}
+
+/** For tests. */
+export function setUiConfig(config: UiConfig) {
+  current = config
 }

@@ -1,56 +1,55 @@
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createMemoryRouter, RouterProvider } from 'react-router'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it } from 'vitest'
 
-import { AppShell } from '@/components/app-shell'
+import { fakeAuth, fakeSession } from '@/test/fake-supabase'
+import { baseRoutes, mockFetch } from '@/test/fetch'
 import { prefersColorScheme } from '@/test/media'
+import { currentPath, renderApp } from '@/test/render'
 
-function renderAt(path: string) {
-  const router = createMemoryRouter(
-    [
-      {
-        element: <AppShell />,
-        children: [
-          { index: true, element: <p>overview page</p> },
-          { path: 'keys', element: <p>keys page</p> },
-          { path: 'usage', element: <p>usage page</p> },
-        ],
-      },
-    ],
-    { initialEntries: [path] },
-  )
-  render(<RouterProvider router={router} />)
-}
+beforeEach(() => {
+  prefersColorScheme('light')
+  fakeAuth.setSession(fakeSession())
+  mockFetch(baseRoutes)
+})
 
-beforeEach(() => prefersColorScheme('light'))
-afterEach(() => vi.unstubAllGlobals())
+it('marks the current page in the navigation', async () => {
+  renderApp('/keys')
 
-it('marks the current page in the navigation', () => {
-  renderAt('/keys')
-
-  const nav = screen.getAllByRole('navigation', { name: 'Main' })[0]
+  const nav = (await screen.findAllByRole('navigation', { name: 'Main' }))[0]
   expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('API keys')
-  expect(screen.getByText('keys page')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'API keys' })).toBeInTheDocument()
 })
 
 it('opens the menu, navigates and closes it again', async () => {
-  renderAt('/')
-  expect(screen.getAllByRole('navigation', { name: 'Main' })).toHaveLength(1)
+  const router = renderApp('/')
+  expect(await screen.findAllByRole('navigation', { name: 'Main' })).toHaveLength(1)
 
   await userEvent.click(screen.getByRole('button', { name: 'Open menu' }))
   const menus = screen.getAllByRole('navigation', { name: 'Main' })
   expect(menus).toHaveLength(2)
 
   await userEvent.click(menus[1].querySelector('a[href="/usage"]')!)
-  expect(screen.getByText('usage page')).toBeInTheDocument()
+  expect(currentPath(router)).toBe('/usage')
   expect(screen.getAllByRole('navigation', { name: 'Main' })).toHaveLength(1)
 })
 
-it('links to the API docs in a new tab', () => {
-  renderAt('/')
+it('links to the API docs in a new tab', async () => {
+  renderApp('/')
 
-  const docs = screen.getByRole('link', { name: 'API docs' })
+  const docs = await screen.findByRole('link', { name: 'API docs' })
   expect(docs).toHaveAttribute('href', '/docs')
   expect(docs).toHaveAttribute('target', '_blank')
+})
+
+it("shows the user's email and tier, and signs out to a plain login page", async () => {
+  const router = renderApp('/usage')
+
+  expect((await screen.findAllByText('ada@example.com'))[0]).toBeInTheDocument()
+  expect(await screen.findByText('basic tier')).toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+
+  expect(fakeAuth.signOut).toHaveBeenCalledWith({ scope: 'local' })
+  expect(currentPath(router)).toBe('/login')
 })

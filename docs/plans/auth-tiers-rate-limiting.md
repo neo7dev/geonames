@@ -276,7 +276,7 @@ Branch `phase-6-frontend` from `main`.
 | `/usage` | The three current windows; a bar chart of daily requests with 7 / 30 / 90 days (`?days=`); the per-key table for this month (revoked keys marked). `live: false` shows a note that live counts are unavailable and the minute as "—" |
 
 - **Navigation.** A left sidebar: app name, then Overview, API keys, Usage; at the bottom API docs (`/docs`, new tab), the theme switch, and the user's email with a menu holding sign out (`auth.signOut({scope: 'local'})`, then `/login`). Below 768 px the sidebar collapses behind a menu button.
-- **API client** (`src/api/client.ts`): reads the current access token from supabase-js for each call and sends it as `Authorization: Bearer`. A 401 signs out and goes to `/login?next=...`. A 403 (suspended or no profile) shows a full-page "account suspended, ask an admin" with sign out. Other errors show the API's `detail` in a toast. 422 details map to form fields where there is one.
+- **API client** (`src/api/client.ts`): reads the current access token from supabase-js for each call and sends it as `Authorization: Bearer`. A 401 signs out and goes to `/login?next=...`. A 403 (suspended or no profile) shows a full-page "account suspended, ask an admin" with sign out. Other errors show the API's `detail` in an inline alert where the action was taken (no toasts: they slide in, and the design has no motion). 422 details map to form fields where there is one. Signing out from the sidebar goes to a plain `/login`, without a `next` back to the page left.
 - **Numbers.** Null limits show as "Unlimited"; counts use `Intl.NumberFormat`; `resets_at` shows as relative time ("in 42 s", "in 3 days") with the UTC time in a tooltip. Days on the chart are UTC days, labelled as such.
 - **Passwords of 8 or more characters.** GoTrue's default minimum is 6; Supabase advises against anything under 8. `PASSWORD_MIN_LENGTH = 8` in every env file feeds GoTrue (`GOTRUE_PASSWORD_MIN_LENGTH`, default 8 in the compose file) and the app, which passes it to the UI in `config.json`, so the form and the server agree. No character-class rules (length matters more) and no leaked-password check (`GOTRUE_PASSWORD_HIBP_ENABLED` sends hash prefixes to an outside service; not for now). The dev seed password, `dev-password`, is 12 characters.
 - **Email and password only for now.** GitHub and Google login come later in this phase (below), so the first cut ships without needing OAuth apps.
@@ -320,7 +320,7 @@ Rules:
   - No `index.html`: `/ui/` is 404 with the build hint; `/ui/config.json` still works.
   - `GET /` redirects to `/ui/`. `/ui` routes need no API key and are absent from `/openapi.json`.
 - `frontend` (Vitest + Testing Library, `jsdom`; Supabase and `fetch` mocked):
-  - API client: sends the bearer token; a 401 signs out and redirects with `next`; a 403 shows the suspended page; `detail` reaches the toast.
+  - API client: sends the bearer token; a 401 signs out and redirects with `next`; a 403 shows the suspended page; `detail` reaches the inline alert.
   - Login: "Email not confirmed" offers resend. Signup is hidden when `disable_signup`.
   - Route guard: no session goes to `/login?next=/keys`; after login, back to `/keys`.
   - Keys: the created key is shown once and gone after the dialog closes; create is disabled at `max_keys` with the tier message; a 409 shows the API's message; a name of 65 characters is refused before sending; revoke asks first.

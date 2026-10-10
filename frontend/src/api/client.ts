@@ -8,6 +8,9 @@ export type ApiKey = Schemas['ApiKeyResponse']
 export type CreatedApiKey = Schemas['CreatedApiKeyResponse']
 export type Usage = Schemas['UsageResponse']
 
+/** Fired when the API refuses the account (403): banned, deleted or without a profile. */
+export const SUSPENDED_EVENT = 'geonames:suspended'
+
 /** A non-2xx answer from the API, with FastAPI's `detail` when it sent one. */
 export class ApiError extends Error {
   readonly status: number
@@ -32,6 +35,13 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...init, headers })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
+    if (response.status === 401) {
+      // The login token is no longer accepted: sign out, and the route guard
+      // sends the user to the login page and back here afterwards.
+      await supabase().auth.signOut({ scope: 'local' })
+    } else if (response.status === 403) {
+      window.dispatchEvent(new Event(SUSPENDED_EVENT))
+    }
     throw new ApiError(response.status, body?.detail ?? null)
   }
   return (response.status === 204 ? undefined : await response.json()) as T

@@ -1,22 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { api, ApiError } from '@/api/client'
-
-const getSession = vi.fn()
-
-vi.mock('@/lib/supabase', () => ({
-  supabase: () => ({ auth: { getSession } }),
-}))
-
-function respond(status: number, body?: unknown) {
-  const fetch = vi.fn(async () =>
-    body === undefined
-      ? new Response(null, { status })
-      : new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }),
-  )
-  vi.stubGlobal('fetch', fetch)
-  return fetch
-}
+import { api, ApiError, SUSPENDED_EVENT } from '@/api/client'
+import { fakeAuth, fakeSession } from '@/test/fake-supabase'
+import { mockFetch } from '@/test/fetch'
 
 async function failure(call: Promise<unknown>): Promise<ApiError> {
   try {
@@ -28,49 +14,42 @@ async function failure(call: Promise<unknown>): Promise<ApiError> {
   throw new Error('expected the call to fail')
 }
 
-beforeEach(() => {
-  vi.unstubAllGlobals()
-  getSession.mockResolvedValue({ data: { session: { access_token: 'login-token' } } })
-})
+const headersOf = (fetch: ReturnType<typeof mockFetch>) =>
+  new Headers((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].headers)
 
 describe('api', () => {
   it('sends the login token and returns the JSON body', async () => {
-    const fetch = respond(200, { tier: 'basic' })
+    fakeAuth.setSession(fakeSession())
+    const fetch = mockFetch({ '/portal/me': { body: { tier: 'basic' } } })
 
     expect(await api('/portal/me')).toEqual({ tier: 'basic' })
-
-    const [path, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
-    expect(path).toBe('/portal/me')
-    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer login-token')
+    expect(headersOf(fetch).get('Authorization')).toBe('Bearer login-token')
   })
 
   it('sends JSON bodies as JSON', async () => {
-    const fetch = respond(201, { id: 'k' })
+    const fetch = mockFetch({ '/portal/keys': { status: 201, body: { id: 'k' } } })
 
     await api('/portal/keys', { method: 'POST', body: JSON.stringify({ name: 'ci' }) })
 
-    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
-    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
+    expect(headersOf(fetch).get('Content-Type')).toBe('application/json')
   })
 
   it('sends no Authorization header when signed out', async () => {
-    getSession.mockResolvedValue({ data: { session: null } })
-    const fetch = respond(200, {})
+    const fetch = mockFetch({ '/portal/me': { body: {} } })
 
     await api('/portal/me')
 
-    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
-    expect(new Headers(init.headers).has('Authorization')).toBe(false)
+    expect(headersOf(fetch).has('Authorization')).toBe(false)
   })
 
   it('returns nothing for 204', async () => {
-    respond(204)
+    mockFetch({ '/portal/keys/1': { status: 204 } })
 
     expect(await api('/portal/keys/1', { method: 'DELETE' })).toBeUndefined()
   })
 
   it("raises ApiError with the API's detail", async () => {
-    respond(409, { detail: 'The basic tier allows 1 active API key(s)' })
+    mockFetch({ '/portal/keys': { status: 409, body: { detail: 'The basic tier allows 1 active API key(s)' } } })
 
     const error = await failure(api('/portal/keys', { method: 'POST' }))
 
@@ -84,5 +63,25 @@ describe('api', () => {
     const error = await failure(api('/portal/me'))
 
     expect(error.message).toBe('Request failed (502)')
+  })
+
+  it('signs out when the login token is refused', async () => {
+    fakeAuth.setSession(fakeSession())
+    mockFetch({ '/portal/me': { status: 401, body: { detail: 'Login token expired' } } })
+
+    expect((await failure(api('/portal/me'))).status).toBe(401)
+    expect(fakeAuth.signOut).toHaveBeenCalledWith({ scope: 'local' })
+  })
+
+  it('reports a suspended account', async () => {
+    const onSuspended = vi.fn()
+    window.addEventListener(SUSPENDED_EVENT, onSuspended)
+    mockFetch({ '/portal/me': { status: 403, body: { detail: 'suspended' } } })
+
+    await failure(api('/portal/me'))
+
+    expect(onSuspended).toHaveBeenCalledOnce()
+    expect(fakeAuth.signOut).not.toHaveBeenCalled()
+    window.removeEventListener(SUSPENDED_EVENT, onSuspended)
   })
 })

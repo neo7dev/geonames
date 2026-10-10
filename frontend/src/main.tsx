@@ -1,4 +1,6 @@
 import './index.css'
+// Before Supabase starts and clears the fragment of an email link.
+import '@/auth/initial-url'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
