@@ -304,14 +304,16 @@ build-image: build-image-version
 build-image-version:
 	docker build -t $(IMAGE):$(VERSION) .
 
-## Build the image and smoke-test it before pushing: the app imports, and each
-## migration chain (geonames, app) has exactly one head. Needs no database.
+## Build the image and smoke-test it before pushing: the app imports, each
+## migration chain (geonames, app) has exactly one head, and the web UI is built
+## in. Needs no database.
 image-check: build-image-version
 	docker run --rm --entrypoint python $(IMAGE):$(VERSION) -c "import geonames_server.api.app"
 	@for chain in alembic app; do \
 		heads=$$(docker run --rm --entrypoint alembic $(IMAGE):$(VERSION) -n $$chain heads 2>/dev/null | grep -c '(head)'); \
 		if [ "$$heads" != 1 ]; then echo "image-check: $$chain chain has $$heads heads, expected 1"; exit 1; fi; \
 	done
+	@docker run --rm --entrypoint python $(IMAGE):$(VERSION) -c "from geonames_server.config.config import settings as s; assert (s.ui_root / 'index.html').is_file(), f'no web UI in {s.ui_root}'; print(f'web UI in {s.ui_root}')"
 	@echo "image-check: $(IMAGE):$(VERSION) ok"
 
 ## Push the image tagged latest and $(VERSION)

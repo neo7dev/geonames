@@ -16,6 +16,20 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, 'src') },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // Libraries change less often than the app, so they get their own
+        // long-cached chunks. Recharts stays with the lazily loaded usage page.
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/ },
+            { name: 'supabase', test: /node_modules[\\/]@supabase[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   server: {
     // Inside the devcontainer: listen on all interfaces so the host reaches it.
     host: true,

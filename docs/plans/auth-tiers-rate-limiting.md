@@ -25,8 +25,8 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | 2. Schema split | Done | Geonames tables move to a `geonames` schema, kept separate from user data and Supabase's own tables | Tests show the tables in `geonames` and nothing left in `public` |
 | 3. Deploy image + compose | Done | Prod Dockerfile; root compose with the same services as dev, plus Redis; startup no longer waits for data loads; public `/health` | `docker compose up` brings it all up, `/health` returns 200, Studio opens |
 | 4. Auth + API keys | Done (merged to `main` 2026-10-09) | Tiers, roles and user tables; new signups get the default role (free); login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
-| 5. Rate limits + quota | Done (branch `phase-5-rate-limits`, not merged) | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
-| 6. Frontend | Scoped (below) | React + Vite + Tailwind + shadcn at `/ui`: signup/login with email + password (GitHub and Google later in the phase), key management, usage page | Sign up, create a key, call the API, see the usage update |
+| 5. Rate limits + quota | Done (merged to `main` with its review fixes) | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
+| 6. Frontend | Built on `phase-6-frontend` (not merged); GitHub and Google login later | React + Vite + Tailwind + shadcn at `/ui`: signup/login with email + password (GitHub and Google later in the phase), key management, usage page | Sign up, create a key, call the API, see the usage update |
 | 7. Ops (later) | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry | Image published to ghcr |
 
 ## Tiers
@@ -490,6 +490,26 @@ A `/code-review` of phase 5 found 15 issues; each fix is one commit.
   - A read timeout after which Redis had not run the script leaves that request uncounted. Telling it from a connect timeout relies on redis-py's message (see Risks).
   - A rebuild from Postgres for a user who is not an outage user can, in a narrow race, count a request twice: Redis fails for the user's other request while the rebuild reads Postgres, and that request is flushed before the read. Closing it would need the lock around every rebuild, which would queue all users' rebuilds at the start of a month.
   - In-memory counts are lost if the process stops before they reach Postgres.
+
+### Phase 6: Frontend (`91950a9`..increment 6, branch `phase-6-frontend`)
+
+Built as scoped above in six increments, each checked live in a browser (gstack's headless browser) against the devcontainer's Supabase Auth, Mailpit and API.
+
+- Increment 0 (`db58a43`, `391daab`, `565b22a`): `PASSWORD_MIN_LENGTH = 8` feeds GoTrue (a 7-character signup gets 422 `weak_password`); Node 24 in the devcontainer, Vite's port 5173 published.
+- Increment 1 (`128e290`): `/ui` serving, `/ui/config.json`, the CSP, `/` redirecting to `/ui/`, `SITE_URL = .../ui/` (checked: a refused redirect now lands on `/ui/`).
+- Increment 2 (`48dcfe5`): `frontend/` scaffold, the green theme, the instant light/dark switch, `make ui-*` targets.
+- Increment 3 (`5dfff03`): auth pages. Checked live: signup with the Mailpit link landing on the page asked for, wrong and right password, password reset, a used link, a ban showing the suspended page.
+- Increment 4 (`c0b7461`): keys page. Checked live: a key created in the UI answers 200, is gone from the page after Done, and gets 401 once revoked.
+- Increment 5 (`01f1527`): overview and usage pages, chart per the dataviz rules.
+- Increment 6: the Dockerfile's Node stage, `image-check` asserting the UI is in the image, README "Web UI", this progress.
+- Changed from the scope:
+  - Errors show as inline alerts, not toasts (toasts slide in; the design has no motion).
+  - The sidebar shows the user's email and tier with a sign-out button instead of a menu; signing out goes to a plain `/login`.
+  - The chart's green is green-600 in both themes (the dataviz validator put green-500 outside the dark lightness band), on solid hairline gridlines rather than dashed.
+  - The usage page loads lazily, so Recharts (343 kB) downloads only there; React and Supabase are separate long-cached chunks. The first load is about 680 kB (200 kB gzipped).
+  - `openapi-typescript` declares TypeScript 5 as a peer; an npm `overrides` entry lets it use the project's TypeScript 6.
+- Tests: 89 frontend tests (Vitest, against a fake Supabase client and the real routes) and `tests/api/test_ui.py`.
+- Left for increment 7: the full smoke test from the plan, including the Vite dev server's email links and the root compose stack serving `/ui/` from the image.
 
 ## Risks
 

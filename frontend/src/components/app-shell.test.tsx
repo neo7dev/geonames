@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it } from 'vitest'
 
@@ -30,7 +30,8 @@ it('opens the menu, navigates and closes it again', async () => {
   expect(menus).toHaveLength(2)
 
   await userEvent.click(menus[1].querySelector('a[href="/usage"]')!)
-  expect(currentPath(router)).toBe('/usage')
+  // The usage page loads lazily.
+  await waitFor(() => expect(currentPath(router)).toBe('/usage'))
   expect(screen.getAllByRole('navigation', { name: 'Main' })).toHaveLength(1)
 })
 

@@ -1,3 +1,12 @@
+# Web UI: built here, served by the API at /ui. Nothing Node runs in the final image.
+FROM node:24-slim AS ui
+WORKDIR /ui
+# Packages first, so a code change does not reinstall them.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.24 /uv /usr/local/bin/uv
@@ -21,6 +30,7 @@ COPY alembic.ini .
 COPY migrations/ migrations/
 COPY src/ src/
 COPY entrypoint.sh /entrypoint.sh
+COPY --from=ui /ui/dist /app/ui
 
 RUN mkdir -p data/cache data/geonames logs
 
@@ -29,6 +39,7 @@ ENV PGID=1000
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
+ENV UI_DIR=/app/ui
 
 EXPOSE 9500
 

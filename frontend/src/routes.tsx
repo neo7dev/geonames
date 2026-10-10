@@ -12,7 +12,6 @@ import { OverviewPage } from '@/pages/overview/overview-page'
 import { ResetPasswordPage } from '@/pages/reset-password'
 import { SignupPage } from '@/pages/signup'
 import { UpdatePasswordPage } from '@/pages/update-password'
-import { UsagePage } from '@/pages/usage/usage-page'
 
 export const routes: RouteObject[] = [
   {
@@ -45,7 +44,11 @@ export const routes: RouteObject[] = [
             children: [
               { index: true, element: <OverviewPage /> },
               { path: 'keys', element: <KeysPage /> },
-              { path: 'usage', element: <UsagePage /> },
+              // The chart library loads only when this page opens.
+              {
+                path: 'usage',
+                lazy: async () => ({ Component: (await import('@/pages/usage/usage-page')).UsagePage }),
+              },
               { path: '*', element: <NotFound /> },
             ],
           },

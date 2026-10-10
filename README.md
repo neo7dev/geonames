@@ -1,6 +1,6 @@
 # GeoNames Server
 
-GeoNames Server is a FastAPI + PostgreSQL service that mirrors core GeoNames dumps into local database tables and exposes them through queryable REST endpoints.
+GeoNames Server is a FastAPI + PostgreSQL service that mirrors core GeoNames dumps into local database tables and exposes them through queryable REST endpoints. Users sign up in its [web UI](#web-ui) to get API keys and see their usage.
 
 At startup, the app:
 1. Verifies database connectivity.
@@ -166,9 +166,25 @@ curl -X POST -H "X-API-Key: $API_KEY" http://localhost:9500/sync/
 curl -H "X-API-Key: $API_KEY" "http://localhost:9500/sync/<sync_id>"
 ```
 
+## Web UI
+
+The API serves a web UI at `/ui` (and redirects `/` there): http://localhost:9500/ui/ locally. Users:
+- **Sign up and log in** with email and password (Supabase Auth). Signup sends a confirmation link; in dev it lands in Mailpit at http://localhost:8025. Passwords need at least `PASSWORD_MIN_LENGTH` (8) characters. "Forgot password?" emails a reset link.
+- **Overview**: the current minute, hour and month against their tier's limits (refreshed every 10 s), the tier's limits, and a curl example.
+- **API keys**: create a key (shown once, with a copy button), see each key's prefix and last use, revoke keys. The tier's key limit is enforced.
+- **Usage**: requests per day for the last 7, 30 or 90 UTC days (also as a table), and this month's requests per key.
+
+There is no admin page: admins use Supabase Studio, as described below. Light and dark mode follow the system until switched in the sidebar.
+
+How it is served:
+- The UI is a React single-page app in `frontend/`, built with Vite into static files. The Docker image builds it in a Node stage and the API serves the files from `UI_DIR` (`/app/ui` in the image); nothing Node runs in production.
+- The browser talks to Supabase Auth directly at `SUPABASE_PUBLIC_URL` with the public `ANON_KEY`; the API hands both to the page at `/ui/config.json`, so one image fits any deployment. `SUPABASE_PUBLIC_URL` must be reachable from users' browsers.
+- Email links (confirmation, reset) return to the page that sent them. `SITE_URL` is where Supabase Auth sends a link that names no allowed page: set it to the UI's public URL (`https://geo.example.com/ui/`). A UI on any other origin must be listed in `ADDITIONAL_REDIRECT_URLS`.
+- The login session is kept in the browser's `localStorage`, so `/ui` responses carry a strict Content-Security-Policy that only allows the app's own scripts.
+
 ## Authentication
 
-Accounts live in Supabase Auth; the API checks two kinds of credential:
+Accounts live in Supabase Auth, usually created through the [web UI](#web-ui); the API checks two kinds of credential:
 - **API keys** (`X-API-Key` header) for the data endpoints and `/sync`.
 - **Login tokens** (`Authorization: Bearer <access_token>` from Supabase Auth) for `/portal`, where users manage their keys.
 
@@ -194,7 +210,7 @@ In the devcontainer, `make seed-users` (also run on every container start) creat
 
 Rerunning it restores their roles and keys. It refuses unless `DEV_SEED_USERS=true`, which only `.env.dev` sets: never enable it or the keys on a deployed server. The seed key fills the free user's only key slot.
 
-Outside the devcontainer, get a key with curl. `ANON_KEY` is in `.env`; Kong requires it on the Auth API:
+The web UI does all of this; to script it instead, get a key with curl. `ANON_KEY` is in `.env`; Kong requires it on the Auth API:
 
 ```bash
 # 1. Sign up, then open the confirmation email (Mailpit at http://localhost:8025 in dev) and follow its link
@@ -294,7 +310,7 @@ docker compose up --build
 ```
 
 This starts:
-- `app` (FastAPI on port `9500`)
+- `app` (FastAPI on port `9500`, with the web UI at `/ui`)
 - `db` (Supabase Postgres 17, internal network). Holds geonames data and Supabase auth
 - `auth` (Supabase Auth: signup, login, OAuth), `meta` and `studio`
 - `kong` on port `8000`: Supabase Studio admin dashboard at `/` (basic auth `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`) and the Auth API at `/auth/v1`
@@ -317,6 +333,7 @@ curl "http://localhost:9500/health"
 Until a dataset's first build finishes, its endpoints answer `503` with a `Retry-After` header instead of an empty result. A dataset that is rebuilt because it is out of date keeps serving its current data.
 
 Open:
+- `http://localhost:9500/ui/` to sign up and create an API key
 - `http://localhost:9500/docs`
 
 Quick API check:
@@ -357,6 +374,10 @@ Main runtime settings (environment variables):
 - `AUTH_CACHE_SECONDS` (default `60`; how long an API key lookup is cached, so role, tier, ban and Studio revoke changes apply within it; `0` turns the cache off)
 - `USAGE_FLUSH_SECONDS` (default `300`; how often request counts are copied from Redis to Postgres)
 - `JWT_SECRET` (Supabase Auth's JWT secret; required, used to verify login tokens on `/portal`)
+- `SUPABASE_PUBLIC_URL` (Supabase's address as users' browsers reach it, e.g. `https://auth.example.com`; the web UI calls Supabase Auth there. Unset: `/ui/config.json` answers 503)
+- `ANON_KEY` (Supabase's public anon key, passed to the web UI)
+- `PASSWORD_MIN_LENGTH` (default `8`; also passed to Supabase Auth as `GOTRUE_PASSWORD_MIN_LENGTH`, so the signup form and the server agree)
+- `UI_DIR` (default `frontend/dist`; the built web UI. The image sets `/app/ui`)
 - `GEONAMES_URL`
 - `ENABLED_DATASETS`
 - `MAX_RESULTS`
@@ -390,13 +411,14 @@ Please keep proper attribution to GeoNames in downstream uses of this data and r
 - API implementation lives under `src/geonames_server/api`.
 - Ingestion and sync logic lives under `src/geonames_server/ingestion`.
 - Alembic migrations are under `migrations/`.
-- A generated OpenAPI snapshot is in `openapi.yaml`.
+- A generated OpenAPI snapshot is in `openapi.yaml` (`make openapi` regenerates it).
+- The web UI lives in `frontend/` (Vite, React, TypeScript, Tailwind, shadcn components). In the devcontainer, which has Node 24, `make ui-dev` serves it with hot reload at http://localhost:5173/ui/ and passes API calls to uvicorn on 9500 (start the API with `make run` too). `make ui-build` builds it into `frontend/dist`, which the API serves at http://localhost:9500/ui/. After changing a portal endpoint, run `make openapi` then `make ui-types` so the UI's TypeScript types follow; `make ui-types-check` fails while they are stale.
 
 ### Checks before deploying
 
 Ruff is a dev dependency (`uv sync` installs it), with its rules in `pyproject.toml`. `make lint` / `make format` fix what they can; `make lint-check` / `make format-check` only report.
 
-Before deploying, run `make predeploy` in the devcontainer. It runs the lint and format checks, `uv lock --check` (the image installs from `uv.lock`) and the whole test suite, including the Postgres tests (`make tests-pg`, against the throwaway `geonames_test` database; see `.devcontainer/README.md`). Then run `make image-check` where Docker runs (the host): it builds the image and checks that the app imports and that each migration chain has exactly one head. `make push-image` publishes it.
+Before deploying, run `make predeploy` in the devcontainer. It runs the lint and format checks, `uv lock --check` (the image installs from `uv.lock`), the whole test suite, including the Postgres tests (`make tests-pg`, against the throwaway `geonames_test` database; see `.devcontainer/README.md`), and the web UI's lint, type check, tests and type freshness (`make ui-lint ui-test ui-types-check`). Then run `make image-check` where Docker runs (the host): it builds the image and checks that the app imports, that each migration chain has exactly one head, and that the web UI is built in. `make push-image` publishes it.
 
 ### Simulated downloads in development
 
