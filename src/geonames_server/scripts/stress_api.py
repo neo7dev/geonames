@@ -73,7 +73,7 @@ async def run_load(
     seed: int | None = None,
 ) -> list[Result]:
     """Call with *concurrency* workers until *duration* seconds or *requests* calls."""
-    deadline = time.monotonic() + duration if duration else None
+    deadline = time.monotonic() + duration if duration is not None else None
     left = requests
     results: list[Result] = []
 
@@ -461,6 +461,18 @@ async def _limits(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _positive(kind: type[int] | type[float]):
+    """An argparse type for numbers above 0: --duration 0 would never stop."""
+
+    def parse(value: str) -> int | float:
+        number = kind(value)
+        if number <= 0:
+            raise argparse.ArgumentTypeError(f"must be above 0, not {value}")
+        return number
+
+    return parse
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -476,10 +488,14 @@ def main(argv: list[str] | None = None) -> None:
 
     load = sub.add_parser("load", help="concurrent traffic, then latency and statuses")
     common(load)
-    load.add_argument("--concurrency", type=int, default=5, help="workers per user")
-    load.add_argument("--duration", type=float, default=30, help="seconds (default 30)")
     load.add_argument(
-        "--requests", type=int, help="calls per user instead of a duration"
+        "--concurrency", type=_positive(int), default=5, help="workers per user"
+    )
+    load.add_argument(
+        "--duration", type=_positive(float), default=30, help="seconds (default 30)"
+    )
+    load.add_argument(
+        "--requests", type=_positive(int), help="calls per user instead of a duration"
     )
     load.add_argument(
         "--path", help="call only this route (default: random data requests)"

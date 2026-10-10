@@ -80,6 +80,28 @@ async def test_run_load_makes_exactly_the_requested_calls():
     assert all(c.headers["X-API-Key"] == "gn_key" for c in calls)
 
 
+@pytest.mark.asyncio
+async def test_run_load_with_no_time_left_makes_no_calls():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[])),
+        base_url="http://test",
+    ) as http:
+        results = await run_load(
+            ApiClient("gn_key", client=http), concurrency=2, duration=0
+        )
+
+    assert results == []
+
+
+@pytest.mark.parametrize("option", ["--duration", "--requests", "--concurrency"])
+def test_load_refuses_a_count_that_is_not_above_zero(option, capsys):
+    with pytest.raises(SystemExit) as exit_:
+        stress_api.main(["load", option, "0"])
+
+    assert exit_.value.code == 2
+    assert "must be above 0" in capsys.readouterr().err
+
+
 def test_summarise_counts_statuses_and_failures():
     results = [Result("/", 200, 0.01 * n) for n in range(1, 11)] + [
         Result("/", 429, 0.001),
