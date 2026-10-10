@@ -312,7 +312,8 @@ make supabase-keys
 
 Also set:
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD`: the first start creates this admin account, so you can log in at `/ui` and manage users. Ignored once an admin exists; remove the password afterwards.
-- The public URLs (`SUPABASE_PUBLIC_URL`, `API_EXTERNAL_URL`, `SITE_URL`) and the SMTP settings for confirmation emails.
+- The public URLs (`SUPABASE_PUBLIC_URL`, `API_EXTERNAL_URL`, `SITE_URL`).
+- SMTP settings, optional. Without them no email goes out, but Supabase Auth still answers as if it did: a signup stays unconfirmed and cannot log in, and "Forgot password?" sends nothing. So without SMTP set `DISABLE_SIGNUP=true` (the UI then hides "Sign up") and create accounts on the Administration page; those are confirmed at once, and users can change their password on their profile page.
 - `APP_PORT` (default `9500`) and `KONG_HTTP_PORT` (default `8000`) if those host ports are taken.
 
 TLS is not part of the stack: put your own reverse proxy (Caddy, nginx, Traefik) in front of the app port and Kong's `/auth/v1`, and use the `https://` addresses in the public URLs. Keep `POSTGRES_USER=postgres`, `POSTGRES_HOST=db` and `POSTGRES_DB=postgres`: Supabase expects that database name.
