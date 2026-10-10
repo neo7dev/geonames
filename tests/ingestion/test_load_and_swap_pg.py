@@ -90,7 +90,14 @@ def test_replaces_contents_and_keeps_schema(conn, tmp_path):
     _run(_file(tmp_path, [_row(2, "New"), _row(3, "New")]))
 
     assert _names(conn) == ["New2", "New3"]
-    assert set(_index_names(conn)) == {"cities500_pkey", "ix_cities500_geonameid"}
+    # Every index, the trigram ones too, is rebuilt on the new table
+    assert set(_index_names(conn)) == {
+        "cities500_pkey",
+        "ix_cities500_geonameid",
+        "ix_cities500_name_trgm",
+        "ix_cities500_asciiname_trgm",
+        "ix_cities500_population",
+    }
     assert _scalar(conn, "SELECT to_regclass('cities500_new') IS NULL")
     assert _scalar(conn, "SELECT to_regclass('cities500_old') IS NULL")
 

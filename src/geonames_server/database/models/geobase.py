@@ -1,13 +1,29 @@
 from datetime import date
 
-from sqlalchemy import BigInteger, Date, Float, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, Date, Float, Index, Integer, String
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
+from geonames_server.database.extensions import GIN_TRGM_OPS
 from geonames_server.database.models.base import Base
 
 
 class GeoBase(Base):
     __abstract__ = True
+
+    @declared_attr.directive
+    def __table_args__(cls) -> tuple:
+        """Indexes for the /filter routes: substring name searches (trigram) and
+        population ranges and ordering. Load-and-swap copies them to new tables."""
+        table = cls.__tablename__
+        return tuple(
+            Index(
+                f"ix_{table}_{column}_trgm",
+                column,
+                postgresql_using="gin",
+                postgresql_ops={column: GIN_TRGM_OPS},
+            )
+            for column in ("name", "asciiname")
+        ) + (Index(f"ix_{table}_population", "population"),)
 
     geonameid: Mapped[int] = mapped_column(
         Integer,

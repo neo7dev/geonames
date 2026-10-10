@@ -115,6 +115,15 @@ def _create_legacy_layout() -> None:
     conn = psycopg2.connect(DSN)
     try:
         with conn.cursor() as cur:
+            # Today's models have indexes later revisions added; the legacy tables did not
+            cur.execute(
+                "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' "
+                "AND (indexname LIKE '%%\\_trgm' OR indexname LIKE '%%\\_population')"
+            )
+            for (name,) in cur.fetchall():
+                cur.execute(
+                    sql.SQL("DROP INDEX public.{}").format(sql.Identifier(name))
+                )
             cur.execute(
                 "CREATE TABLE public.alembic_version ("
                 "version_num varchar(32) PRIMARY KEY)"
@@ -307,3 +316,49 @@ def test_migrations_check_where_app_connections_resolve_tables(with_search_path)
                     migrations.db_migrations()
     finally:
         engine.dispose()
+
+
+SEARCH_INDEXED = [
+    "allcountries",
+    "cities500",
+    "cities1000",
+    "cities5000",
+    "cities15000",
+]
+
+
+def _search_indexes() -> set[tuple[str, str, str]]:
+    """(table, index, kind): trigram or btree. indexdef prints the opclass with or
+    without its schema depending on the reader's search_path, so it is not compared."""
+    return {
+        (table, name, "trigram" if "gin_trgm_ops" in definition else "btree")
+        for table, name, definition in _query(
+            "SELECT tablename, indexname, indexdef FROM pg_indexes "
+            "WHERE schemaname = %s "
+            "AND (indexname LIKE '%%\\_trgm' OR indexname LIKE '%%\\_population')",
+            SCHEMA,
+        )
+    }
+
+
+def test_search_indexes_are_created_and_dropped():
+    cfg = _alembic_config()
+    command.upgrade(cfg, "head")
+
+    assert _search_indexes() == {
+        index
+        for table in [*SEARCH_INDEXED, "modifications"]
+        for index in [
+            (table, f"ix_{table}_name_trgm", "trigram"),
+            (table, f"ix_{table}_asciiname_trgm", "trigram"),
+            (table, f"ix_{table}_population", "btree"),
+        ]
+    }
+    assert _query(
+        "SELECT extnamespace::regnamespace::text FROM pg_extension "
+        "WHERE extname = 'pg_trgm'"
+    ) == [("extensions",)]
+
+    command.downgrade(cfg, "-1")
+
+    assert _search_indexes() == set()
