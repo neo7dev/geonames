@@ -109,6 +109,10 @@ run: ui-build
 openapi:
 	$(UV) run python -m geonames_server.scripts.openapi
 
+## Fail if openapi.yaml is out of date with the app's routes
+openapi-check:
+	@$(UV) run python -m geonames_server.scripts.openapi --check
+
 ## Run the test suite (the *_pg.py tests skip without TEST_PG_DSN, the Redis tests
 ## without TEST_REDIS_URL; see tests-pg)
 tests: sync-dev
@@ -157,7 +161,7 @@ lock-check:
 ## Run every check before deploying: lint, formatting, lockfile and all tests,
 ## for the API and the web UI. Run it in the devcontainer, then `make image-check`
 ## where Docker runs.
-predeploy: lint-check format-check lock-check tests-pg ui-lint ui-test ui-types-check
+predeploy: lint-check format-check lock-check openapi-check tests-pg ui-lint ui-test ui-types-check
 	@echo "predeploy: all checks passed"
 
 ## Remove caches and build artifacts
@@ -355,4 +359,4 @@ push-image: push-image-version
 push-image-version:
 	docker push $(IMAGE):$(VERSION)
 
-.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version
+.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version

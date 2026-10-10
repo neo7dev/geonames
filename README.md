@@ -420,14 +420,14 @@ Please keep proper attribution to GeoNames in downstream uses of this data and r
 - API implementation lives under `src/geonames_server/api`.
 - Ingestion and sync logic lives under `src/geonames_server/ingestion`.
 - Alembic migrations are under `migrations/`.
-- A generated OpenAPI snapshot is in `openapi.yaml` (`make openapi` regenerates it).
+- A generated OpenAPI snapshot is in `openapi.yaml` (`make openapi` regenerates it; `make openapi-check` fails while it is stale).
 - The web UI lives in `frontend/` (Vite, React, TypeScript, Tailwind, shadcn components). In the devcontainer, which has Node 24, `make ui-dev` serves it with hot reload at http://localhost:5173/ui/ and passes API calls to uvicorn on 9500 (start the API with `make run` too). `make ui-build` builds it into `frontend/dist`, which the API serves at http://localhost:9500/ui/; `make run` builds it first, so the API always serves the current UI. After changing a portal endpoint, run `make openapi` then `make ui-types` so the UI's TypeScript types follow; `make ui-types-check` fails while they are stale.
 
 ### Checks before deploying
 
 Ruff is a dev dependency (`uv sync` installs it), with its rules in `pyproject.toml`. `make lint` / `make format` fix what they can; `make lint-check` / `make format-check` only report.
 
-Before deploying, run `make predeploy` in the devcontainer. It runs the lint and format checks, `uv lock --check` (the image installs from `uv.lock`), the whole test suite, including the Postgres tests (`make tests-pg`, against the throwaway `geonames_test` database; see `.devcontainer/README.md`), and the web UI's lint, type check, tests and type freshness (`make ui-lint ui-test ui-types-check`). Then run `make image-check` where Docker runs (the host): it builds the image and checks that the app imports, that each migration chain has exactly one head, and that the web UI is built in. `make push-image` publishes it.
+Before deploying, run `make predeploy` in the devcontainer. It runs the lint and format checks, `uv lock --check` (the image installs from `uv.lock`), `make openapi-check` (`openapi.yaml` matches the app), the whole test suite, including the Postgres tests (`make tests-pg`, against the throwaway `geonames_test` database; see `.devcontainer/README.md`), and the web UI's lint, type check, tests and type freshness (`make ui-lint ui-test ui-types-check`). Then run `make image-check` where Docker runs (the host): it builds the image and checks that the app imports, that each migration chain has exactly one head, and that the web UI is built in. `make push-image` publishes it.
 
 ### Simulated downloads in development
 
