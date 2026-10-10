@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { stayOpen } from '@/pages/keys/stay-open'
 
 /**
  * Name a key, then show it once. The key lives only in this component's state,
@@ -49,8 +50,9 @@ function CreateKeyContent({ onDone }: { onDone: () => void }) {
   // ApiError carries the API's detail, e.g. the tier's key limit on a 409.
   const apiError = create.error?.message ?? null
 
+  // The key arrives only through this component: closing it mid-request would lose it.
   return (
-    <DialogContent>
+    <DialogContent {...(create.isPending ? stayOpen : {})}>
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
         <DialogHeader>
           <DialogTitle>Create an API key</DialogTitle>
@@ -72,7 +74,7 @@ function CreateKeyContent({ onDone }: { onDone: () => void }) {
           />
         </Field>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onDone}>
+          <Button type="button" variant="outline" disabled={create.isPending} onClick={onDone}>
             Cancel
           </Button>
           <Button type="submit" disabled={create.isPending}>
@@ -87,12 +89,7 @@ function CreateKeyContent({ onDone }: { onDone: () => void }) {
 /** The new key, shown once. Only Done closes it: a stray click or Escape must not lose the key. */
 export function NewKeyContent({ created, onDone }: { created: CreatedApiKey; onDone: () => void }) {
   return (
-    <DialogContent
-      showCloseButton={false}
-      onInteractOutside={(e) => e.preventDefault()}
-      onEscapeKeyDown={(e) => e.preventDefault()}
-      className="sm:max-w-lg"
-    >
+    <DialogContent {...stayOpen} className="sm:max-w-lg">
       <DialogHeader>
         <DialogTitle>Copy your API key</DialogTitle>
         <DialogDescription>

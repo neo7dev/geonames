@@ -234,6 +234,27 @@ describe('roll', () => {
     expect(fetch.mock.calls.some(isRoll)).toBe(false)
   })
 
+  it('stays open while the roll is in flight, so the new key is not lost', async () => {
+    const respond = portal({ keys: [KEY] })
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    vi.stubGlobal('fetch', vi.fn(async (...args: Parameters<typeof respond>) => {
+      if (isRoll(args)) await gate
+      return respond(...args)
+    }))
+    renderApp('/keys')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Roll laptop' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Roll key' }))
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    release()
+    expect(await screen.findByLabelText('Your new API key')).toHaveValue(ROLLED_SECRET)
+  })
+
   it("shows the API's message when the roll fails", async () => {
     mockFetch({
       ...baseRoutes,

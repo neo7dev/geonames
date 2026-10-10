@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { NewKeyContent } from '@/pages/keys/create-key-dialog'
+import { stayOpen } from '@/pages/keys/stay-open'
 
 /** Confirm, then replace the key with a new one of the same name and show it once. */
 export function RollKeyDialog({ apiKey, onClose }: { apiKey: ApiKey | null; onClose: () => void }) {
@@ -30,8 +31,9 @@ function RollKeyContent({ apiKey, onDone }: { apiKey: ApiKey; onDone: () => void
 
   if (created) return <NewKeyContent created={created} onDone={onDone} />
 
+  // The new key arrives only through this component: closing it mid-request would lose it.
   return (
-    <DialogContent>
+    <DialogContent {...(roll.isPending ? stayOpen : {})}>
       <DialogHeader>
         <DialogTitle>Roll "{apiKey.name}"?</DialogTitle>
         <DialogDescription>
@@ -41,7 +43,7 @@ function RollKeyContent({ apiKey, onDone }: { apiKey: ApiKey; onDone: () => void
       </DialogHeader>
       {roll.error && <ErrorAlert>{roll.error.message}</ErrorAlert>}
       <DialogFooter>
-        <Button variant="outline" onClick={onDone}>
+        <Button variant="outline" disabled={roll.isPending} onClick={onDone}>
           Cancel
         </Button>
         <Button disabled={roll.isPending} onClick={() => roll.mutate(apiKey.id, { onSuccess: setCreated })}>
