@@ -8,7 +8,7 @@ export type UserSearch = { q: string; status: UserStatus | null; offset: number 
 
 export type UserChanges = { display_name?: string | null; role?: string; is_active?: boolean; is_deleted?: boolean }
 
-/** Admins only: the API answers 403 for everyone else, which reads as a suspended account. */
+/** Admins only: the API answers 403 for everyone else. */
 export function useAdminUsers({ q, status, offset }: UserSearch) {
   const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
   if (q.trim()) params.set('q', q.trim())

@@ -47,7 +47,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       // sends the user to the login page and back here afterwards.
       await supabase().auth.signOut({ scope: 'local' })
     } else if (response.status === 403) {
-      window.dispatchEvent(new Event(SUSPENDED_EVENT))
+      // Admin endpoints also refuse a fine account that is no longer an admin:
+      // ask about the account itself, which answers 403 only when it is suspended.
+      if (path.startsWith('/portal/admin/')) await api('/portal/me').catch(() => {})
+      else window.dispatchEvent(new Event(SUSPENDED_EVENT))
     }
     throw new ApiError(response.status, body?.detail ?? null)
   }

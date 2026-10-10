@@ -93,4 +93,20 @@ describe('api', () => {
     expect(onSuspended).toHaveBeenCalledOnce()
     expect(fakeAuth.signOut).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['an account that is no longer an admin', 200, 0],
+    ['a suspended admin', 403, 1],
+  ])('tells %s on an admin endpoint apart', async (_, meStatus, reports) => {
+    const onSuspended = vi.fn()
+    window.addEventListener(SUSPENDED_EVENT, onSuspended)
+    onTestFinished(() => window.removeEventListener(SUSPENDED_EVENT, onSuspended))
+    mockFetch({
+      '/portal/admin/users': { status: 403, body: { detail: 'This page needs an admin account' } },
+      '/portal/me': { status: meStatus, body: { detail: 'suspended' } },
+    })
+
+    expect((await failure(api('/portal/admin/users'))).message).toBe('This page needs an admin account')
+    expect(onSuspended).toHaveBeenCalledTimes(reports)
+  })
 })
