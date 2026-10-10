@@ -39,6 +39,10 @@ With the API running (`make run`), `make check-keys` calls the API with all four
 
 The container pushes as `neo7dev`: `docker-compose.yml` mounts that one key (`~/.ssh/neo7_github`, or `GEONAMES_SSH_KEY`) read-only as `~/.ssh/id_container`, `ssh-config` makes it the only identity for `github.com` and the `github.com-neo7` alias, and the host's ssh-agent, forwarded by VS Code, does the signing. `gh` gets `GH_TOKEN` from `GEONAMES_GH_TOKEN`, which the host exports from the Keychain (`gh-token-geonames`) only for VS Code. Both need VS Code fully quit and relaunched after a change; Reload Window and Rebuild Container reuse the cached environment. `make gh-auth` and `make git-auth` check them from a VS Code terminal (`docker exec` gets no forwarded agent).
 
+## Docker
+
+The Docker CLI here talks to the host's Docker through its socket (the `docker-outside-of-docker` feature), so `make build-image` and `make image-check` work in the container and the images land in the host's Docker. Run the deploy stack (`docker compose up` in the repo root) on the host instead: from here its relative bind mounts (`./supabase/kong.yml`) would name `/workspace/...` paths, which the host does not have. The socket gives full control of the host's Docker.
+
 ## OAuth (optional)
 
 Create a GitHub and/or Google OAuth app with callback URL `http://localhost:8000/auth/v1/callback`, put the client id and secret in `.devcontainer/.env`, set `GITHUB_ENABLED` / `GOOGLE_ENABLED` to `true`, then recreate the `auth` service.

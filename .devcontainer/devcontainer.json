@@ -28,7 +28,13 @@
 		},
 		// gh, authenticated by GH_TOKEN (docker-compose.yml). Pushes go over ssh;
 		// the GitHub API (gh repo create, gh pr create) needs the token.
-		"ghcr.io/devcontainers/features/github-cli:1": {}
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		// Docker CLI on the host's Docker (the Mac's socket), for make build-image and
+		// make image-check. Images land in the host's Docker. Docker CE: Moby has no
+		// Debian trixie packages.
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+			"moby": false
+		}
 	},
 	
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
