@@ -251,21 +251,32 @@ seed-users:
 
 API_URL ?= http://localhost:9500
 
-## Call the API as the seeded users, e.g. ARGS="--role free --count 5" or ARGS=--portal
+# Dev tool parameters:
+#   ROLE   seeded users, comma-separated (free, tester, dev, admin; default all)
+#   LIMIT  set (LIMIT=1) for the hourly limit
+#   QUOTA  set (QUOTA=1) for the monthly quota; neither LIMIT nor QUOTA means both
+#   MINUTE set (MINUTE=1) to reset the minute limit too (reset-usage)
+#   ARGS   any other options of the script (--help lists them)
+comma := ,
+ROLE_ARGS = $(foreach r,$(subst $(comma), ,$(ROLE)),--role $(r))
+# The windows LIMIT and QUOTA pick, as repeated $(1) options
+WINDOW_ARGS = $(if $(LIMIT)$(QUOTA),$(if $(LIMIT),$(1) hour) $(if $(QUOTA),$(1) month),$(1) hour $(1) month)
+
+## Call the API as the seeded users, e.g. ROLE=free ARGS="--count 5", or ARGS=--portal
 api-call:
-	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.api_client $(ARGS)
+	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.api_client $(ROLE_ARGS) $(ARGS)
 
-## Load-test the API as the seeded users, e.g. ARGS="--role dev --concurrency 20 --duration 60"
+## Load-test the API as the seeded users, e.g. ROLE=dev ARGS="--concurrency 20 --duration 60"
 stress:
-	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.stress_api load $(ARGS)
+	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.stress_api load $(ROLE_ARGS) $(ARGS)
 
-## Reset the seeded users' hour and month counters (dev only), e.g. ARGS="--role free --all"
+## Reset the seeded users' hourly limit and monthly quota (dev only), e.g. ROLE=free LIMIT=1
 reset-usage:
-	$(UV) run python -m geonames_server.scripts.reset_usage $(ARGS)
+	$(UV) run python -m geonames_server.scripts.reset_usage $(ROLE_ARGS) $(call WINDOW_ARGS,--window) $(if $(MINUTE),--window minute) $(ARGS)
 
-## Check every tier's limits and quotas for real, e.g. ARGS="--role free"
+## Check the minute limit, and the hourly limit and monthly quota, for real, e.g. ROLE=free QUOTA=1
 stress-limits:
-	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.stress_api limits --quota hour --quota month $(ARGS)
+	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.stress_api limits $(ROLE_ARGS) $(call WINDOW_ARGS,--quota) $(ARGS)
 
 # Call /metadata/ (needs a key, not a built dataset) with DEV_API_KEY_<$(1)> from .env
 define check_dev_key

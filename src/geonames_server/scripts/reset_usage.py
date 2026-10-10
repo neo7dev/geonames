@@ -69,7 +69,11 @@ def user_ids(emails: list[str]) -> dict[str, uuid.UUID]:
 
 
 async def _run(args: argparse.Namespace) -> None:
-    windows = list(WINDOW_NAMES) if args.all else args.window or DEFAULT_WINDOWS
+    windows = (
+        list(WINDOW_NAMES)
+        if args.all
+        else [w for w in WINDOW_NAMES if w in (args.window or DEFAULT_WINDOWS)]
+    )
     emails = args.email or [
         email for role, email, _ in DEV_USERS if not args.role or role in args.role
     ]
@@ -101,14 +105,13 @@ def main(argv: list[str] | None = None) -> None:
     who.add_argument(
         "--email", action="append", help="any user, by email; repeat for several"
     )
-    which = parser.add_mutually_exclusive_group()
-    which.add_argument(
+    parser.add_argument(
         "--window",
         action="append",
         choices=WINDOW_NAMES,
         help="window to reset; repeat for several (default: hour and month)",
     )
-    which.add_argument("--all", action="store_true", help="minute, hour and month")
+    parser.add_argument("--all", action="store_true", help="minute, hour and month")
     args = parser.parse_args(argv)
 
     if not settings.dev_seed_users:
