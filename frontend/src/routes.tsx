@@ -5,6 +5,7 @@ import { GuestOnly, RequireAuth } from '@/auth/guards'
 import { AppShell } from '@/components/app-shell'
 import { AuthLayout } from '@/components/auth-layout'
 import { AuthCallbackPage } from '@/pages/auth-callback'
+import { KeysPage } from '@/pages/keys/keys-page'
 import { LoginPage } from '@/pages/login'
 import { NotFound } from '@/pages/not-found'
 import { Placeholder } from '@/pages/placeholder'
@@ -42,7 +43,7 @@ export const routes: RouteObject[] = [
             element: <AppShell />,
             children: [
               { index: true, element: <Placeholder title="Overview" /> },
-              { path: 'keys', element: <Placeholder title="API keys" /> },
+              { path: 'keys', element: <KeysPage /> },
               { path: 'usage', element: <Placeholder title="Usage" /> },
               { path: '*', element: <NotFound /> },
             ],

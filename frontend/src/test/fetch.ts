@@ -38,5 +38,6 @@ export const AUTH_SETTINGS = { disable_signup: false, mailer_autoconfirm: false 
 /** What every signed-in page needs: the profile and GoTrue's settings. */
 export const baseRoutes = {
   '/portal/me': { body: ME },
+  '/portal/keys': { body: [] },
   '/auth/v1/settings': { body: AUTH_SETTINGS },
 }

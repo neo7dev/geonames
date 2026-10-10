@@ -10,6 +10,9 @@ const alertVariants = cva(
         default: "bg-card text-card-foreground",
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+        // Amber, only for "copy this key now, it will not be shown again"
+        warning:
+          "border-warning-foreground/20 bg-warning text-warning-foreground *:data-[slot=alert-description]:text-warning-foreground",
       },
     },
     defaultVariants: {
