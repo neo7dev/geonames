@@ -58,6 +58,10 @@ dependencies = [
     "websockets==16.0",
 ]
 
+[tool.pytest.ini_options]
+# The scratch scripts under src/ are named test_* too
+testpaths = ["tests"]
+
 [tool.poe.tasks]
 test = "pytest tests/"
 
