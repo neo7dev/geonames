@@ -48,6 +48,8 @@ export function KeysPage() {
         </p>
       )}
 
+      {/* Without the profile the key limit is unknown, so Create stays disabled: say why. */}
+      {me.error && <ErrorAlert>{me.error.message}</ErrorAlert>}
       {keys.error && <ErrorAlert>{keys.error.message}</ErrorAlert>}
 
       {keys.data && keys.data.length === 0 && (

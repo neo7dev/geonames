@@ -196,6 +196,20 @@ describe('revoke', () => {
   })
 })
 
+describe('profile', () => {
+  it('says why Create is disabled when the profile fails to load', async () => {
+    mockFetch({
+      ...baseRoutes,
+      '/portal/keys': { body: [KEY] },
+      '/portal/me': { status: 500, body: { detail: 'Profile unavailable' } },
+    })
+    renderApp('/keys')
+
+    expect(await screen.findByText('Profile unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create API key' })).toBeDisabled()
+  })
+})
+
 describe('roll', () => {
   const isRoll = ([url, init]: unknown[]) =>
     String(url).endsWith('/roll') && (init as RequestInit | undefined)?.method === 'POST'
