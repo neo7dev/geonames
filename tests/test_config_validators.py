@@ -108,9 +108,12 @@ class TestLogLevel:
     @pytest.mark.parametrize(
         ("level", "sql_level"), [("DEBUG", logging.INFO), ("INFO", logging.WARNING)]
     )
-    def test_applies_to_app_logs_and_sql_only_when_debugging(self, level, sql_level):
-        root, sql = logging.getLogger(), logging.getLogger("sqlalchemy.engine")
-        before = root.level, sql.level
+    def test_applies_to_app_logs_and_sql_and_http_only_when_debugging(
+        self, level, sql_level
+    ):
+        loggers = [logging.getLogger(n) for n in ("", "sqlalchemy.engine", "httpx")]
+        root, sql, httpx = loggers
+        before = [logger.level for logger in loggers]
         try:
             set_log_level(level)
             assert root.level == logging.getLevelName(level)
@@ -118,9 +121,10 @@ class TestLogLevel:
                 logging.getLogger("geonames_server").getEffectiveLevel() == root.level
             )
             assert sql.level == sql_level
+            assert httpx.level == sql_level
         finally:
-            root.setLevel(before[0])
-            sql.setLevel(before[1])
+            for logger, level in zip(loggers, before):
+                logger.setLevel(level)
 
 
 class TestJwtSecret:

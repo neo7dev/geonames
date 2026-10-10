@@ -64,14 +64,15 @@ setup_logging()
 def set_log_level(level: str) -> None:
     """Apply LOG_LEVEL to the app's logs and the third-party loggers.
 
-    SQLAlchemy logs every statement at INFO, so its engine logger shows them
-    only when LOG_LEVEL is DEBUG. Called again once uvicorn has set up its own
+    SQLAlchemy logs every statement and httpx every request at INFO, so they
+    show only when LOG_LEVEL is DEBUG. Called again once uvicorn has set up its own
     loggers, which resets their levels.
     """
     logging.getLogger().setLevel(level)
-    logging.getLogger("sqlalchemy.engine").setLevel(
-        logging.INFO if level == "DEBUG" else logging.WARNING
-    )
+    # SQL statements and every outgoing HTTP request: only when debugging
+    chatty = logging.INFO if level == "DEBUG" else logging.WARNING
+    for name in ("sqlalchemy.engine", "httpx"):
+        logging.getLogger(name).setLevel(chatty)
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(name).setLevel(level)
 
