@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 
 from geonames_server.api.auth import hash_api_key
 from geonames_server.database.models.accounts import ApiKey, Profile
@@ -20,11 +20,15 @@ TEST_USERS = [
     ("admin", "seed-test-admin@example.com", "TEST_KEY_ADMIN"),
 ]
 KEYS = {"TEST_KEY_FREE": "gn_seed_test_free", "TEST_KEY_ADMIN": "gn_seed_test_admin"}
+PLAYGROUND = [("dev", "seed-test-play@example.com")]
 
 
 @pytest.fixture(autouse=True)
 def _test_users():
-    with patch(f"{MODULE}.DEV_USERS", TEST_USERS):
+    with (
+        patch(f"{MODULE}.DEV_USERS", TEST_USERS),
+        patch(f"{MODULE}.PLAYGROUND_USERS", PLAYGROUND),
+    ):
         yield
 
 
@@ -72,7 +76,7 @@ def test_creates_confirmed_users_with_roles_and_keys(sync_session, gotrue):
                 "email_confirm": True,
             },
         )
-        for _, email, _ in TEST_USERS
+        for email in [e for _, e, _ in TEST_USERS] + [e for _, e in PLAYGROUND]
     ]
     assert _seeded(sync_session) == [
         (
@@ -197,3 +201,39 @@ def test_skip_unconfigured_exits_cleanly(monkeypatch, capsys, seed_users):
 
     assert "Skipping dev users" in capsys.readouterr().out
     upgrade.assert_not_called()
+
+
+def _playground(session):
+    return session.execute(
+        select(Profile.role, Profile.is_deleted).where(
+            Profile.email == "seed-test-play@example.com"
+        )
+    ).one()
+
+
+def test_playground_user_gets_a_starting_role_and_no_key(sync_session, gotrue):
+    seed_dev_users.seed(sync_session, gotrue, KEYS)
+
+    assert tuple(_playground(sync_session)) == ("dev", False)
+    keys = sync_session.scalar(
+        select(func.count(ApiKey.id))
+        .join(Profile, Profile.id == ApiKey.user_id)
+        .where(Profile.email == "seed-test-play@example.com")
+    )
+    assert keys == 0
+
+
+def test_rerun_keeps_changes_to_playground_users(sync_session, gotrue):
+    seed_dev_users.seed(sync_session, gotrue, KEYS)
+    sync_session.execute(
+        update(Profile)
+        .where(Profile.email == "seed-test-play@example.com")
+        .values(role="free", is_deleted=True)
+    )
+    sync_session.commit()
+    gotrue.calls.clear()
+
+    seed_dev_users.seed(sync_session, gotrue, KEYS)
+
+    assert gotrue.calls == []
+    assert tuple(_playground(sync_session)) == ("free", True)

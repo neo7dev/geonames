@@ -26,7 +26,7 @@ All secrets in `.devcontainer/.env` are dev-only throwaway values.
 
 ## Dev users
 
-On every start the container runs `make seed-users`, which creates four confirmed users with password `dev-password`: `free@`, `tester@`, `dev@` and `admin@geonames.local`, one per tier. Their API keys are `DEV_API_KEY_FREE`, `_TESTER`, `_DEV` and `_ADMIN` in `.env.dev` / `.env`; only the admin can run `/sync`. Rerun it to restore their roles and keys. It needs `DEV_SEED_USERS=true` (set in `.env.dev`).
+On every start the container runs `make seed-users`, which creates four confirmed users with password `dev-password`: `free@`, `tester@`, `dev@` and `admin@geonames.local`, one per tier. Their API keys are `DEV_API_KEY_FREE`, `_TESTER`, `_DEV` and `_ADMIN` in `.env.dev` / `.env`; only the admin can run `/sync`. Rerun it to restore their roles and keys. It also creates two playground users without API keys, `alice@` (free) and `bob@geonames.local` (dev), to change freely on the Administration page; it never resets them. It needs `DEV_SEED_USERS=true` (set in `.env.dev`).
 
 ```sh
 KEY=$(sed -n 's/^DEV_API_KEY_FREE *= *//p' .env)

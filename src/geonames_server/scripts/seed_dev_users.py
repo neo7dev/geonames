@@ -10,6 +10,11 @@ Users are created through Supabase Auth's admin API, confirmed, so they can
 also log in with the password (for /portal). Running it again restores each
 user's role and API key (un-revoking it if needed), unless that would put the
 user over their tier's key limit; it never deletes anything.
+
+It also creates two playground users, without API keys, to try the
+Administration page on: change their plan, deactivate, delete, restore. They
+are created with a starting role only when missing, and never reset, so the
+changes stay; a user deleted for good comes back on the next run.
 """
 
 from __future__ import annotations
@@ -39,6 +44,12 @@ DEV_USERS = [
     ("tester", "tester@geonames.local", "DEV_API_KEY_TESTER"),
     ("dev", "dev@geonames.local", "DEV_API_KEY_DEV"),
     ("admin", "admin@geonames.local", "DEV_API_KEY_ADMIN"),
+]
+
+# role they start with, email: playground users, created once and never reset
+PLAYGROUND_USERS = [
+    ("free", "alice@geonames.local"),
+    ("dev", "bob@geonames.local"),
 ]
 
 
@@ -82,28 +93,33 @@ def _has_free_key_slot(session: Session, user_id, role: str, key_hash: str) -> b
     return other_keys < max_keys
 
 
+def _create_user(session: Session, gotrue: httpx.Client, email: str):
+    resp = gotrue.post(
+        "/admin/users",
+        json={"email": email, "password": PASSWORD, "email_confirm": True},
+    )
+    resp.raise_for_status()
+    return _user_id(session, email)
+
+
+def _set_role(session: Session, user_id, email: str, role: str) -> None:
+    # The signup trigger created the profile with the default role.
+    updated = session.execute(
+        update(Profile).where(Profile.id == user_id).values(role=role)
+    )
+    if updated.rowcount != 1:
+        raise RuntimeError(
+            f"{email} has no profile in app.profiles; is the signup trigger installed?"
+        )
+
+
 def seed(session: Session, gotrue: httpx.Client, keys: dict[str, str]) -> list[str]:
     """Create or restore the dev users; return the emails whose key was not restored."""
     skipped = []
     for role, email, var in DEV_USERS:
         key = keys[var]
-        user_id = _user_id(session, email)
-        if user_id is None:
-            resp = gotrue.post(
-                "/admin/users",
-                json={"email": email, "password": PASSWORD, "email_confirm": True},
-            )
-            resp.raise_for_status()
-            user_id = _user_id(session, email)
-
-        # The signup trigger created the profile with the default role.
-        updated = session.execute(
-            update(Profile).where(Profile.id == user_id).values(role=role)
-        )
-        if updated.rowcount != 1:
-            raise RuntimeError(
-                f"{email} has no profile in app.profiles; is the signup trigger installed?"
-            )
+        user_id = _user_id(session, email) or _create_user(session, gotrue, email)
+        _set_role(session, user_id, email, role)
 
         if not _has_free_key_slot(session, user_id, role, hash_api_key(key)):
             skipped.append(email)
@@ -121,6 +137,10 @@ def seed(session: Session, gotrue: httpx.Client, keys: dict[str, str]) -> list[s
                 set_={"user_id": user_id, "revoked_at": None},
             )
         )
+
+    for role, email in PLAYGROUND_USERS:
+        if _user_id(session, email) is None:
+            _set_role(session, _create_user(session, gotrue, email), email, role)
     session.commit()
     return skipped
 
@@ -169,6 +189,9 @@ def main(argv: list[str] | None = None) -> None:
     for role, email, var in DEV_USERS:
         note = "  (not restored: tier key limit reached)" if email in skipped else ""
         print(f"  {role:<7} {email:<24} {var}={keys[var]}{note}")
+    print("Playground users (no API key; change them freely on /admin):")
+    for role, email in PLAYGROUND_USERS:
+        print(f"  {email:<24} starts as {role}")
     if skipped:
         print(
             "Revoke a key for those users on /portal/keys, then rerun to restore the seed key."
