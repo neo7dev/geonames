@@ -26,6 +26,13 @@ services:
       # VS Code fully quit and relaunched: Reload Window and Rebuild Container
       # reuse the cached environment.
       - GH_TOKEN=${GEONAMES_GH_TOKEN:-}
+      # Trust /workspace in git. Docker Desktop's VirtioFS now and then reports the
+      # bind mount's root as owned by root (docker/for-mac#6298), and git then
+      # refuses with "detected dubious ownership". Environment, not a lifecycle
+      # command, so it is set before VS Code's Git extension first looks.
+      - GIT_CONFIG_COUNT=1
+      - GIT_CONFIG_KEY_0=safe.directory
+      - GIT_CONFIG_VALUE_0=/workspace
     volumes:
       - ..:/workspace:cached
       # One GitHub identity: the neo7dev key, not the host's whole ~/.ssh (whose

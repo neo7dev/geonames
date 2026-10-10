@@ -45,7 +45,9 @@
 
 	// Dev users, one per tier, with known passwords and API keys (see make seed-users).
 	// Skipped, not failed, while .env lacks DEV_SEED_USERS or the keys.
-	"postStartCommand": "make seed-users SEED_ARGS=--skip-unconfigured",
+	// Also trusts /workspace in the global git config, for shells that do not get
+	// the GIT_CONFIG_* environment from docker-compose.yml.
+	"postStartCommand": "(git config --global --get-all safe.directory | grep -qxF /workspace || git config --global --add safe.directory /workspace) && make seed-users SEED_ARGS=--skip-unconfigured",
 	// "postStartCommand": "bash -c 'nohup uvicorn geonames_server.api.app:app --host 0.0.0.0 --port 9500'",
 	
 	// Configure tool-specific properties.
