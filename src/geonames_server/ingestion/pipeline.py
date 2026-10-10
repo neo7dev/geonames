@@ -330,6 +330,9 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
             conn = psycopg2.connect(**_get_conn_params())
             conn.autocommit = False
             with conn.cursor() as cur:
+                # The primary key and the cloned indexes (trigram ones on
+                # allcountries above all) build much faster with more memory.
+                cur.execute(f"SET LOCAL maintenance_work_mem = '{INDEX_BUILD_MEMORY}'")
                 # No indexes yet: bulk load is faster, indexes are built after.
                 cur.execute(
                     sql.SQL("CREATE TABLE {s} (LIKE {t} INCLUDING DEFAULTS)").format(
