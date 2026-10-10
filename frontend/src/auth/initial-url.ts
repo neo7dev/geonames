@@ -12,3 +12,11 @@ export function linkError(hash: string = initialHash): string | null {
   if (description) return description.replace(/\+/g, ' ')
   return params.get('error') ? 'This link could not be used.' : null
 }
+
+/**
+ * Whether this tab opened a recovery link. Supabase relays PASSWORD_RECOVERY
+ * to every open tab, but only the one with the link should act on it.
+ */
+export function isRecoveryLink(hash: string = initialHash): boolean {
+  return new URLSearchParams(hash.replace(/^#/, '')).get('type') === 'recovery'
+}

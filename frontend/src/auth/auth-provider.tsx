@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 
 import { SUSPENDED_EVENT } from '@/api/client'
+import { isRecoveryLink } from '@/auth/initial-url'
 import { AuthContext } from '@/auth/use-auth'
 import { supabase } from '@/lib/supabase'
 
@@ -27,8 +28,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         queryClient.clear()
         setSuspended(false)
       }
-      // A recovery link that landed elsewhere (GoTrue's fallback to SITE_URL)
-      if (event === 'PASSWORD_RECOVERY' && !window.location.pathname.endsWith('/update-password')) {
+      // A recovery link that landed elsewhere (GoTrue's fallback to SITE_URL).
+      // Other tabs get the event too, and must stay where they are.
+      if (
+        event === 'PASSWORD_RECOVERY' &&
+        isRecoveryLink() &&
+        !window.location.pathname.endsWith('/update-password')
+      ) {
         navigate('/update-password', { replace: true })
       }
     })

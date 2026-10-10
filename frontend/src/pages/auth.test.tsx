@@ -10,7 +10,7 @@ import { currentPath, renderApp } from '@/test/render'
 const hash = vi.hoisted(() => ({ value: '' }))
 vi.mock('@/auth/initial-url', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/auth/initial-url')>()
-  return { ...real, linkError: () => real.linkError(hash.value) }
+  return { ...real, linkError: () => real.linkError(hash.value), isRecoveryLink: () => real.isRecoveryLink(hash.value) }
 })
 
 const ORIGIN = window.location.origin
@@ -225,6 +225,7 @@ describe('password reset', () => {
   })
 
   it('opens the update page when a recovery link lands elsewhere', async () => {
+    hash.value = '#access_token=t&type=recovery'
     fakeAuth.setSession(fakeSession())
     const router = renderApp('/')
     await screen.findAllByRole('navigation', { name: 'Main' })
@@ -232,6 +233,17 @@ describe('password reset', () => {
     fakeAuth.emit('PASSWORD_RECOVERY')
 
     await waitFor(() => expect(currentPath(router)).toBe('/update-password'))
+  })
+
+  it('stays put when the recovery link opened in another tab', async () => {
+    fakeAuth.setSession(fakeSession())
+    const router = renderApp('/keys')
+    await screen.findAllByRole('navigation', { name: 'Main' })
+
+    fakeAuth.emit('PASSWORD_RECOVERY')
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(currentPath(router)).toBe('/keys')
   })
 })
 
