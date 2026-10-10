@@ -242,6 +242,33 @@ describe('delete and restore', () => {
     await waitFor(() => expect(within(row).getByText('Active')).toBeInTheDocument())
     expect(calls).toContain('PATCH /portal/admin/users/id-eve@example.com {"is_deleted":false}')
   })
+
+  it('goes back a page when the last one empties', async () => {
+    let users = Array.from({ length: 51 }, (_, i) => user(`u${i}@example.com`, { is_deleted: true }))
+    const last = users[50]
+    mockFetch({
+      ...baseRoutes,
+      '/portal/me': { body: ADMIN_ME },
+      '/portal/admin/users': (_, url) => {
+        const params = new URL(url, 'http://test').searchParams
+        const offset = Number(params.get('offset'))
+        const found = users.filter((u) => params.get('status') !== 'deleted' || u.is_deleted)
+        return { body: { users: found.slice(offset, offset + 50), total: found.length } }
+      },
+      [`/portal/admin/users/${last.id}`]: () => {
+        users = users.map((u) => (u.id === last.id ? { ...u, is_deleted: false } : u))
+        return { body: { ...last, is_deleted: false } }
+      },
+    })
+    renderApp('/admin')
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Status' }), 'deleted')
+    await userEvent.click(await screen.findByRole('button', { name: 'Next' }))
+
+    await userEvent.click(await screen.findByRole('button', { name: `Restore ${last.email}` }))
+
+    expect(await screen.findByText('u0@example.com')).toBeInTheDocument()
+    expect(screen.queryByText('No users found')).not.toBeInTheDocument()
+  })
 })
 
 describe('create', () => {

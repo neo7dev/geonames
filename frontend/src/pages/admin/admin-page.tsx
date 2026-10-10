@@ -56,6 +56,12 @@ function Administration({ myId }: { myId: string }) {
   const total = users.data?.total ?? 0
   const shown = users.data?.users ?? []
 
+  // Deleting or restoring the last users on the last page empties it: go back
+  // to the page that is now the last.
+  if (users.data && !users.isPlaceholderData && offset > 0 && offset >= total) {
+    setOffset(Math.max(0, Math.ceil(total / PAGE_SIZE) - 1) * PAGE_SIZE)
+  }
+
   return (
     <>
       <PageHeader
