@@ -73,6 +73,15 @@ describe('api', () => {
     expect(fakeAuth.signOut).toHaveBeenCalledWith({ scope: 'local' })
   })
 
+  it('sends nothing when the login token cannot be refreshed', async () => {
+    fakeAuth.getSession.mockResolvedValueOnce({ data: { session: null }, error: new Error('Failed to fetch') } as never)
+    const fetch = mockFetch({ '/portal/me': { body: {} } })
+
+    await expect(api('/portal/me')).rejects.toThrow('Could not reach the login service')
+    expect(fetch).not.toHaveBeenCalled()
+    expect(fakeAuth.signOut).not.toHaveBeenCalled()
+  })
+
   it('reports a suspended account', async () => {
     const onSuspended = vi.fn()
     window.addEventListener(SUSPENDED_EVENT, onSuspended)

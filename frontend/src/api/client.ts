@@ -26,7 +26,10 @@ export class ApiError extends Error {
 
 /** Call the API with the signed-in user's login token. */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { data } = await supabase().auth.getSession()
+  const { data, error } = await supabase().auth.getSession()
+  // An expired token that could not be refreshed (Supabase Auth unreachable):
+  // without a token the API would answer 401, and signing out would fail too.
+  if (error && !data.session) throw new Error('Could not reach the login service. Check your connection and try again.')
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
   if (init.body !== undefined) headers.set('Content-Type', 'application/json')
