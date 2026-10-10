@@ -2633,8 +2633,280 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /portal/admin/roles:
+    get:
+      tags:
+      - Administration
+      summary: List Roles
+      description: Roles a user can be given, each with its tier (the user's plan).
+      operationId: list_roles_portal_admin_roles_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RoleOption'
+                type: array
+                title: Response List Roles Portal Admin Roles Get
+      security:
+      - HTTPBearer: []
+  /portal/admin/users:
+    get:
+      tags:
+      - Administration
+      summary: List Users
+      operationId: list_users_portal_admin_users_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 254
+          - type: 'null'
+          description: Part of the email address
+          title: Q
+        description: Part of the email address
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/UserStatus'
+          - type: 'null'
+          description: Only users in this state
+          title: Status
+        description: Only users in this state
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserList'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Administration
+      summary: Create User
+      description: Create a confirmed user, who can sign in with the password at once.
+      operationId: create_user_portal_admin_users_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUser'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /portal/admin/users/{user_id}:
+    get:
+      tags:
+      - Administration
+      summary: Get User
+      operationId: get_user_portal_admin_users__user_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUser'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Administration
+      summary: Update User
+      description: Change a user's role (and so their plan), deactivate or restore
+        them.
+      operationId: update_user_portal_admin_users__user_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUser'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Administration
+      summary: Delete User
+      description: Soft-delete a user (restore with PATCH is_deleted=false), or remove
+        them for good.
+      operationId: delete_user_portal_admin_users__user_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: User Id
+      - name: permanent
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Remove the user, their keys and usage for good. Only for users
+            already deleted
+          default: false
+          title: Permanent
+        description: Remove the user, their keys and usage for good. Only for users
+          already deleted
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    AdminUser:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+        role:
+          type: string
+          title: Role
+        tier:
+          type: string
+          title: Tier
+        is_admin:
+          type: boolean
+          title: Is Admin
+        is_active:
+          type: boolean
+          title: Is Active
+        is_deleted:
+          type: boolean
+          title: Is Deleted
+        auth_suspended:
+          type: boolean
+          title: Auth Suspended
+        active_keys:
+          type: integer
+          title: Active Keys
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - tier
+      - is_admin
+      - is_active
+      - is_deleted
+      - auth_suspended
+      - active_keys
+      - created_at
+      title: AdminUser
+    AdminUserList:
+      properties:
+        users:
+          items:
+            $ref: '#/components/schemas/AdminUser'
+          type: array
+          title: Users
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - users
+      - total
+      title: AdminUserList
     ApiKeyResponse:
       properties:
         id:
@@ -2677,6 +2949,27 @@ components:
       required:
       - name
       title: CreateApiKeyRequest
+    CreateUserRequest:
+      properties:
+        email:
+          type: string
+          maxLength: 254
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          title: Email
+        password:
+          type: string
+          maxLength: 72
+          title: Password
+        role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Role
+      type: object
+      required:
+      - email
+      - password
+      title: CreateUserRequest
     CreatedApiKeyResponse:
       properties:
         id:
@@ -3132,6 +3425,9 @@ components:
         tier:
           type: string
           title: Tier
+        is_admin:
+          type: boolean
+          title: Is Admin
         limits:
           $ref: '#/components/schemas/Limits'
         active_keys:
@@ -3143,9 +3439,31 @@ components:
       - email
       - role
       - tier
+      - is_admin
       - limits
       - active_keys
       title: MeResponse
+    RoleOption:
+      properties:
+        name:
+          type: string
+          title: Name
+        tier:
+          type: string
+          title: Tier
+        is_admin:
+          type: boolean
+          title: Is Admin
+        is_default:
+          type: boolean
+          title: Is Default
+      type: object
+      required:
+      - name
+      - tier
+      - is_admin
+      - is_default
+      title: RoleOption
     SyncAcceptedResponse:
       properties:
         sync_id:
@@ -3198,6 +3516,26 @@ components:
       - current_step
       - started_at
       title: SyncStatusResponse
+    UpdateUserRequest:
+      properties:
+        role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Role
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+        is_deleted:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Deleted
+      type: object
+      title: UpdateUserRequest
+      description: Fields left out stay as they are.
     UsageResponse:
       properties:
         tier:
@@ -3248,6 +3586,13 @@ components:
       - limit
       - resets_at
       title: UsageWindow
+    UserStatus:
+      type: string
+      enum:
+      - active
+      - inactive
+      - deleted
+      title: UserStatus
     ValidationError:
       properties:
         loc:

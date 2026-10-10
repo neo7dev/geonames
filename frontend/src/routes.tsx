@@ -4,6 +4,7 @@ import { AuthProvider } from '@/auth/auth-provider'
 import { GuestOnly, RequireAuth } from '@/auth/guards'
 import { AppShell } from '@/components/app-shell'
 import { AuthLayout } from '@/components/auth-layout'
+import { AdminPage } from '@/pages/admin/admin-page'
 import { AuthCallbackPage } from '@/pages/auth-callback'
 import { KeysPage } from '@/pages/keys/keys-page'
 import { LoginPage } from '@/pages/login'
@@ -59,6 +60,7 @@ export const routes: RouteObject[] = [
                     path: 'usage',
                     lazy: async () => ({ Component: (await import('@/pages/usage/usage-page')).UsagePage }),
                   },
+                  { path: 'admin', element: <AdminPage /> },
                   { path: '*', element: <NotFound /> },
                 ],
               },

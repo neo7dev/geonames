@@ -1,4 +1,4 @@
-import { BookOpen, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, X } from 'lucide-react'
+import { BookOpen, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, ShieldUser, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
 
@@ -15,12 +15,18 @@ const NAV = [
   { to: '/usage', label: 'Usage', icon: ChartColumn, end: false },
 ]
 
+// Shown to admins only
+const ADMIN_NAV = { to: '/admin', label: 'Administration', icon: ShieldUser, end: false }
+
 function Sidebar({ onNavigate, logo = true }: { onNavigate?: () => void; logo?: boolean }) {
+  const me = useMe()
+  const nav = me.data?.is_admin ? [...NAV, ADMIN_NAV] : NAV
+
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3">
       {logo && <Logo className="px-2 pt-1 pb-2" />}
       <nav aria-label="Main" className="flex flex-col gap-0.5">
-        {NAV.map(({ to, label, icon: Icon, end }) => (
+        {nav.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}

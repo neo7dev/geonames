@@ -615,10 +615,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/portal/admin/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Roles
+         * @description Roles a user can be given, each with its tier (the user's plan).
+         */
+        get: operations["list_roles_portal_admin_roles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/portal/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_portal_admin_users_get"];
+        put?: never;
+        /**
+         * Create User
+         * @description Create a confirmed user, who can sign in with the password at once.
+         */
+        post: operations["create_user_portal_admin_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/portal/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User */
+        get: operations["get_user_portal_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete User
+         * @description Soft-delete a user (restore with PATCH is_deleted=false), or remove them for good.
+         */
+        delete: operations["delete_user_portal_admin_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update User
+         * @description Change a user's role (and so their plan), deactivate or restore them.
+         */
+        patch: operations["update_user_portal_admin_users__user_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdminUser */
+        AdminUser: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string | null;
+            /** Role */
+            role: string;
+            /** Tier */
+            tier: string;
+            /** Is Admin */
+            is_admin: boolean;
+            /** Is Active */
+            is_active: boolean;
+            /** Is Deleted */
+            is_deleted: boolean;
+            /** Auth Suspended */
+            auth_suspended: boolean;
+            /** Active Keys */
+            active_keys: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AdminUserList */
+        AdminUserList: {
+            /** Users */
+            users: components["schemas"]["AdminUser"][];
+            /** Total */
+            total: number;
+        };
         /** ApiKeyResponse */
         ApiKeyResponse: {
             /**
@@ -642,6 +744,15 @@ export interface components {
         CreateApiKeyRequest: {
             /** Name */
             name: string;
+        };
+        /** CreateUserRequest */
+        CreateUserRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+            /** Role */
+            role?: string | null;
         };
         /** CreatedApiKeyResponse */
         CreatedApiKeyResponse: {
@@ -862,9 +973,22 @@ export interface components {
             role: string;
             /** Tier */
             tier: string;
+            /** Is Admin */
+            is_admin: boolean;
             limits: components["schemas"]["Limits"];
             /** Active Keys */
             active_keys: number;
+        };
+        /** RoleOption */
+        RoleOption: {
+            /** Name */
+            name: string;
+            /** Tier */
+            tier: string;
+            /** Is Admin */
+            is_admin: boolean;
+            /** Is Default */
+            is_default: boolean;
         };
         /** SyncAcceptedResponse */
         SyncAcceptedResponse: {
@@ -896,6 +1020,18 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /**
+         * UpdateUserRequest
+         * @description Fields left out stay as they are.
+         */
+        UpdateUserRequest: {
+            /** Role */
+            role?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Is Deleted */
+            is_deleted?: boolean | null;
+        };
         /** UsageResponse */
         UsageResponse: {
             /** Tier */
@@ -920,6 +1056,11 @@ export interface components {
              */
             resets_at: string;
         };
+        /**
+         * UserStatus
+         * @enum {string}
+         */
+        UserStatus: "active" | "inactive" | "deleted";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -2372,6 +2513,193 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_roles_portal_admin_roles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleOption"][];
+                };
+            };
+        };
+    };
+    list_users_portal_admin_users_get: {
+        parameters: {
+            query?: {
+                /** @description Part of the email address */
+                q?: string | null;
+                /** @description Only users in this state */
+                status?: components["schemas"]["UserStatus"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_user_portal_admin_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_portal_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_portal_admin_users__user_id__delete: {
+        parameters: {
+            query?: {
+                /** @description Remove the user, their keys and usage for good. Only for users already deleted */
+                permanent?: boolean;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_portal_admin_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
                 };
             };
             /** @description Validation Error */

@@ -29,6 +29,7 @@ export const ME = {
   email: 'ada@example.com',
   role: 'free',
   tier: 'basic',
+  is_admin: false,
   limits: { per_minute: 10, per_hour: 100, per_month: 5000, max_keys: 1 },
   active_keys: 0,
 }

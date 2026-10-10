@@ -7,6 +7,10 @@ export type Me = Schemas['MeResponse']
 export type ApiKey = Schemas['ApiKeyResponse']
 export type CreatedApiKey = Schemas['CreatedApiKeyResponse']
 export type Usage = Schemas['UsageResponse']
+export type AdminUser = Schemas['AdminUser']
+export type AdminUserList = Schemas['AdminUserList']
+export type RoleOption = Schemas['RoleOption']
+export type UserStatus = Schemas['UserStatus']
 
 /** Fired when the API refuses the account (403): banned, deleted or without a profile. */
 export const SUSPENDED_EVENT = 'geonames:suspended'
