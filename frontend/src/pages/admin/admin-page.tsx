@@ -59,7 +59,7 @@ function Administration({ myId }: { myId: string }) {
     <>
       <PageHeader
         title="Administration"
-        description="Find user accounts, change their plan, deactivate, delete or restore them."
+        description="Find user accounts, change their name or plan, deactivate, delete or restore them."
         action={
           <Button onClick={() => setCreating(true)}>
             <Plus aria-hidden="true" />
@@ -76,8 +76,8 @@ function Administration({ myId }: { myId: string }) {
           />
           <Input
             type="search"
-            aria-label="Search by email"
-            placeholder="Search by email"
+            aria-label="Search by name or email"
+            placeholder="Search by name or email"
             className="pl-8"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -113,7 +113,7 @@ function Administration({ myId }: { myId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-4">Email</TableHead>
+                  <TableHead className="pl-4">User</TableHead>
                   <TableHead>Plan</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Keys</TableHead>
@@ -129,9 +129,16 @@ function Administration({ myId }: { myId: string }) {
                   const isSelf = user.id === myId
                   return (
                     <TableRow key={user.id}>
-                      <TableCell className="max-w-72 truncate pl-4 font-medium" title={label}>
-                        {label}
-                        {isSelf && <span className="ml-2 text-xs font-normal text-muted-foreground">(you)</span>}
+                      <TableCell className="max-w-72 pl-4">
+                        <p className="truncate font-medium" title={user.display_name ?? label}>
+                          {user.display_name ?? label}
+                          {isSelf && <span className="ml-2 text-xs font-normal text-muted-foreground">(you)</span>}
+                        </p>
+                        {user.display_name && (
+                          <p className="truncate text-xs text-muted-foreground" title={label}>
+                            {label}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>
                         {user.role}

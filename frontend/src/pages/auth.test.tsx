@@ -171,6 +171,20 @@ describe('signup', () => {
     })
   })
 
+  it('sends the optional name as the full_name metadata', async () => {
+    renderApp('/signup')
+
+    await userEvent.type(await screen.findByLabelText('Name'), ' Ada Lovelace ')
+    await signUp('long-enough')
+
+    await screen.findByRole('heading', { name: 'Check your email' })
+    expect(fakeAuth.signUp).toHaveBeenCalledWith({
+      email: 'new@example.com',
+      password: 'long-enough',
+      options: { emailRedirectTo: `${ORIGIN}/ui/auth/callback`, data: { full_name: 'Ada Lovelace' } },
+    })
+  })
+
   it('goes straight in when email confirmation is off', async () => {
     fakeAuth.signUp.mockImplementationOnce(async () => {
       fakeAuth.setSession(fakeSession('new@example.com'))

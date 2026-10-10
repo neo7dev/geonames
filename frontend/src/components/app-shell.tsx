@@ -57,24 +57,39 @@ function Sidebar({ onNavigate, logo = true }: { onNavigate?: () => void; logo?: 
           </a>
           <ThemeToggle />
         </div>
-        <Account />
+        <Account onNavigate={onNavigate} />
       </div>
     </div>
   )
 }
 
-function Account() {
+function Account({ onNavigate }: { onNavigate?: () => void }) {
   const { session, signOut } = useAuth()
   const me = useMe()
+  const email = session?.user.email
+  const name = me.data?.display_name
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-2 border-t pt-3 pl-2">
-      <div className="min-w-0 text-sm">
-        <p className="truncate font-medium" title={session?.user.email}>
-          {session?.user.email}
+    <div className="flex min-w-0 items-center justify-between gap-1 border-t pt-3">
+      {/* The name opens the profile page. */}
+      <NavLink
+        to="/profile"
+        onClick={onNavigate}
+        className={({ isActive }) =>
+          cn(
+            'min-w-0 flex-1 rounded-md px-2 py-1 text-sm hover:bg-sidebar-accent',
+            isActive && 'bg-sidebar-accent',
+          )
+        }
+      >
+        <p className="truncate font-medium" title={name ? `${name} (${email})` : email}>
+          <span className="sr-only">Profile: </span>
+          {name ?? email}
         </p>
-        <p className="text-xs text-muted-foreground">{me.data ? `${me.data.tier} tier` : '\u00a0'}</p>
-      </div>
+        <p className="truncate text-xs text-muted-foreground">
+          {me.data ? (name ? email : `${me.data.tier} tier`) : '\u00a0'}
+        </p>
+      </NavLink>
       <Button
         variant="ghost"
         size="icon"

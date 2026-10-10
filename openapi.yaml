@@ -2491,6 +2491,34 @@ paths:
                 $ref: '#/components/schemas/MeResponse'
       security:
       - HTTPBearer: []
+    patch:
+      tags:
+      - Portal
+      summary: Update Me
+      description: Change your display name. Email and password are changed in Supabase
+        Auth.
+      operationId: update_me_portal_me_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /portal/keys:
     get:
       tags:
@@ -2657,6 +2685,8 @@ paths:
       tags:
       - Administration
       summary: List Users
+      description: Users matching the search, the calling admin first, then newest
+        first.
       operationId: list_users_portal_admin_users_get
       security:
       - HTTPBearer: []
@@ -2669,9 +2699,9 @@ paths:
           - type: string
             maxLength: 254
           - type: 'null'
-          description: Part of the email address
+          description: Part of the email address or name
           title: Q
-        description: Part of the email address
+        description: Part of the email address or name
       - name: status
         in: query
         required: false
@@ -2854,6 +2884,11 @@ components:
           - type: string
           - type: 'null'
           title: Email
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
         role:
           type: string
           title: Role
@@ -2883,6 +2918,7 @@ components:
       required:
       - id
       - email
+      - display_name
       - role
       - tier
       - is_admin
@@ -2960,6 +2996,13 @@ components:
           type: string
           maxLength: 72
           title: Password
+        display_name:
+          anyOf:
+          - type: string
+            maxLength: 100
+            pattern: ^[^\x00-\x1f\x7f]*$
+          - type: 'null'
+          title: Display Name
         role:
           anyOf:
           - type: string
@@ -3419,6 +3462,11 @@ components:
           - type: string
           - type: 'null'
           title: Email
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
         role:
           type: string
           title: Role
@@ -3433,15 +3481,21 @@ components:
         active_keys:
           type: integer
           title: Active Keys
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
       type: object
       required:
       - id
       - email
+      - display_name
       - role
       - tier
       - is_admin
       - limits
       - active_keys
+      - created_at
       title: MeResponse
     RoleOption:
       properties:
@@ -3516,8 +3570,26 @@ components:
       - current_step
       - started_at
       title: SyncStatusResponse
+    UpdateMeRequest:
+      properties:
+        display_name:
+          anyOf:
+          - type: string
+            maxLength: 100
+            pattern: ^[^\x00-\x1f\x7f]*$
+          - type: 'null'
+          title: Display Name
+      type: object
+      title: UpdateMeRequest
     UpdateUserRequest:
       properties:
+        display_name:
+          anyOf:
+          - type: string
+            maxLength: 100
+            pattern: ^[^\x00-\x1f\x7f]*$
+          - type: 'null'
+          title: Display Name
         role:
           anyOf:
           - type: string
@@ -3535,7 +3607,8 @@ components:
           title: Is Deleted
       type: object
       title: UpdateUserRequest
-      description: Fields left out stay as they are.
+      description: Fields left out stay as they are. A null or empty display_name
+        clears it.
     UsageResponse:
       properties:
         tier:

@@ -20,6 +20,8 @@ export function authErrorMessage(error: AuthError): string {
     case 'over_email_send_rate_limit':
     case 'over_request_rate_limit':
       return 'Too many attempts. Wait a minute and try again.'
+    case 'email_exists':
+      return 'An account with this email address already exists.'
     case 'email_address_invalid':
       return 'Enter a valid email address.'
   }

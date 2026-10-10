@@ -6,7 +6,7 @@ export const PAGE_SIZE = 50
 
 export type UserSearch = { q: string; status: UserStatus | null; offset: number }
 
-export type UserChanges = { role?: string; is_active?: boolean; is_deleted?: boolean }
+export type UserChanges = { display_name?: string | null; role?: string; is_active?: boolean; is_deleted?: boolean }
 
 /** Admins only: the API answers 403 for everyone else, which reads as a suspended account. */
 export function useAdminUsers({ q, status, offset }: UserSearch) {
@@ -33,7 +33,7 @@ function useRefreshUsers() {
 export function useCreateUser() {
   const refresh = useRefreshUsers()
   return useMutation({
-    mutationFn: (user: { email: string; password: string; role: string }) =>
+    mutationFn: (user: { email: string; password: string; role: string; display_name: string | null }) =>
       api<AdminUser>('/portal/admin/users', { method: 'POST', body: JSON.stringify(user) }),
     onSuccess: refresh,
   })

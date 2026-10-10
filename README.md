@@ -208,7 +208,7 @@ In the devcontainer, `make seed-users` (also run on every container start) creat
 | `dev@geonames.local` | dev / pro | `DEV_API_KEY_DEV` |
 | `admin@geonames.local` | admin / max (can sync) | `DEV_API_KEY_ADMIN` |
 
-It also creates two playground users with the same password and no API key, to try the Administration page on (change their plan, deactivate, delete, restore): `alice@geonames.local` (starts as free) and `bob@geonames.local` (starts as dev). They are only created when missing, never reset, so your changes stay; one deleted for good comes back on the next run.
+It also creates two playground users with the same password and no API key, to try the Administration page on (change their plan, deactivate, delete, restore): `alice@geonames.local` (Alice Example, starts as free) and `bob@geonames.local` (Bob Example, starts as dev). They are only created when missing, never reset, so your changes stay; one deleted for good comes back on the next run.
 
 Rerunning it restores the four tier users' roles and keys. It refuses unless `DEV_SEED_USERS=true`, which only `.env.dev` sets: never enable it or the keys on a deployed server. The seed key fills the free user's only key slot.
 

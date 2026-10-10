@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 
 import { roleLabel, useCreateUser, useRoles } from '@/api/admin'
+import { displayNameError, MAX_DISPLAY_NAME } from '@/api/queries'
 import { ErrorAlert, Field } from '@/components/form'
 import { NativeSelect } from '@/components/native-select'
 import { PasswordInput } from '@/components/password-input'
@@ -29,6 +30,7 @@ function CreateUserContent({ onDone }: { onDone: () => void }) {
   const create = useCreateUser()
   const roles = useRoles()
   const minLength = uiConfig().password_min_length
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<string | null>(null)
@@ -42,8 +44,13 @@ function CreateUserContent({ onDone }: { onDone: () => void }) {
     const trimmed = email.trim()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) return setProblem('Enter an email address.')
     if (password.length < minLength) return setProblem(`Use a password of at least ${minLength} characters.`)
+    const nameProblem = displayNameError(name)
+    if (nameProblem) return setProblem(`Name: ${nameProblem}`)
     setProblem(null)
-    create.mutate({ email: trimmed, password, role: chosenRole }, { onSuccess: onDone })
+    create.mutate(
+      { email: trimmed, password, role: chosenRole, display_name: name.trim() || null },
+      { onSuccess: onDone },
+    )
   }
 
   const error = problem ?? create.error?.message ?? roles.error?.message ?? null
@@ -58,11 +65,21 @@ function CreateUserContent({ onDone }: { onDone: () => void }) {
           </DialogDescription>
         </DialogHeader>
         {error && <ErrorAlert>{error}</ErrorAlert>}
+        <Field id="new-user-name" label="Name" hint="Optional. They can change it on their profile page.">
+          <Input
+            id="new-user-name"
+            autoFocus
+            autoComplete="off"
+            maxLength={MAX_DISPLAY_NAME}
+            aria-describedby="new-user-name-hint"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Field>
         <Field id="new-user-email" label="Email">
           <Input
             id="new-user-email"
             type="email"
-            autoFocus
             autoComplete="off"
             value={email}
             onChange={(e) => setEmail(e.target.value)}

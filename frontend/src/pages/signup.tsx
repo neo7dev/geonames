@@ -3,6 +3,7 @@ import { MailCheck } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
+import { MAX_DISPLAY_NAME } from '@/api/queries'
 import { useAuthSettings } from '@/auth/auth-settings'
 import { authErrorMessage } from '@/auth/errors'
 import { callbackUrl } from '@/auth/urls'
@@ -25,6 +26,7 @@ export function SignupPage() {
   const next = safeNext(params.get('next'))
   const settings = useAuthSettings()
   const minLength = uiConfig().password_min_length
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
@@ -64,7 +66,8 @@ export function SignupPage() {
     const { data, error } = await supabase().auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: callbackUrl(next) },
+      // Copied onto the profile as its display name
+      options: { emailRedirectTo: callbackUrl(next), data: name.trim() ? { full_name: name.trim() } : undefined },
     })
     setPending(false)
     if (error) setError(error)
@@ -76,13 +79,23 @@ export function SignupPage() {
     <AuthCard title="Create an account" description="Get an API key for the GeoNames API." footer={<>Have an account? {loginLink}</>}>
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
         {error && <ErrorAlert>{typeof error === 'string' ? error : authErrorMessage(error)}</ErrorAlert>}
+        <Field id="name" label="Name" hint="Optional. How you appear in the portal.">
+          <Input
+            id="name"
+            autoComplete="name"
+            autoFocus
+            maxLength={MAX_DISPLAY_NAME}
+            aria-describedby="name-hint"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Field>
         <Field id="email" label="Email">
           <Input
             id="email"
             type="email"
             autoComplete="email"
             required
-            autoFocus
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />

@@ -10,6 +10,7 @@ import { KeysPage } from '@/pages/keys/keys-page'
 import { LoginPage } from '@/pages/login'
 import { NotFound } from '@/pages/not-found'
 import { OverviewPage } from '@/pages/overview/overview-page'
+import { ProfilePage } from '@/pages/profile/profile-page'
 import { ResetPasswordPage } from '@/pages/reset-password'
 import { RouteError } from '@/pages/route-error'
 import { SignupPage } from '@/pages/signup'
@@ -60,6 +61,7 @@ export const routes: RouteObject[] = [
                     path: 'usage',
                     lazy: async () => ({ Component: (await import('@/pages/usage/usage-page')).UsagePage }),
                   },
+                  { path: 'profile', element: <ProfilePage /> },
                   { path: 'admin', element: <AdminPage /> },
                   { path: '*', element: <NotFound /> },
                 ],

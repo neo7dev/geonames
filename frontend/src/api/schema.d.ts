@@ -532,7 +532,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Me
+         * @description Change your display name. Email and password are changed in Supabase Auth.
+         */
+        patch: operations["update_me_portal_me_patch"];
         trace?: never;
     };
     "/portal/keys": {
@@ -642,7 +646,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Users */
+        /**
+         * List Users
+         * @description Users matching the search, the calling admin first, then newest first.
+         */
         get: operations["list_users_portal_admin_users_get"];
         put?: never;
         /**
@@ -694,6 +701,8 @@ export interface components {
             id: string;
             /** Email */
             email: string | null;
+            /** Display Name */
+            display_name: string | null;
             /** Role */
             role: string;
             /** Tier */
@@ -751,6 +760,8 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+            /** Display Name */
+            display_name?: string | null;
             /** Role */
             role?: string | null;
         };
@@ -969,6 +980,8 @@ export interface components {
             id: string;
             /** Email */
             email: string | null;
+            /** Display Name */
+            display_name: string | null;
             /** Role */
             role: string;
             /** Tier */
@@ -978,6 +991,11 @@ export interface components {
             limits: components["schemas"]["Limits"];
             /** Active Keys */
             active_keys: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** RoleOption */
         RoleOption: {
@@ -1020,11 +1038,18 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /** UpdateMeRequest */
+        UpdateMeRequest: {
+            /** Display Name */
+            display_name?: string | null;
+        };
         /**
          * UpdateUserRequest
-         * @description Fields left out stay as they are.
+         * @description Fields left out stay as they are. A null or empty display_name clears it.
          */
         UpdateUserRequest: {
+            /** Display Name */
+            display_name?: string | null;
             /** Role */
             role?: string | null;
             /** Is Active */
@@ -2381,6 +2406,39 @@ export interface operations {
             };
         };
     };
+    update_me_portal_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_keys_portal_keys_get: {
         parameters: {
             query?: never;
@@ -2549,7 +2607,7 @@ export interface operations {
     list_users_portal_admin_users_get: {
         parameters: {
             query?: {
-                /** @description Part of the email address */
+                /** @description Part of the email address or name */
                 q?: string | null;
                 /** @description Only users in this state */
                 status?: components["schemas"]["UserStatus"] | null;

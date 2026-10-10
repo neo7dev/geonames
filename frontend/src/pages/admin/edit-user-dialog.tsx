@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 
 import { roleLabel, useRoles, useUpdateUser, type UserChanges } from '@/api/admin'
 import type { AdminUser } from '@/api/client'
+import { displayNameError } from '@/api/queries'
 import { ErrorAlert, Field } from '@/components/form'
 import { NativeSelect } from '@/components/native-select'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 /** Change a user's plan (their role) and whether their account is active. */
@@ -35,10 +37,13 @@ export function EditUserDialog({
 function EditUserContent({ user, isSelf, onDone }: { user: AdminUser; isSelf: boolean; onDone: () => void }) {
   const update = useUpdateUser()
   const roles = useRoles()
+  const [name, setName] = useState(user.display_name ?? '')
+  const [nameProblem, setNameProblem] = useState<string | null>(null)
   const [role, setRole] = useState(user.role)
   const [active, setActive] = useState(user.is_active)
 
   const changes: UserChanges = {}
+  if (name.trim() !== (user.display_name ?? '')) changes.display_name = name.trim() || null
   if (role !== user.role) changes.role = role
   if (active !== user.is_active) changes.is_active = active
   const changed = Object.keys(changes).length > 0
@@ -49,6 +54,9 @@ function EditUserContent({ user, isSelf, onDone }: { user: AdminUser; isSelf: bo
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
     if (!changed) return onDone()
+    const problem = displayNameError(name)
+    setNameProblem(problem)
+    if (problem) return
     update.mutate({ id: user.id, changes }, { onSuccess: onDone })
   }
 
@@ -69,6 +77,19 @@ function EditUserContent({ user, isSelf, onDone }: { user: AdminUser; isSelf: bo
             This account is deleted. Restore it from the list to let them back in.
           </p>
         )}
+        <Field id="edit-user-name" label="Name" hint={nameProblem ?? 'Empty shows their email instead.'}>
+          <Input
+            id="edit-user-name"
+            autoComplete="off"
+            value={name}
+            aria-invalid={nameProblem !== null}
+            aria-describedby="edit-user-name-hint"
+            onChange={(e) => {
+              setName(e.target.value)
+              setNameProblem(null)
+            }}
+          />
+        </Field>
         <Field
           id="edit-user-role"
           label="Plan"

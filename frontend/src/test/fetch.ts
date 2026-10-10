@@ -27,11 +27,13 @@ export function mockFetch(routes: Record<string, Route>) {
 export const ME = {
   id: '00000000-0000-0000-0000-000000000001',
   email: 'ada@example.com',
+  display_name: null as string | null,
   role: 'free',
   tier: 'basic',
   is_admin: false,
   limits: { per_minute: 10, per_hour: 100, per_month: 5000, max_keys: 1 },
   active_keys: 0,
+  created_at: '2026-09-01T12:00:00Z',
 }
 
 const window_ = (used: number | null, limit: number | null, resets_at: string) => ({ used, limit, resets_at })

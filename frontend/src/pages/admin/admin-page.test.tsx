@@ -13,6 +13,7 @@ const ADMIN_ME = { ...ME, role: 'admin', tier: 'max', is_admin: true }
 const user = (email: string, changes: Partial<AdminUser> = {}): AdminUser => ({
   id: `id-${email}`,
   email,
+  display_name: null,
   role: 'free',
   tier: 'basic',
   is_admin: false,
@@ -125,7 +126,7 @@ describe('list', () => {
     renderApp('/admin')
     await screen.findByText('bob@example.com')
 
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Search by email' }), 'eve')
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search by name or email' }), 'eve')
 
     await waitFor(() => expect(screen.queryByText('bob@example.com')).not.toBeInTheDocument())
     expect(screen.getByText('eve@example.com')).toBeInTheDocument()
@@ -167,6 +168,26 @@ describe('edit', () => {
     const row = (await screen.findByText('eve@example.com')).closest('tr')!
     await waitFor(() => expect(within(row).getByText('Inactive')).toBeInTheDocument())
     expect(row).toHaveTextContent('dev· pro')
+  })
+
+  it('shows and edits the display name', async () => {
+    const { calls } = adminApi([user('eve@example.com', { display_name: 'Eve Example' })])
+    renderApp('/admin')
+
+    const row = (await screen.findByText('Eve Example')).closest('tr')!
+    expect(within(row).getByText('eve@example.com')).toBeInTheDocument()
+
+    await userEvent.click(within(row).getByRole('button', { name: 'Edit eve@example.com' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Edit user' })
+    const name = within(dialog).getByLabelText('Name')
+    expect(name).toHaveValue('Eve Example')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Eve Renamed')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(calls).toContain('PATCH /portal/admin/users/id-eve@example.com {"display_name":"Eve Renamed"}')
+    expect(await screen.findByText('Eve Renamed')).toBeInTheDocument()
   })
 
   it('keeps admins from locking themselves out', async () => {
@@ -230,6 +251,7 @@ describe('create', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Create user' }))
     const dialog = await screen.findByRole('dialog', { name: 'Create a user' })
+    await userEvent.type(within(dialog).getByLabelText('Name'), ' New Person ')
     await userEvent.type(within(dialog).getByLabelText('Email'), ' new@example.com ')
     await userEvent.type(within(dialog).getByLabelText('Password'), 'long-enough')
     await waitFor(() => expect(within(dialog).getByLabelText('Plan')).toHaveValue('free'))
@@ -238,7 +260,7 @@ describe('create', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(calls).toContain(
-      'POST /portal/admin/users {"email":"new@example.com","password":"long-enough","role":"dev"}',
+      'POST /portal/admin/users {"email":"new@example.com","password":"long-enough","role":"dev","display_name":"New Person"}',
     )
     expect(await screen.findByText('new@example.com')).toBeInTheDocument()
   })
