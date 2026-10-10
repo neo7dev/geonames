@@ -110,6 +110,22 @@ async def test_the_minute_check_passes_against_the_limiter(
     assert check.message.startswith("10x200, 3x429")
 
 
+@pytest.mark.parametrize(
+    ("left", "window"),
+    [
+        ({"minute": 3, "hour": 50, "month": 900}, "minute"),
+        ({"minute": 10, "hour": 4, "month": 900}, "hour"),
+        # A tie goes to the longer window, which the limiter reports
+        ({"minute": 10, "hour": 10, "month": 900}, "hour"),
+        ({"minute": 5, "hour": 5, "month": 5}, "month"),
+        ({"minute": None, "hour": 7, "month": None}, "hour"),
+        ({"minute": None, "hour": None, "month": None}, None),
+    ],
+)
+def test_the_burst_targets_the_window_the_limiter_reports(left, window):
+    assert stress_api._tightest(left) == window
+
+
 def _fake_api(*responses: httpx.Response) -> ApiClient:
     """A client whose calls get *responses* in turn."""
     replies = iter(responses)

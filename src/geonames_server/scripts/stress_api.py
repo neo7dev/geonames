@@ -295,6 +295,13 @@ def _left(usage: dict) -> dict[str, int | None]:
     }
 
 
+def _tightest(left: dict[str, int | None]) -> str | None:
+    """The window with the fewest requests left, the longest on a tie: the
+    limiter checks month, hour, minute and reports the first one exhausted."""
+    limited = [w for w in reversed(WINDOW_NAMES) if left[w] is not None]
+    return min(limited, key=lambda w: left[w]) if limited else None
+
+
 async def _fresh_minute(client: ApiClient, margin: float = 10) -> dict:
     """Usage, read early enough in a minute that a burst does not straddle two.
 
@@ -315,13 +322,11 @@ async def check_minute(
 ) -> Check:
     usage = await _fresh_minute(client)
     left = _left(usage)
-    if all(v is None for v in left.values()):
+    window = _tightest(left)
+    if window is None:
         return await check_burst(
             client, role, "minute", allowed=None, window=None, extra=unlimited
         )
-    window = min(
-        (w for w in WINDOW_NAMES if left[w] is not None), key=lambda w: left[w]
-    )
     if left[window] == 0:
         return Check(
             role,
