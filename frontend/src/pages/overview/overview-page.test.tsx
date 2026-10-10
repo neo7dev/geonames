@@ -86,5 +86,4 @@ it('refetches the usage every 10 seconds', async () => {
   await vi.advanceTimersByTimeAsync(10_000)
 
   await waitFor(() => expect(calls()).toBe(before + 1))
-  vi.useRealTimers()
 })

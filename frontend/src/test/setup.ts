@@ -16,6 +16,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  // Also after a test that failed before switching back
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   localStorage.clear()
   document.documentElement.className = ''

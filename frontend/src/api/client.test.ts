@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { api, ApiError, SUSPENDED_EVENT } from '@/api/client'
 import { fakeAuth, fakeSession } from '@/test/fake-supabase'
@@ -85,12 +85,12 @@ describe('api', () => {
   it('reports a suspended account', async () => {
     const onSuspended = vi.fn()
     window.addEventListener(SUSPENDED_EVENT, onSuspended)
+    onTestFinished(() => window.removeEventListener(SUSPENDED_EVENT, onSuspended))
     mockFetch({ '/portal/me': { status: 403, body: { detail: 'suspended' } } })
 
     await failure(api('/portal/me'))
 
     expect(onSuspended).toHaveBeenCalledOnce()
     expect(fakeAuth.signOut).not.toHaveBeenCalled()
-    window.removeEventListener(SUSPENDED_EVENT, onSuspended)
   })
 })

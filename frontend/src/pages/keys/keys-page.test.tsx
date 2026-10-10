@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { fakeAuth, fakeSession } from '@/test/fake-supabase'
 import { baseRoutes, ME, mockFetch } from '@/test/fetch'
@@ -77,7 +77,12 @@ describe('list', () => {
 describe('create', () => {
   it('shows the new key once, and never again after closing', async () => {
     const writeText = vi.fn(async () => {})
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    onTestFinished(() => {
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+      else delete (navigator as { clipboard?: unknown }).clipboard
+    })
     portal()
     renderApp('/keys')
 
