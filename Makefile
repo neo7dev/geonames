@@ -259,6 +259,10 @@ api-call:
 stress:
 	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.stress_api load $(ARGS)
 
+## Reset the seeded users' hour and month counters (dev only), e.g. ARGS="--role free --all"
+reset-usage:
+	$(UV) run python -m geonames_server.scripts.reset_usage $(ARGS)
+
 ## Check every tier's limits and quotas for real, e.g. ARGS="--role free"
 stress-limits:
 	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.stress_api limits --quota hour --quota month $(ARGS)
@@ -340,4 +344,4 @@ push-image: push-image-version
 push-image-version:
 	docker push $(IMAGE):$(VERSION)
 
-.PHONY: install install-dev help run api-call stress stress-limits tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version
+.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version

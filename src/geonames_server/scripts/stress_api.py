@@ -50,6 +50,7 @@ from geonames_server.scripts.api_client import (
     dev_users,
     quiet_http_logs,
     random_request,
+    unreachable_api_exits,
 )
 
 # A cheap route for the limit checks
@@ -512,7 +513,8 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
     quiet_http_logs()
-    sys.exit(asyncio.run(args.run(args)))
+    with unreachable_api_exits(args.base_url):
+        sys.exit(asyncio.run(args.run(args)))
 
 
 if __name__ == "__main__":

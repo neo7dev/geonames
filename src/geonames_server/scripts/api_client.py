@@ -25,7 +25,10 @@ import json
 import logging
 import os
 import random
+import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -299,7 +302,17 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     quiet_http_logs()
-    asyncio.run(_run(args))
+    with unreachable_api_exits(args.base_url):
+        asyncio.run(_run(args))
+
+
+@contextmanager
+def unreachable_api_exits(base_url: str) -> Iterator[None]:
+    """Turn a refused connection into a one-line hint instead of a traceback."""
+    try:
+        yield
+    except httpx.ConnectError:
+        sys.exit(f"API not reachable at {base_url}: start it with make run")
 
 
 if __name__ == "__main__":
