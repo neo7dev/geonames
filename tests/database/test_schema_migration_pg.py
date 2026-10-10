@@ -351,6 +351,7 @@ def test_search_indexes_are_created_and_dropped():
         for index in [
             (table, f"ix_{table}_name_trgm", "trigram"),
             (table, f"ix_{table}_asciiname_trgm", "trigram"),
+            (table, f"ix_{table}_alternatenames_trgm", "trigram"),
             (table, f"ix_{table}_population", "btree"),
         ]
     }
@@ -359,6 +360,7 @@ def test_search_indexes_are_created_and_dropped():
         "WHERE extname = 'pg_trgm'"
     ) == [("extensions",)]
 
-    command.downgrade(cfg, "-1")
+    # Down to the revision before the first search indexes
+    command.downgrade(cfg, "b8e1f4c2d9a6")
 
     assert _search_indexes() == set()

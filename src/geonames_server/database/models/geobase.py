@@ -22,7 +22,7 @@ class GeoBase(Base):
                 postgresql_using="gin",
                 postgresql_ops={column: GIN_TRGM_OPS},
             )
-            for column in ("name", "asciiname")
+            for column in ("name", "asciiname", "alternatenames")
         ) + (Index(f"ix_{table}_population", "population"),)
 
     geonameid: Mapped[int] = mapped_column(

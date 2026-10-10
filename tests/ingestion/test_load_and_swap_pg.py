@@ -96,6 +96,7 @@ def test_replaces_contents_and_keeps_schema(conn, tmp_path):
         "ix_cities500_geonameid",
         "ix_cities500_name_trgm",
         "ix_cities500_asciiname_trgm",
+        "ix_cities500_alternatenames_trgm",
         "ix_cities500_population",
     }
     assert _scalar(conn, "SELECT to_regclass('cities500_new') IS NULL")
