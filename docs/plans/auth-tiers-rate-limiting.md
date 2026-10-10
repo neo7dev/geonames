@@ -26,7 +26,7 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | 3. Deploy image + compose | Done | Prod Dockerfile; root compose with the same services as dev, plus Redis; startup no longer waits for data loads; public `/health` | `docker compose up` brings it all up, `/health` returns 200, Studio opens |
 | 4. Auth + API keys | Done (merged to `main` 2026-10-09) | Tiers, roles and user tables; new signups get the default role (free); login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
 | 5. Rate limits + quota | Done (merged to `main` with its review fixes) | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
-| 6. Frontend | Built on `phase-6-frontend` (not merged); GitHub and Google login later | React + Vite + Tailwind + shadcn at `/ui`: signup/login with email + password (GitHub and Google later in the phase), key management, usage page | Sign up, create a key, call the API, see the usage update |
+| 6. Frontend | Done (merged to `main`); GitHub and Google login not started | React + Vite + Tailwind + shadcn at `/ui`: signup/login with email + password (GitHub and Google later in the phase), key management, usage page | Sign up, create a key, call the API, see the usage update |
 | 7. Ops (later) | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry | Image published to ghcr |
 
 ## Tiers
@@ -520,6 +520,13 @@ Built as scoped above in six increments, each checked live in a browser (gstack'
   8. `make ui-dev`: signup on :5173, and the email link came back to `http://localhost:5173/ui`. Found and fixed here (`f8f78de`): the dev server served `theme-init.js` at `/ui/ui/` (404).
   9. Root stack from a clean worktree of the branch as project `p6smoke` on ports 19500 / 18000, fresh secrets from `make supabase-keys`, email auto-confirm on (no Mailpit there): `/ui/` served from the image, `config.json` carried that deployment's URL and anon key, signup and login worked against its Kong. Torn down with its volumes afterwards.
   - The copy button could not be checked in the headless browser, which denies clipboard writes to every page (`NotAllowedError: Write permission denied`); it showed its fallback ("Copy failed: select and copy"). A unit test covers the success path; check it once by hand in a real browser.
+
+### Added after phase 6 (branch `admin-users`, merged to `main` 2026-10-10)
+
+- Administration page at `/ui/admin` for admins (`26af132`): find users, change their role (and so their plan), deactivate, delete, restore or remove them for good, create users. Replaces "Studio stays the admin UI" from the phase 6 scope.
+- Display names that users change on a new profile page and admins on the Administration page (`689ed60`, `79ceca5`).
+- Confirmations show as toasts that close after 2 seconds (`d5e9222`); errors stay inline alerts.
+- Review fixes (`f3281d3`..`7b03a26`).
 
 ## Risks
 
