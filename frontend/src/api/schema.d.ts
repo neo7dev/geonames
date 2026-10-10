@@ -683,7 +683,7 @@ export interface paths {
         head?: never;
         /**
          * Update User
-         * @description Change a user's role (and so their plan), deactivate or restore them.
+         * @description Change a user's name or role (and so their plan), deactivate or restore them.
          */
         patch: operations["update_user_portal_admin_users__user_id__patch"];
         trace?: never;
