@@ -4,6 +4,7 @@ The limit checks need TEST_REDIS_URL, like the other rate limit tests.
 """
 
 import random
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -187,6 +188,43 @@ async def test_the_burst_check_catches_broken_limits(responses, problem):
 
     assert not check.passed
     assert problem in check.message
+
+
+@pytest.mark.asyncio
+async def test_the_admin_route_check_waits_out_a_minute_about_to_end(monkeypatch):
+    """Read late in a minute, the after count would be the next minute's."""
+    now = datetime.now(timezone.utc)
+    minutes = iter(
+        [
+            (5, now + timedelta(seconds=2)),  # ends before /sync is answered
+            (0, now + timedelta(seconds=60)),  # the next minute
+            (0, now + timedelta(seconds=60)),
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/portal/usage":
+            used, resets = next(minutes)
+            window = {"used": used, "limit": 10, "resets_at": resets.isoformat()}
+            return httpx.Response(
+                200,
+                json={"current": {w: window for w in ("minute", "hour", "month")}},
+            )
+        return httpx.Response(403, json={"detail": "Admins only"})
+
+    async def no_wait(seconds):
+        pass
+
+    monkeypatch.setattr(stress_api.asyncio, "sleep", no_wait)
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://t"
+    )
+    client = ApiClient("gn_key", client=http)
+    client.token = "login-token"
+
+    check = await stress_api.check_admin_route(client, "free", is_admin=False)
+
+    assert check.passed, check.message
 
 
 @pytest.mark.asyncio

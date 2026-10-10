@@ -352,7 +352,8 @@ async def check_minute(
 
 async def check_admin_route(client: ApiClient, role: str, is_admin: bool) -> Check:
     """Non-admins get 403 on /sync and the call is not counted; admins get through."""
-    before = _current(await client.usage())["minute"]["used"]
+    # Early in a minute, so both reads are of the same minute's counter
+    before = _current(await _fresh_minute(client))["minute"]["used"]
     result = await client.call(f"/sync/{uuid.uuid4().hex}")
     after = _current(await client.usage())["minute"]["used"]
     expected, counted = (404, 1) if is_admin else (403, 0)
