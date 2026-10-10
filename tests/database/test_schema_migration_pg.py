@@ -364,3 +364,30 @@ def test_search_indexes_are_created_and_dropped():
     command.downgrade(cfg, "b8e1f4c2d9a6")
 
     assert _search_indexes() == set()
+
+
+def test_search_indexes_are_left_to_startup_on_tables_with_data():
+    cfg = _alembic_config()
+    command.upgrade(cfg, "b8e1f4c2d9a6")
+    conn = psycopg2.connect(DSN)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    "INSERT INTO {}.cities500 (geonameid, name, asciiname, latitude, "
+                    "longitude) VALUES (1, 'a', 'a', 0, 0)"
+                ).format(sql.Identifier(SCHEMA))
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    command.upgrade(cfg, "head")
+
+    tables = {table for table, _, _ in _search_indexes()}
+    assert "cities500" not in tables
+    assert "cities1000" in tables
+
+    command.downgrade(cfg, "b8e1f4c2d9a6")
+
+    assert _search_indexes() == set()

@@ -35,6 +35,9 @@ def _get_conn_params() -> dict:
     }
 
 
+# Sort memory for index builds: trigram indexes on allcountries build much faster.
+INDEX_BUILD_MEMORY = "512MB"
+
 # First key of the advisory locks taken by dataset_lock (arbitrary, app-wide).
 _DATASET_LOCK_NAMESPACE = 0x6E6D  # "gn"
 

@@ -38,6 +38,7 @@ from geonames_server.database.models.cities1000 import Cities1000
 from geonames_server.database.models.cities5000 import Cities5000
 from geonames_server.database.models.cities15000 import Cities15000
 from geonames_server.database.session import asyncSessionLocal
+from geonames_server.ingestion.indexes import build_missing_indexes
 from geonames_server.ingestion.pipeline import (
     build_all_datasets,
     check_remote_metadata,
@@ -183,6 +184,12 @@ def _prepare_datasets(
         log.info("Checking remote metadata for all datasets")
         check_remote_metadata(all_datasets)
         log.info("Remote metadata check complete")
+
+        # Indexes the migrations left to build here, on tables with data; first,
+        # so a rebuild copies them to its new table.
+        failed_indexes = build_missing_indexes(all_datasets)
+        if failed_indexes:
+            log.error(f"Startup could not build index(es): {failed_indexes}")
 
         # 5. Rebuild enabled datasets that need it
         log.info("Checking for datasets that need rebuilding")

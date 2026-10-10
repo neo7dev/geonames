@@ -27,6 +27,7 @@ def startup_mocks():
         patch(f"{MODULE}.db_migrations"),
         patch(f"{MODULE}.seed_dataset_metadata"),
         patch(f"{MODULE}.check_remote_metadata") as check_remote,
+        patch(f"{MODULE}.build_missing_indexes", return_value=[]) as indexes,
         patch(f"{MODULE}.build_all_datasets", side_effect=_slow_build) as build,
         patch(f"{MODULE}.start_scheduler") as start,
         patch(f"{MODULE}.stop_scheduler") as stop,
@@ -38,6 +39,7 @@ def startup_mocks():
             "release_build": release_build,
             "build_finished": build_finished,
             "check_remote": check_remote,
+            "indexes": indexes,
             "build": build,
             "start": start,
             "stop": stop,
@@ -165,11 +167,30 @@ def test_prepare_datasets_tolerates_closed_loop():
 
     with (
         patch(f"{MODULE}.check_remote_metadata"),
+        patch(f"{MODULE}.build_missing_indexes", return_value=[]),
         patch(f"{MODULE}.build_all_datasets", return_value=[]),
     ):
         app_module._prepare_datasets(app, [], loop, threading.Event())
 
     assert app.state.dataset_startup == "done"
+
+
+def test_prepare_datasets_builds_missing_indexes_before_rebuilds():
+    calls = []
+    with (
+        patch(f"{MODULE}.check_remote_metadata"),
+        patch(
+            f"{MODULE}.build_missing_indexes",
+            side_effect=lambda datasets: calls.append(("indexes", datasets)) or [],
+        ),
+        patch(
+            f"{MODULE}.build_all_datasets",
+            side_effect=lambda: calls.append(("build", None)) or [],
+        ),
+    ):
+        app_module._prepare_datasets(FastAPI(), ["ds"], MagicMock(), threading.Event())
+
+    assert calls == [("indexes", ["ds"]), ("build", None)]
 
 
 @pytest.mark.asyncio
