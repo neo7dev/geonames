@@ -313,7 +313,7 @@ make supabase-keys
 Also set:
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD`: the first start creates this admin account, so you can log in at `/ui` and manage users. Ignored once an admin exists; remove the password afterwards.
 - The public URLs (`SUPABASE_PUBLIC_URL`, `API_EXTERNAL_URL`, `SITE_URL`).
-- SMTP settings, optional. Without them no email goes out, but Supabase Auth still answers as if it did: a signup stays unconfirmed and cannot log in, and "Forgot password?" sends nothing. So without SMTP set `DISABLE_SIGNUP=true` (the UI then hides "Sign up") and create accounts on the Administration page; those are confirmed at once, and users can change their password on their profile page.
+- SMTP settings, optional. With `SMTP_HOST` empty no email is sent and everything else works, but not signup confirmation, "Forgot password?" or changing an email address: Supabase Auth answers as if it had sent the email. So without SMTP set `DISABLE_SIGNUP=true` (the UI then hides "Sign up") and create accounts on the Administration page; those are confirmed at once, and users can change their password on their profile page. The server checks SMTP at startup and warns when it is not configured, or, with a different warning, when it is filled in but the server refuses it (then those emails fail with an error).
 - `APP_PORT` (default `9500`) and `KONG_HTTP_PORT` (default `8000`) if those host ports are taken.
 
 TLS is not part of the stack: put your own reverse proxy (Caddy, nginx, Traefik) in front of the app port and Kong's `/auth/v1`, and use the `https://` addresses in the public URLs. Keep `POSTGRES_USER=postgres`, `POSTGRES_HOST=db` and `POSTGRES_DB=postgres`: Supabase expects that database name.
@@ -325,6 +325,8 @@ The stack needs only `docker-compose.yml`, the `supabase/` directory and `.env`;
 ```bash
 docker compose up -d
 ```
+
+On every start the server first runs preflight checks, before migrations or anything else. It needs the database, Redis (when `REDIS_URL` is set), Supabase Auth and `JWT_SECRET`: each service gets a few attempts, and if one stays unreachable the server logs `Preflight failed: ...` for each problem and exits, and Docker restarts it. SMTP and the web UI settings (`SUPABASE_PUBLIC_URL`, `ANON_KEY`) only produce warnings.
 
 This starts:
 - `app` (FastAPI on port `APP_PORT`, `9500`, with the web UI at `/ui`)
@@ -392,6 +394,7 @@ Main runtime settings (environment variables):
 - `JWT_SECRET` (Supabase Auth's JWT secret; required, used to verify login tokens on `/portal`)
 - `SUPABASE_PUBLIC_URL` (Supabase's address as users' browsers reach it, e.g. `https://auth.example.com`; the web UI calls Supabase Auth there. Unset: `/ui/config.json` answers 503)
 - `ANON_KEY` (Supabase's public anon key, passed to the web UI)
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_ADMIN_EMAIL` (Supabase Auth's email; the server only checks them at startup and warns when email is off or broken), `DISABLE_SIGNUP`, `ENABLE_EMAIL_AUTOCONFIRM` (read for the same warning)
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD` (the first admin account, created on startup while no admin exists; ignored afterwards)
 - `PASSWORD_MIN_LENGTH` (default `8`; also passed to Supabase Auth as `GOTRUE_PASSWORD_MIN_LENGTH`, so the signup form and the server agree)
 - `UI_DIR` (default `frontend/dist`; the built web UI. The image sets `/app/ui`)
@@ -400,7 +403,7 @@ Main runtime settings (environment variables):
 - `MAX_RESULTS`
 - `SYNC_SCHEDULE_HOURS`
 - `FORCE_REBUILD`
-- `LOG_LEVEL` (default `INFO`; `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`, any case. `DEBUG` also logs every SQL statement)
+- `LOG_LEVEL` (default `INFO`; `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`, any case. `DEBUG` also logs every SQL statement and outgoing HTTP request)
 
 Notes:
 - `MAX_RESULTS` caps list/filter endpoint page size.

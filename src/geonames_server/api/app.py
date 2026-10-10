@@ -17,6 +17,7 @@ from redis.asyncio import Redis
 
 from geonames_server.api.auth import require_admin
 from geonames_server.api.first_admin import ensure_first_admin
+from geonames_server.api.preflight import PreflightError, run_preflight
 from geonames_server.api.rate_limit import RateLimiter, enforce_rate_limit
 from geonames_server.api.routers import (
     admin,
@@ -31,7 +32,6 @@ from geonames_server.api.routers import (
 from geonames_server.api.routers.geonames import create_geoname_router
 from geonames_server.api.usage_flush import flush_usage, run_usage_flusher
 from geonames_server.config.config import settings
-from geonames_server.database.connection.connection import Connection
 from geonames_server.database.migrations import db_migrations
 from geonames_server.database.models.allcountries import AllCountries
 from geonames_server.database.models.cities500 import Cities500
@@ -59,23 +59,14 @@ async def lifespan(app: FastAPI):
 
     log.info("Starting GeoNames Server lifespan")
 
-    # 1. Check database connection — exit 1 if unavailable
-    connection = Connection(
-        user=settings.postgres_user,
-        password=settings.postgres_password,
-        host=settings.postgres_host,
-        port=settings.postgres_port,
-        dbname=settings.postgres_db,
-    )
+    # 1. Preflight: database, Redis, Supabase Auth and settings, before anything
+    #    else. Exit 1 if a requirement is missing; warn about SMTP and the like.
     try:
-        connection.check()
-    except Exception:
-        log.critical("Database is not available — cannot start the server")
-        sys.exit(1)
-    log.info("Database connection verified")
-
-    if settings.jwt_secret is None:
-        log.critical("JWT_SECRET is not set — cannot verify login tokens")
+        await run_preflight()
+    except PreflightError:
+        log.critical(
+            "Cannot start the server: fix the problems above and start it again"
+        )
         sys.exit(1)
 
     # 2. Initialize database (force drops all tables + re-migrates)
@@ -106,7 +97,6 @@ async def lifespan(app: FastAPI):
     )
     flusher = None
     if app.state.redis is None:
-        log.warning("REDIS_URL is not set — rate limits are off, usage is not counted")
         app.state.rate_limiter = None
     else:
         app.state.rate_limiter = RateLimiter(app.state.redis, asyncSessionLocal)

@@ -150,6 +150,29 @@ class Settings(BaseSettings):
         default="http://auth:9999",
         description="Supabase Auth (GoTrue) URL as the server reaches it, without Kong. Used to create and delete users on the Administration page",
     )
+    # Supabase Auth sends the emails; the server only reads these to check them
+    # at startup and warn when email is off or broken.
+    smtp_host: str | None = Field(
+        default=None,
+        description="SMTP server Supabase Auth sends email through. Empty: no email is sent (signup confirmation, password reset, email change)",
+    )
+    smtp_port: int = Field(
+        default=587, description="SMTP port; 465 uses TLS from the start"
+    )
+    smtp_user: str | None = Field(default=None, description="SMTP user name")
+    smtp_pass: SecretStr | None = Field(default=None, description="SMTP password")
+    smtp_admin_email: str | None = Field(
+        default=None, description="Sender address of Supabase Auth's emails"
+    )
+    disable_signup: bool = Field(
+        default=False,
+        description="Supabase Auth refuses signups; admins create accounts",
+    )
+    enable_email_autoconfirm: bool = Field(
+        default=False,
+        description="Supabase Auth confirms signups without an email",
+    )
+
     admin_email: str | None = Field(
         default=None,
         description="Email of the first admin account, created on the first start while no admin exists. Ignored once one does",
@@ -305,7 +328,14 @@ class Settings(BaseSettings):
             )
         return SecretStr(secret)
 
-    @field_validator("supabase_public_url", "anon_key", "admin_email")
+    @field_validator(
+        "supabase_public_url",
+        "anon_key",
+        "admin_email",
+        "smtp_host",
+        "smtp_user",
+        "smtp_admin_email",
+    )
     @classmethod
     def blank_is_unset(cls, value: str | None) -> str | None:
         # `ANON_KEY =` in .env (as shipped in .env.example) counts as not set.
@@ -313,7 +343,22 @@ class Settings(BaseSettings):
             return None
         return value.strip()
 
-    @field_validator("admin_password")
+    @field_validator("disable_signup", "enable_email_autoconfirm", mode="before")
+    @classmethod
+    def blank_flag_is_false(cls, value):
+        if isinstance(value, str) and not value.strip():
+            return False
+        return value
+
+    @field_validator("smtp_port", mode="before")
+    @classmethod
+    def blank_smtp_port_is_default(cls, value):
+        # `SMTP_PORT =` in .env; Supabase Auth defaults it to 587 too
+        if isinstance(value, str) and not value.strip():
+            return 587
+        return value
+
+    @field_validator("admin_password", "smtp_pass")
     @classmethod
     def blank_password_is_unset(cls, value: SecretStr | None) -> SecretStr | None:
         # `ADMIN_PASSWORD =` in .env counts as not set. Not stripped: spaces may

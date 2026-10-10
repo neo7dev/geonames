@@ -535,6 +535,10 @@ Built as scoped above in six increments, each checked live in a browser (gstack'
 - First admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` (`2ee806e`): on startup, while no profile has an admin role, the server creates the user through Supabase Auth's admin API (or promotes an already registered email) and gives it the `admin` role. Ignored once any admin exists. A Supabase Auth failure is logged and retried on the next start.
 - Deploy compose runs `GEONAMES_IMAGE` instead of building, with `APP_PORT` / `KONG_HTTP_PORT` (`92698c9`). It needs only `docker-compose.yml`, `supabase/` and `.env`.
 - Deploy check (2026-10-10): `make image-check`, then the stack from a directory holding only those three files, fresh secrets, ports 9600/8100, `cities15000`. All 7 services healthy; the admin was created on the first start and left alone after a restart; admin login through Kong, `/portal/me` (admin, max), `/portal/admin/users`, a new API key served `/cities15000/filter`, no key got 401; `/ui` login page rendered with no console errors; Studio 401 without and 200 with basic auth. `make predeploy` passes.
+- One version, in `pyproject.toml` (`95283a0`): the image tag and label, `/health`, `/docs` and `openapi.yaml`; `image-check` fails on a mismatch.
+- `LOG_LEVEL` reaches the app's logs, default INFO (`d8bb653`); SQL statements and httpx requests only at DEBUG.
+- Supabase Auth starts with the SMTP settings blank (`9a934bb`).
+- Preflight before anything else at startup: database, Redis (when set), Supabase Auth and `JWT_SECRET` are required, retried, and stop the server listing every failure. SMTP is checked by connecting and logging in like Supabase Auth, without sending: separate warnings for not configured and configured but failing. Checked in the deploy stack: empty SMTP, a wrong host (signup then fails with "Error sending confirmation email", as warned), and Redis stopped (the app exits, Docker restarts it, it recovers once Redis is back).
 - Still to do: CI, backups, key scopes and expiry, publishing the image.
 
 ## Risks

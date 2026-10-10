@@ -8,6 +8,7 @@ import pytest
 from fastapi import FastAPI
 
 from geonames_server.api import app as app_module
+from geonames_server.api.preflight import PreflightError
 
 MODULE = "geonames_server.api.app"
 
@@ -23,8 +24,8 @@ def startup_mocks():
         return []
 
     with (
-        patch(f"{MODULE}.Connection"),
-        patch(f"{MODULE}.db_migrations"),
+        patch(f"{MODULE}.run_preflight", AsyncMock()),
+        patch(f"{MODULE}.db_migrations") as migrations,
         patch(f"{MODULE}.seed_dataset_metadata"),
         patch(f"{MODULE}.ensure_first_admin", AsyncMock()),
         patch(f"{MODULE}.check_remote_metadata") as check_remote,
@@ -39,6 +40,7 @@ def startup_mocks():
         yield {
             "release_build": release_build,
             "build_finished": build_finished,
+            "migrations": migrations,
             "check_remote": check_remote,
             "indexes": indexes,
             "build": build,
@@ -195,11 +197,20 @@ def test_prepare_datasets_builds_missing_indexes_before_rebuilds():
 
 
 @pytest.mark.asyncio
-async def test_startup_fails_without_jwt_secret(startup_mocks):
-    with patch(f"{MODULE}.settings.jwt_secret", None), pytest.raises(SystemExit):
+async def test_failed_preflight_stops_startup_before_migrations(startup_mocks):
+    with (
+        patch(
+            f"{MODULE}.run_preflight",
+            AsyncMock(
+                side_effect=PreflightError("Database at db:5432 is not reachable")
+            ),
+        ),
+        pytest.raises(SystemExit),
+    ):
         async with app_module.lifespan(FastAPI()):
             pass
 
+    startup_mocks["migrations"].assert_not_called()
     startup_mocks["build"].assert_not_called()
 
 
