@@ -13,15 +13,32 @@ class Limits(BaseModel):
     max_keys: int | None
 
 
+# The name a user goes by: trimmed, up to 100 characters, no control
+# characters. Empty means none.
+DisplayName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, max_length=100, pattern=r"^[^\x00-\x1f\x7f]*$"
+    ),
+]
+
+
 class MeResponse(BaseModel):
     id: uuid.UUID
     email: str | None
+    display_name: str | None
     role: str
     tier: str
     # Admins see the Administration page
     is_admin: bool
     limits: Limits
     active_keys: int
+    created_at: datetime
+
+
+class UpdateMeRequest(BaseModel):
+    # Empty or null clears it
+    display_name: DisplayName | None = None
 
 
 class CreateApiKeyRequest(BaseModel):

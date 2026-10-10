@@ -144,9 +144,11 @@ class TestMe:
         resp = await auth_client.get("/portal/me", headers=headers)
 
         assert resp.status_code == 200
-        assert resp.json() == {
+        body = resp.json()
+        assert body == {
             "id": str(user_id),
             "email": "new@example.com",
+            "display_name": None,
             "role": "free",
             "tier": "basic",
             "is_admin": False,
@@ -157,6 +159,7 @@ class TestMe:
                 "max_keys": 1,
             },
             "active_keys": 0,
+            "created_at": body["created_at"],
         }
 
     @pytest.mark.asyncio
@@ -255,6 +258,88 @@ class TestMe:
         body = (await auth_client.get("/portal/me", headers=headers)).json()
 
         assert body["email"] == "new@example.com"
+
+
+class TestDisplayName:
+    @pytest.mark.asyncio
+    async def test_signup_full_name_fills_it(
+        self, auth_client, async_session, make_jwt
+    ):
+        user_id = uuid.uuid4()
+        await async_session.execute(
+            text(
+                "INSERT INTO auth.users (id, email, raw_user_meta_data) "
+                'VALUES (:id, :email, \'{"full_name": "  Ada Lovelace "}\')'
+            ),
+            {"id": user_id, "email": f"{user_id}@example.com"},
+        )
+        await async_session.commit()
+
+        resp = await auth_client.get("/portal/me", headers=_bearer(make_jwt(user_id)))
+
+        assert resp.json()["display_name"] == "Ada Lovelace"
+
+    @pytest.mark.asyncio
+    async def test_later_metadata_changes_do_not_overwrite_it(
+        self, auth_client, async_session, login
+    ):
+        user_id, headers = await login()
+        await auth_client.patch(
+            "/portal/me", json={"display_name": "Mine"}, headers=headers
+        )
+        await async_session.execute(
+            text(
+                "UPDATE auth.users SET email = 'moved@example.com', "
+                'raw_user_meta_data = \'{"full_name": "Other"}\' WHERE id = :id'
+            ),
+            {"id": user_id},
+        )
+        await async_session.commit()
+
+        resp = await auth_client.get("/portal/me", headers=headers)
+
+        assert (resp.json()["display_name"], resp.json()["email"]) == (
+            "Mine",
+            "moved@example.com",
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("sent", "stored"),
+        [("  Grace Hopper ", "Grace Hopper"), ("   ", None), (None, None)],
+        ids=["trimmed", "blank-clears", "null-clears"],
+    )
+    async def test_update(self, auth_client, login, sent, stored):
+        _, headers = await login()
+        await auth_client.patch(
+            "/portal/me", json={"display_name": "Before"}, headers=headers
+        )
+
+        resp = await auth_client.patch(
+            "/portal/me", json={"display_name": sent}, headers=headers
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["display_name"] == stored
+        me = await auth_client.get("/portal/me", headers=headers)
+        assert me.json()["display_name"] == stored
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", ["x" * 101, "tab\there"], ids=["long", "control"])
+    async def test_invalid_names_are_refused(self, auth_client, login, name):
+        _, headers = await login()
+
+        resp = await auth_client.patch(
+            "/portal/me", json={"display_name": name}, headers=headers
+        )
+
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_needs_a_login(self, auth_client):
+        resp = await auth_client.patch("/portal/me", json={"display_name": "x"})
+
+        assert resp.status_code == 401
 
 
 class TestKeys:

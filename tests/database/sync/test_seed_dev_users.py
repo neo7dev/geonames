@@ -20,7 +20,7 @@ TEST_USERS = [
     ("admin", "seed-test-admin@example.com", "TEST_KEY_ADMIN"),
 ]
 KEYS = {"TEST_KEY_FREE": "gn_seed_test_free", "TEST_KEY_ADMIN": "gn_seed_test_admin"}
-PLAYGROUND = [("dev", "seed-test-play@example.com")]
+PLAYGROUND = [("dev", "seed-test-play@example.com", "Play Ground")]
 
 
 @pytest.fixture(autouse=True)
@@ -76,7 +76,17 @@ def test_creates_confirmed_users_with_roles_and_keys(sync_session, gotrue):
                 "email_confirm": True,
             },
         )
-        for email in [e for _, e, _ in TEST_USERS] + [e for _, e in PLAYGROUND]
+        for email in [e for _, e, _ in TEST_USERS]
+    ] + [
+        (
+            "/admin/users",
+            {
+                "email": "seed-test-play@example.com",
+                "password": seed_dev_users.PASSWORD,
+                "email_confirm": True,
+                "user_metadata": {"full_name": "Play Ground"},
+            },
+        )
     ]
     assert _seeded(sync_session) == [
         (

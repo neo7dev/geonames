@@ -34,6 +34,7 @@ from geonames_server.api.schemas.portal import (
     KeyUsage,
     Limits,
     MeResponse,
+    UpdateMeRequest,
     UsageResponse,
     UsageWindow,
 )
@@ -52,14 +53,19 @@ async def _count_active_keys(session: AsyncSession, user_id: uuid.UUID) -> int:
     )
 
 
-@router.get("/me", response_model=MeResponse)
-async def me(
-    principal: Principal = Depends(require_user),
-    session: AsyncSession = Depends(get_session),
-):
+async def _me(session: AsyncSession, principal: Principal) -> MeResponse:
+    display_name, created_at = (
+        await session.execute(
+            select(Profile.display_name, Profile.created_at).where(
+                Profile.id == principal.user_id
+            )
+        )
+    ).one()
     return MeResponse(
         id=principal.user_id,
         email=principal.email,
+        display_name=display_name,
+        created_at=created_at,
         role=principal.role,
         tier=principal.tier,
         is_admin=principal.is_admin,
@@ -71,6 +77,31 @@ async def me(
         ),
         active_keys=await _count_active_keys(session, principal.user_id),
     )
+
+
+@router.get("/me", response_model=MeResponse)
+async def me(
+    principal: Principal = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+):
+    return await _me(session, principal)
+
+
+@router.patch("/me", response_model=MeResponse)
+async def update_me(
+    body: UpdateMeRequest,
+    principal: Principal = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Change your display name. Email and password are changed in Supabase Auth."""
+    await session.execute(
+        update(Profile)
+        .where(Profile.id == principal.user_id)
+        .values(display_name=body.display_name or None)
+    )
+    updated = await _me(session, principal)
+    await session.commit()
+    return updated
 
 
 @router.get("/keys", response_model=list[ApiKeyResponse])

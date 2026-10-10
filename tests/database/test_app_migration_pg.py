@@ -135,7 +135,7 @@ def test_api_roles_get_no_access():
     assert grants == []
 
 
-def test_admin_role_may_read_accounts_and_change_role_and_flags():
+def test_admin_role_may_read_accounts_and_change_name_role_and_flags():
     command.upgrade(_config(), "head")
 
     tables = _query(
@@ -155,7 +155,7 @@ def test_admin_role_may_read_accounts_and_change_role_and_flags():
         ("roles", "SELECT"),
         ("tiers", "SELECT"),
     ]
-    assert columns == [("is_active",), ("is_deleted",), ("role",)]
+    assert columns == [("display_name",), ("is_active",), ("is_deleted",), ("role",)]
     # The migrating user can switch to it
     assert _query("SELECT pg_has_role(current_user, 'geonames_admin', 'SET')") == [
         (True,)
@@ -262,7 +262,8 @@ def late_auth_schema():
     """A minimal auth.users, created after the app migrations ran without it."""
     yield lambda: _query(
         "CREATE SCHEMA auth; CREATE TABLE auth.users "
-        "(id uuid PRIMARY KEY, email text, banned_until timestamptz, deleted_at timestamptz)"
+        "(id uuid PRIMARY KEY, email text, banned_until timestamptz, deleted_at timestamptz, "
+        "raw_user_meta_data jsonb)"
     )
     _query("DROP SCHEMA IF EXISTS auth CASCADE")
 

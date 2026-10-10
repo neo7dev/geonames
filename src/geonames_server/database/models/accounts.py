@@ -71,10 +71,19 @@ class Profile(AppBase):
     """
 
     __tablename__ = "profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "char_length(display_name) BETWEEN 1 AND 100",
+            name="profiles_display_name_length",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     # Copy of auth.users.email kept in sync by the trigger, so Studio shows who is who
     email: Mapped[str | None] = mapped_column(Text)
+    # The name they go by. Filled from the signup's full_name metadata, then
+    # edited on the profile page (or by an admin); NULL when none was given.
+    display_name: Mapped[str | None] = mapped_column(Text)
     role: Mapped[str] = mapped_column(
         Text,
         ForeignKey(f"{APP_SCHEMA}.roles.name", onupdate="CASCADE"),

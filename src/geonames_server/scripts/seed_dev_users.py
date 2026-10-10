@@ -46,10 +46,10 @@ DEV_USERS = [
     ("admin", "admin@geonames.local", "DEV_API_KEY_ADMIN"),
 ]
 
-# role they start with, email: playground users, created once and never reset
+# role they start with, email, name: playground users, created once and never reset
 PLAYGROUND_USERS = [
-    ("free", "alice@geonames.local"),
-    ("dev", "bob@geonames.local"),
+    ("free", "alice@geonames.local", "Alice Example"),
+    ("dev", "bob@geonames.local", "Bob Example"),
 ]
 
 
@@ -93,11 +93,14 @@ def _has_free_key_slot(session: Session, user_id, role: str, key_hash: str) -> b
     return other_keys < max_keys
 
 
-def _create_user(session: Session, gotrue: httpx.Client, email: str):
-    resp = gotrue.post(
-        "/admin/users",
-        json={"email": email, "password": PASSWORD, "email_confirm": True},
-    )
+def _create_user(
+    session: Session, gotrue: httpx.Client, email: str, name: str | None = None
+):
+    body = {"email": email, "password": PASSWORD, "email_confirm": True}
+    if name:
+        # Copied onto the profile's display_name by the signup trigger
+        body["user_metadata"] = {"full_name": name}
+    resp = gotrue.post("/admin/users", json=body)
     resp.raise_for_status()
     return _user_id(session, email)
 
@@ -138,9 +141,10 @@ def seed(session: Session, gotrue: httpx.Client, keys: dict[str, str]) -> list[s
             )
         )
 
-    for role, email in PLAYGROUND_USERS:
+    for role, email, name in PLAYGROUND_USERS:
         if _user_id(session, email) is None:
-            _set_role(session, _create_user(session, gotrue, email), email, role)
+            user_id = _create_user(session, gotrue, email, name)
+            _set_role(session, user_id, email, role)
     session.commit()
     return skipped
 
@@ -190,8 +194,8 @@ def main(argv: list[str] | None = None) -> None:
         note = "  (not restored: tier key limit reached)" if email in skipped else ""
         print(f"  {role:<7} {email:<24} {var}={keys[var]}{note}")
     print("Playground users (no API key; change them freely on /admin):")
-    for role, email in PLAYGROUND_USERS:
-        print(f"  {email:<24} starts as {role}")
+    for role, email, name in PLAYGROUND_USERS:
+        print(f"  {email:<24} {name}, starts as {role}")
     if skipped:
         print(
             "Revoke a key for those users on /portal/keys, then rerun to restore the seed key."

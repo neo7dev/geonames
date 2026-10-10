@@ -68,13 +68,18 @@ async def _request(method: str, path: str, **kwargs) -> httpx.Response:
     return resp
 
 
-async def create_user(email: str, password: str) -> uuid.UUID:
-    """Create a confirmed user who can sign in with the password at once."""
-    resp = await _request(
-        "POST",
-        "/admin/users",
-        json={"email": email, "password": password, "email_confirm": True},
-    )
+async def create_user(
+    email: str, password: str, display_name: str | None = None
+) -> uuid.UUID:
+    """Create a confirmed user who can sign in with the password at once.
+
+    The display name goes in as full_name metadata, which the signup trigger
+    copies onto the profile, as for a signup through the web UI.
+    """
+    body = {"email": email, "password": password, "email_confirm": True}
+    if display_name:
+        body["user_metadata"] = {"full_name": display_name}
+    resp = await _request("POST", "/admin/users", json=body)
     return uuid.UUID(resp.json()["id"])
 
 

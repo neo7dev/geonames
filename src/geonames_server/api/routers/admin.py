@@ -2,7 +2,8 @@
 
 Authenticated with a login token like the rest of /portal, for admin roles
 only. Queries run as the geonames_admin database role, which may only read the
-account tables and change a profile's role, is_active and is_deleted. Creating
+account tables and change a profile's display name, role, is_active and
+is_deleted. Creating
 and permanently deleting a user goes through Supabase Auth's admin API.
 """
 
@@ -10,7 +11,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, false, func, select, text, update
+from sqlalchemy import and_, false, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api import gotrue
@@ -73,6 +74,7 @@ def _users_select():
     return select(
         Profile.id,
         Profile.email,
+        Profile.display_name,
         Profile.role,
         Role.tier,
         Role.is_admin,
@@ -151,18 +153,27 @@ async def list_roles(session: AsyncSession = Depends(admin_session)):
 @router.get("/users", response_model=AdminUserList)
 async def list_users(
     q: Annotated[
-        str | None, Query(max_length=254, description="Part of the email address")
+        str | None,
+        Query(max_length=254, description="Part of the email address or name"),
     ] = None,
     user_status: Annotated[
         UserStatus | None, Query(alias="status", description="Only users in this state")
     ] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    principal: Principal = Depends(require_portal_admin),
     session: AsyncSession = Depends(admin_session),
 ):
+    """Users matching the search, the calling admin first, then newest first."""
     filters = []
     if q and q.strip():
-        filters.append(Profile.email.ilike(f"%{_escape_like(q.strip())}%", escape="\\"))
+        pattern = f"%{_escape_like(q.strip())}%"
+        filters.append(
+            or_(
+                Profile.email.ilike(pattern, escape="\\"),
+                Profile.display_name.ilike(pattern, escape="\\"),
+            )
+        )
     if user_status is not None:
         filters.append(_STATUS_FILTERS[user_status])
 
@@ -170,7 +181,11 @@ async def list_users(
     rows = await session.execute(
         _users_select()
         .where(*filters)
-        .order_by(Profile.created_at.desc(), Profile.id)
+        .order_by(
+            (Profile.id == principal.user_id).desc(),
+            Profile.created_at.desc(),
+            Profile.id,
+        )
         .limit(limit)
         .offset(offset)
     )
@@ -199,7 +214,9 @@ async def create_user(
         await _check_role(session, body.role)
 
     try:
-        user_id = await gotrue.create_user(body.email, body.password)
+        user_id = await gotrue.create_user(
+            body.email, body.password, display_name=body.display_name or None
+        )
     except gotrue.GoTrueError as e:
         raise _gotrue_failed(e) from None
 
@@ -225,8 +242,10 @@ async def update_user(
     principal: Principal = Depends(require_portal_admin),
     session: AsyncSession = Depends(admin_session),
 ):
-    """Change a user's role (and so their plan), deactivate or restore them."""
+    """Change a user's name or role (and so their plan), deactivate or restore them."""
     changes = body.model_dump(exclude_unset=True)
+    if "display_name" in changes:
+        changes["display_name"] = changes["display_name"] or None
     if "role" in changes:
         role = await _check_role(session, changes["role"])
     if user_id == principal.user_id:

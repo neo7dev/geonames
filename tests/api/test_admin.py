@@ -1,5 +1,6 @@
 """/portal/admin: the Administration page's user management, for admins only."""
 
+import json
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -152,6 +153,7 @@ class TestListUsers:
         assert user == {
             "id": str(bob),
             "email": f"bob@{domain}",
+            "display_name": None,
             "role": "dev",
             "tier": "pro",
             "is_admin": False,
@@ -161,6 +163,42 @@ class TestListUsers:
             "active_keys": 0,
             "created_at": user["created_at"],
         }
+
+    @pytest.mark.asyncio
+    async def test_search_by_name(
+        self, auth_client, async_session, admin, make_user, domain
+    ):
+        user_id = await make_user("free", f"x@{domain}")
+        await async_session.execute(
+            text(
+                "UPDATE app.profiles SET display_name = 'Zelda Fitzgerald' WHERE id = :id"
+            ),
+            {"id": user_id},
+        )
+        await async_session.commit()
+
+        resp = await auth_client.get(
+            "/portal/admin/users", params={"q": "zelda fitz"}, headers=admin[1]
+        )
+
+        assert [u["id"] for u in resp.json()["users"]] == [str(user_id)]
+
+    @pytest.mark.asyncio
+    async def test_own_account_is_pinned_first(
+        self, auth_client, login, make_user, domain
+    ):
+        me, headers = await login("admin", f"me@{domain}")
+        # Newer than the admin, so it would come first by date
+        await make_user("free", f"newer@{domain}")
+
+        resp = await auth_client.get(
+            "/portal/admin/users", params={"q": domain}, headers=headers
+        )
+
+        assert [u["email"] for u in resp.json()["users"]] == [
+            f"me@{domain}",
+            f"newer@{domain}",
+        ]
 
     @pytest.mark.asyncio
     async def test_like_wildcards_are_matched_literally(
@@ -289,6 +327,24 @@ class TestUpdateUser:
         assert (resp.json()["role"], resp.json()["tier"]) == ("dev", "pro")
         me = await auth_client.get("/portal/me", headers=headers)
         assert me.json()["tier"] == "pro"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("sent", "stored"), [(" New Name ", "New Name"), ("", None), (None, None)]
+    )
+    async def test_change_name(self, auth_client, admin, login, sent, stored):
+        user_id, headers = await login("free")
+
+        resp = await auth_client.patch(
+            f"/portal/admin/users/{user_id}",
+            json={"display_name": sent},
+            headers=admin[1],
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["display_name"] == stored
+        me = await auth_client.get("/portal/me", headers=headers)
+        assert me.json()["display_name"] == stored
 
     @pytest.mark.asyncio
     async def test_unknown_role(self, auth_client, admin, make_user):
@@ -472,12 +528,23 @@ class TestCreateUser:
         """GoTrue's create: a row in auth.users, made as the database owner."""
         created = []
 
-        async def _create(email: str, password: str) -> uuid.UUID:
+        async def _create(
+            email: str, password: str, display_name: str | None = None
+        ) -> uuid.UUID:
             user_id = uuid.uuid4()
             await async_session.execute(text("SET LOCAL ROLE NONE"))
             await async_session.execute(
-                text("INSERT INTO auth.users (id, email) VALUES (:id, :email)"),
-                {"id": user_id, "email": email},
+                text(
+                    "INSERT INTO auth.users (id, email, raw_user_meta_data) "
+                    "VALUES (:id, :email, CAST(:meta AS jsonb))"
+                ),
+                {
+                    "id": user_id,
+                    "email": email,
+                    "meta": json.dumps(
+                        {"full_name": display_name} if display_name else {}
+                    ),
+                },
             )
             await async_session.execute(text("SET LOCAL ROLE geonames_admin"))
             created.append((email, password))
@@ -493,6 +560,7 @@ class TestCreateUser:
             json={
                 "email": f" new@{domain} ",
                 "password": "long-enough",
+                "display_name": " New Person ",
                 "role": "tester",
             },
             headers=admin[1],
@@ -500,8 +568,9 @@ class TestCreateUser:
 
         assert resp.status_code == 201
         body = resp.json()
-        assert (body["email"], body["role"], body["tier"]) == (
+        assert (body["email"], body["display_name"], body["role"], body["tier"]) == (
             f"new@{domain}",
+            "New Person",
             "tester",
             "plus",
         )
