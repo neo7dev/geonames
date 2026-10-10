@@ -88,6 +88,14 @@ class Profile(AppBase):
     # soft-deleted user's keys and login tokens are refused.
     banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set by admins on the Administration page, not copied from auth.users.
+    # A deactivated or deleted user's keys and login tokens are refused too.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
 
 class ApiKey(AppBase):

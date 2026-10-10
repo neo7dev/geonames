@@ -135,6 +135,33 @@ def test_api_roles_get_no_access():
     assert grants == []
 
 
+def test_admin_role_may_read_accounts_and_change_role_and_flags():
+    command.upgrade(_config(), "head")
+
+    tables = _query(
+        "SELECT table_name, privilege_type FROM information_schema.role_table_grants "
+        "WHERE table_schema = %s AND grantee = 'geonames_admin' ORDER BY 1, 2",
+        APP_SCHEMA,
+    )
+    columns = _query(
+        "SELECT column_name FROM information_schema.column_privileges "
+        "WHERE table_schema = %s AND table_name = 'profiles' "
+        "AND grantee = 'geonames_admin' AND privilege_type = 'UPDATE' ORDER BY 1",
+        APP_SCHEMA,
+    )
+    assert tables == [
+        ("api_keys", "SELECT"),
+        ("profiles", "SELECT"),
+        ("roles", "SELECT"),
+        ("tiers", "SELECT"),
+    ]
+    assert columns == [("is_active",), ("is_deleted",), ("role",)]
+    # The migrating user can switch to it
+    assert _query("SELECT pg_has_role(current_user, 'geonames_admin', 'SET')") == [
+        (True,)
+    ]
+
+
 @pytest.mark.parametrize("view", ["user_tiers", "monthly_usage"])
 def test_views_check_the_callers_privileges(view):
     command.upgrade(_config(), "head")

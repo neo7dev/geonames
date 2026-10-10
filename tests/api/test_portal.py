@@ -149,6 +149,7 @@ class TestMe:
             "email": "new@example.com",
             "role": "free",
             "tier": "basic",
+            "is_admin": False,
             "limits": {
                 "per_minute": 10,
                 "per_hour": 100,

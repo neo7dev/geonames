@@ -40,7 +40,6 @@ from geonames_server.config.config import settings
 from geonames_server.ingestion.registry import get_enabled_datasets
 from geonames_server.scripts.seed_dev_users import (
     DEV_USERS,
-    GOTRUE_URL,
     PASSWORD,
     load_keys,
 )
@@ -161,10 +160,12 @@ class ApiClient:
         )
 
     async def login(
-        self, email: str, password: str, *, gotrue_url: str = GOTRUE_URL
+        self, email: str, password: str, *, gotrue_url: str | None = None
     ) -> None:
         """Get a login token from Supabase Auth, for the portal routes."""
-        async with httpx.AsyncClient(base_url=gotrue_url, timeout=10) as gotrue:
+        async with httpx.AsyncClient(
+            base_url=gotrue_url or settings.gotrue_url, timeout=10
+        ) as gotrue:
             resp = await gotrue.post(
                 "/token",
                 params={"grant_type": "password"},

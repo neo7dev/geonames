@@ -62,6 +62,7 @@ async def me(
         email=principal.email,
         role=principal.role,
         tier=principal.tier,
+        is_admin=principal.is_admin,
         limits=Limits(
             per_minute=principal.per_minute,
             per_hour=principal.per_hour,

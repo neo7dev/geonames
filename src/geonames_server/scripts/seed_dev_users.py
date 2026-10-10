@@ -17,23 +17,19 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import UTC, datetime, timedelta
 
 import httpx
-import jwt
 from dotenv import dotenv_values, find_dotenv
 from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from geonames_server.api.auth import display_prefix, hash_api_key
+from geonames_server.api.gotrue import service_token
 from geonames_server.config.config import settings
 from geonames_server.database.migrations import upgrade_app_schema
 from geonames_server.database.models.accounts import ApiKey, Profile, Role, Tier
 from geonames_server.database.session import sessionLocal
-
-# GoTrue inside the compose network; Kong is not needed for the admin API.
-GOTRUE_URL = os.environ.get("GOTRUE_URL", "http://auth:9999")
 
 PASSWORD = "dev-password"
 
@@ -59,16 +55,6 @@ def load_keys() -> dict[str, str]:
             f"{', '.join(missing)} not set: copy them from .env.dev into .env"
         )
     return {var: values[var] for _, _, var in DEV_USERS}
-
-
-def _service_token() -> str:
-    """A short-lived service_role token, which GoTrue's admin API requires."""
-    now = datetime.now(UTC)
-    return jwt.encode(
-        {"role": "service_role", "iat": now, "exp": now + timedelta(minutes=5)},
-        settings.jwt_secret.get_secret_value(),
-        algorithm="HS256",
-    )
 
 
 def _user_id(session: Session, email: str):
@@ -171,8 +157,8 @@ def main(argv: list[str] | None = None) -> None:
 
     with (
         httpx.Client(
-            base_url=GOTRUE_URL,
-            headers={"Authorization": f"Bearer {_service_token()}"},
+            base_url=settings.gotrue_url,
+            headers={"Authorization": f"Bearer {service_token()}"},
             timeout=10,
         ) as gotrue,
         sessionLocal() as session,

@@ -18,6 +18,8 @@ class MeResponse(BaseModel):
     email: str | None
     role: str
     tier: str
+    # Admins see the Administration page
+    is_admin: bool
     limits: Limits
     active_keys: int
 

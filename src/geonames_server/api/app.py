@@ -19,6 +19,7 @@ from redis.asyncio import Redis
 from geonames_server.api.auth import require_admin
 from geonames_server.api.rate_limit import RateLimiter, enforce_rate_limit
 from geonames_server.api.routers import (
+    admin,
     dataset_metadata,
     deletions,
     health,
@@ -280,6 +281,8 @@ app.include_router(
 
 # Account pages, authenticated with the Supabase Auth login token
 app.include_router(portal.router, prefix="/portal")
+# Administration page, for admins: user accounts
+app.include_router(admin.router, prefix="/portal/admin")
 
 # Web UI at /ui (and / redirecting there): public, its pages log in themselves
 app.include_router(ui.router)

@@ -135,6 +135,10 @@ class Settings(BaseSettings):
         ge=6,
         description="Shortest password Supabase Auth accepts (GOTRUE_PASSWORD_MIN_LENGTH); the web UI checks it on signup",
     )
+    gotrue_url: str = Field(
+        default="http://auth:9999",
+        description="Supabase Auth (GoTrue) URL as the server reaches it, without Kong. Used to create and delete users on the Administration page",
+    )
     ui_dir: Path | None = Field(
         default=None,
         description="Built web UI (index.html and assets/) served at /ui. Defaults to frontend/dist under root_dir",

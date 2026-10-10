@@ -78,7 +78,7 @@ def generate_api_key() -> tuple[str, str, str]:
 
 # Key lookups are cached in process, by key hash, for settings.auth_cache_seconds.
 # A role, tier, ban or revoke change made in Studio applies when the entry
-# expires; a revoke through /portal drops the entry at once. Only one app
+# expires; a revoke or an admin's change through /portal drops the entry at once. Only one app
 # instance runs, so one process's cache is the whole cache.
 _MAX_CACHED_KEYS = 10_000
 # key hash -> (expiry, principal). Every entry lives equally long, so insertion
@@ -130,6 +130,16 @@ def forget_api_key(key_id: uuid.UUID) -> None:
         del _principal_cache[key_hash]
 
 
+def forget_user(user_id: uuid.UUID) -> None:
+    """Drop a user's keys from the lookup cache, so an admin's change applies at once."""
+    global _revocations
+    _revocations += 1
+    for key_hash in [
+        h for h, (_, p) in _principal_cache.items() if p.user_id == user_id
+    ]:
+        del _principal_cache[key_hash]
+
+
 def clear_principal_cache() -> None:
     _principal_cache.clear()
 
@@ -151,8 +161,10 @@ def _principal_select(*columns) -> Select:
         .select_from(Profile)
         .join(Role, Role.name == Profile.role)
         .join(Tier, Tier.name == Role.tier)
-        # Banned or soft-deleted in Supabase Auth
+        # Banned or soft-deleted in Supabase Auth, or deactivated or deleted by an admin
         .where(
+            Profile.is_active,
+            Profile.is_deleted.is_(False),
             Profile.deleted_at.is_(None),
             or_(Profile.banned_until.is_(None), Profile.banned_until <= func.now()),
         )

@@ -1,0 +1,292 @@
+"""Administration page: admins find, create, edit and delete user accounts.
+
+Authenticated with a login token like the rest of /portal, for admin roles
+only. Queries run as the geonames_admin database role, which may only read the
+account tables and change a profile's role, is_active and is_deleted. Creating
+and permanently deleting a user goes through Supabase Auth's admin API.
+"""
+
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, false, func, select, text, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from geonames_server.api import gotrue
+from geonames_server.api.auth import Principal, forget_user, require_user
+from geonames_server.api.dependencies import get_session
+from geonames_server.api.schemas.admin import (
+    AdminUser,
+    AdminUserList,
+    CreateUserRequest,
+    RoleOption,
+    UpdateUserRequest,
+    UserStatus,
+)
+from geonames_server.config.config import settings
+from geonames_server.database.models.accounts import ApiKey, Profile, Role
+
+router = APIRouter(tags=["Administration"])
+
+# Created by the admin user management migration
+ADMIN_DB_ROLE = "geonames_admin"
+
+
+async def require_portal_admin(
+    principal: Principal = Depends(require_user),
+) -> Principal:
+    if not principal.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This page needs an admin account",
+        )
+    return principal
+
+
+async def admin_session(
+    _: Principal = Depends(require_portal_admin),
+    session: AsyncSession = Depends(get_session),
+) -> AsyncSession:
+    """The request's session, as geonames_admin until the transaction ends.
+
+    Endpoints build their response before committing: after the commit the
+    session is back to the server's own database user.
+    """
+    await session.execute(text(f"SET LOCAL ROLE {ADMIN_DB_ROLE}"))
+    return session
+
+
+def _active_keys():
+    return (
+        select(func.count(ApiKey.id))
+        .where(ApiKey.user_id == Profile.id, ApiKey.revoked_at.is_(None))
+        .correlate(Profile)
+        .scalar_subquery()
+    )
+
+
+def _users_select():
+    auth_suspended = func.coalesce(
+        Profile.deleted_at.is_not(None) | (Profile.banned_until > func.now()), false()
+    )
+    return select(
+        Profile.id,
+        Profile.email,
+        Profile.role,
+        Role.tier,
+        Role.is_admin,
+        Profile.is_active,
+        Profile.is_deleted,
+        auth_suspended.label("auth_suspended"),
+        _active_keys().label("active_keys"),
+        Profile.created_at,
+    ).join(Role, Role.name == Profile.role)
+
+
+_STATUS_FILTERS = {
+    UserStatus.active: and_(Profile.is_active, Profile.is_deleted.is_(False)),
+    UserStatus.inactive: and_(
+        Profile.is_active.is_(False), Profile.is_deleted.is_(False)
+    ),
+    UserStatus.deleted: Profile.is_deleted,
+}
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _not_found(user_id: uuid.UUID) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{user_id}' not found"
+    )
+
+
+def _conflict(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+async def _user(session: AsyncSession, user_id: uuid.UUID) -> AdminUser:
+    row = (
+        await session.execute(_users_select().where(Profile.id == user_id))
+    ).one_or_none()
+    if row is None:
+        raise _not_found(user_id)
+    return AdminUser.model_validate(row._mapping)
+
+
+async def _check_role(session: AsyncSession, name: str) -> Role:
+    role = await session.get(Role, name)
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Role '{name}' does not exist",
+        )
+    return role
+
+
+def _gotrue_failed(e: gotrue.GoTrueError) -> HTTPException:
+    if e.status_code is None or e.status_code >= 500:
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Supabase Auth failed: {e}",
+        )
+    if e.status_code == status.HTTP_404_NOT_FOUND:
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    if "already" in str(e).lower():
+        return _conflict(str(e))
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)
+    )
+
+
+@router.get("/roles", response_model=list[RoleOption])
+async def list_roles(session: AsyncSession = Depends(admin_session)):
+    """Roles a user can be given, each with its tier (the user's plan)."""
+    roles = await session.scalars(select(Role).order_by(Role.is_admin, Role.name))
+    return roles.all()
+
+
+@router.get("/users", response_model=AdminUserList)
+async def list_users(
+    q: Annotated[
+        str | None, Query(max_length=254, description="Part of the email address")
+    ] = None,
+    user_status: Annotated[
+        UserStatus | None, Query(alias="status", description="Only users in this state")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    session: AsyncSession = Depends(admin_session),
+):
+    filters = []
+    if q and q.strip():
+        filters.append(Profile.email.ilike(f"%{_escape_like(q.strip())}%", escape="\\"))
+    if user_status is not None:
+        filters.append(_STATUS_FILTERS[user_status])
+
+    total = await session.scalar(select(func.count(Profile.id)).where(*filters))
+    rows = await session.execute(
+        _users_select()
+        .where(*filters)
+        .order_by(Profile.created_at.desc(), Profile.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return AdminUserList(
+        users=[AdminUser.model_validate(row._mapping) for row in rows],
+        total=total,
+    )
+
+
+@router.get("/users/{user_id}", response_model=AdminUser)
+async def get_user(user_id: uuid.UUID, session: AsyncSession = Depends(admin_session)):
+    return await _user(session, user_id)
+
+
+@router.post("/users", response_model=AdminUser, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    body: CreateUserRequest, session: AsyncSession = Depends(admin_session)
+):
+    """Create a confirmed user, who can sign in with the password at once."""
+    if len(body.password) < settings.password_min_length:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Use a password of at least {settings.password_min_length} characters",
+        )
+    if body.role is not None:
+        await _check_role(session, body.role)
+
+    try:
+        user_id = await gotrue.create_user(body.email, body.password)
+    except gotrue.GoTrueError as e:
+        raise _gotrue_failed(e) from None
+
+    # The signup trigger created the profile with the default role.
+    if body.role is not None:
+        result = await session.execute(
+            update(Profile).where(Profile.id == user_id).values(role=body.role)
+        )
+        if result.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="The user was created but has no profile; is the signup trigger installed?",
+            )
+    created = await _user(session, user_id)
+    await session.commit()
+    return created
+
+
+@router.patch("/users/{user_id}", response_model=AdminUser)
+async def update_user(
+    user_id: uuid.UUID,
+    body: UpdateUserRequest,
+    principal: Principal = Depends(require_portal_admin),
+    session: AsyncSession = Depends(admin_session),
+):
+    """Change a user's role (and so their plan), deactivate or restore them."""
+    changes = body.model_dump(exclude_unset=True)
+    if "role" in changes:
+        role = await _check_role(session, changes["role"])
+    if user_id == principal.user_id:
+        # An admin cannot lock themselves out; another admin has to.
+        if changes.get("is_active") is False or changes.get("is_deleted") is True:
+            raise _conflict("You cannot deactivate or delete your own account")
+        if "role" in changes and not role.is_admin:
+            raise _conflict("You cannot take the admin role away from yourself")
+
+    result = await session.execute(
+        update(Profile).where(Profile.id == user_id).values(**changes)
+    )
+    if result.rowcount == 0:
+        raise _not_found(user_id)
+    updated = await _user(session, user_id)
+    await session.commit()
+    forget_user(user_id)
+    return updated
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: uuid.UUID,
+    permanent: Annotated[
+        bool,
+        Query(
+            description="Remove the user, their keys and usage for good. "
+            "Only for users already deleted"
+        ),
+    ] = False,
+    principal: Principal = Depends(require_portal_admin),
+    session: AsyncSession = Depends(admin_session),
+) -> None:
+    """Soft-delete a user (restore with PATCH is_deleted=false), or remove them for good."""
+    if user_id == principal.user_id:
+        raise _conflict("You cannot delete your own account")
+
+    if not permanent:
+        result = await session.execute(
+            update(Profile).where(Profile.id == user_id).values(is_deleted=True)
+        )
+        if result.rowcount == 0:
+            raise _not_found(user_id)
+        await session.commit()
+        forget_user(user_id)
+        return
+
+    is_deleted = await session.scalar(
+        select(Profile.is_deleted).where(Profile.id == user_id)
+    )
+    if is_deleted is None:
+        raise _not_found(user_id)
+    if not is_deleted:
+        raise _conflict(
+            "Delete the user first; only deleted users can be removed for good"
+        )
+    # Do not keep a transaction open across the call to Supabase Auth.
+    await session.commit()
+    try:
+        await gotrue.delete_user(user_id)
+    except gotrue.GoTrueError as e:
+        raise _gotrue_failed(e) from None
+    forget_user(user_id)
