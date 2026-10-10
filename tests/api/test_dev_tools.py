@@ -228,6 +228,43 @@ async def test_the_admin_route_check_waits_out_a_minute_about_to_end(monkeypatch
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("minute_used", [8, 10], ids=["2-left", "none-left"])
+async def test_the_quota_check_needs_room_in_the_minute(monkeypatch, minute_used):
+    now = datetime.now(timezone.utc)
+
+    def window(used, limit):
+        resets = (now + timedelta(seconds=50)).isoformat()
+        return {"used": used, "limit": limit, "resets_at": resets}
+
+    usage = {
+        "current": {
+            "minute": window(minute_used, 10),
+            "hour": window(20, 100),
+            "month": window(20, 5000),
+        }
+    }
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=usage)),
+        base_url="http://t",
+    )
+    client = ApiClient("gn_key", client=http)
+    client.token = "login-token"
+
+    async def no_wait(seconds):
+        pass
+
+    monkeypatch.setattr(stress_api.asyncio, "sleep", no_wait)
+
+    # No Redis: the check must stop before it would touch the counters
+    check = await stress_api.check_quota(
+        client, None, "free", "user-id", "hour", room=3, extra=1
+    )
+
+    assert not check.passed
+    assert "not enough of the minute left" in check.message
+
+
+@pytest.mark.asyncio
 async def test_the_admin_route_check_against_the_app(
     auth_client, limiter, make_jwt, make_user, make_key
 ):

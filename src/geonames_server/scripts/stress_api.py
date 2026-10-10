@@ -380,7 +380,8 @@ async def check_quota(
     limit = _current(usage)[window]["limit"]
     if limit is None:
         return Check(role, window, True, "no limit, nothing to check")
-    if (_left(usage)["minute"] or room) < room:
+    minute_left = _left(usage)["minute"]
+    if minute_left is not None and minute_left < room:
         return Check(role, window, False, "not enough of the minute left; rerun later")
     key = Windows.at(time.time()).counter_keys(user_id)[WINDOW_NAMES.index(window)]
     original = await redis.get(key)
