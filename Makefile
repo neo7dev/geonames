@@ -182,7 +182,7 @@ ui-install:
 	$(NPM) ci
 
 ## Start the Vite dev server on 5173 (hot reload); it proxies the API on 9500
-ui-dev:
+ui-dev: frontend/node_modules
 	$(NPM) run dev
 
 # Installed only when missing; run make ui-install after package-lock.json changes
@@ -194,19 +194,19 @@ ui-build: frontend/node_modules
 	$(NPM) run build
 
 ## Lint and type-check the web UI
-ui-lint:
+ui-lint: frontend/node_modules
 	$(NPM) run lint
 
 ## Run the web UI's tests once
-ui-test:
+ui-test: frontend/node_modules
 	$(NPM) test
 
 ## Regenerate the web UI's API types from openapi.yaml (after `make openapi`)
-ui-types:
+ui-types: frontend/node_modules
 	$(NPM) run gen:api
 
 ## Fail if the web UI's API types are out of date with openapi.yaml
-ui-types-check:
+ui-types-check: frontend/node_modules
 	@cd frontend && npx openapi-typescript ../openapi.yaml -o node_modules/.tmp/schema.d.ts >/dev/null \
 		&& cmp -s node_modules/.tmp/schema.d.ts src/api/schema.d.ts \
 		|| { echo "ui-types-check: src/api/schema.d.ts is stale, run make ui-types"; exit 1; }
