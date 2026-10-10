@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI
 from redis.asyncio import Redis
 
 from geonames_server.api.auth import require_admin
+from geonames_server.api.first_admin import ensure_first_admin
 from geonames_server.api.rate_limit import RateLimiter, enforce_rate_limit
 from geonames_server.api.routers import (
     admin,
@@ -97,6 +98,10 @@ async def lifespan(app: FastAPI):
     log.info("Seeding dataset metadata for %d dataset(s)", len(all_datasets))
     seed_dataset_metadata(all_datasets)
     log.info("Dataset metadata seeded")
+
+    # A fresh deployment gets its first admin from ADMIN_EMAIL / ADMIN_PASSWORD.
+    async with asyncSessionLocal() as session:
+        await ensure_first_admin(session)
 
     if not (settings.ui_root / "index.html").is_file():
         log.info(f"No web UI build in {settings.ui_root}; /ui answers 404")

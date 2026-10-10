@@ -139,6 +139,14 @@ class Settings(BaseSettings):
         default="http://auth:9999",
         description="Supabase Auth (GoTrue) URL as the server reaches it, without Kong. Used to create and delete users on the Administration page",
     )
+    admin_email: str | None = Field(
+        default=None,
+        description="Email of the first admin account, created on the first start while no admin exists. Ignored once one does",
+    )
+    admin_password: SecretStr | None = Field(
+        default=None,
+        description="Password of the first admin account (ADMIN_EMAIL). Only read while no admin exists; remove it from .env afterwards",
+    )
     ui_dir: Path | None = Field(
         default=None,
         description="Built web UI (index.html and assets/) served at /ui. Defaults to frontend/dist under root_dir",
@@ -286,13 +294,22 @@ class Settings(BaseSettings):
             )
         return SecretStr(secret)
 
-    @field_validator("supabase_public_url", "anon_key")
+    @field_validator("supabase_public_url", "anon_key", "admin_email")
     @classmethod
     def blank_is_unset(cls, value: str | None) -> str | None:
         # `ANON_KEY =` in .env (as shipped in .env.example) counts as not set.
         if value is None or not value.strip():
             return None
         return value.strip()
+
+    @field_validator("admin_password")
+    @classmethod
+    def blank_password_is_unset(cls, value: SecretStr | None) -> SecretStr | None:
+        # `ADMIN_PASSWORD =` in .env counts as not set. Not stripped: spaces may
+        # be part of the password.
+        if value is None or not value.get_secret_value():
+            return None
+        return value
 
     @field_validator("supabase_public_url")
     @classmethod

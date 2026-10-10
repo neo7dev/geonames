@@ -26,6 +26,7 @@ def startup_mocks():
         patch(f"{MODULE}.Connection"),
         patch(f"{MODULE}.db_migrations"),
         patch(f"{MODULE}.seed_dataset_metadata"),
+        patch(f"{MODULE}.ensure_first_admin", AsyncMock()),
         patch(f"{MODULE}.check_remote_metadata") as check_remote,
         patch(f"{MODULE}.build_missing_indexes", return_value=[]) as indexes,
         patch(f"{MODULE}.build_all_datasets", side_effect=_slow_build) as build,
