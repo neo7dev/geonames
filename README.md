@@ -210,6 +210,12 @@ In the devcontainer, `make seed-users` (also run on every container start) creat
 
 Rerunning it restores their roles and keys. It refuses unless `DEV_SEED_USERS=true`, which only `.env.dev` sets: never enable it or the keys on a deployed server. The seed key fills the free user's only key slot.
 
+With the API running (`make run`), three targets use these users:
+
+- `make api-call ARGS="--role free --count 5"` calls the API as them (random data requests, or `--path /metadata/ --param limit=3`; `--api-key` for any other key). `ARGS=--portal` logs each one in and prints their tier, limits and current usage.
+- `make stress ARGS="--concurrency 20 --duration 60"` sends concurrent traffic as every user, then prints calls, statuses and latency per role and the slowest routes. It exits 1 on server errors or calls without a response.
+- `make stress-limits` checks each tier for real: a concurrent burst past the minute limit (exactly the calls left pass, the rest get 429 with Retry-After, `/portal/usage` agrees), the admin-only `/sync` refusing non-admins without counting the call, and the hour and month quotas, by setting the user's Redis counter a few calls short of the limit and putting it back afterwards. The calls are real: they count against the users' limits.
+
 The web UI does all of this; to script it instead, get a key with curl. `ANON_KEY` is in `.env`; Kong requires it on the Auth API:
 
 ```bash

@@ -251,6 +251,18 @@ seed-users:
 
 API_URL ?= http://localhost:9500
 
+## Call the API as the seeded users, e.g. ARGS="--role free --count 5" or ARGS=--portal
+api-call:
+	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.api_client $(ARGS)
+
+## Load-test the API as the seeded users, e.g. ARGS="--role dev --concurrency 20 --duration 60"
+stress:
+	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.stress_api load $(ARGS)
+
+## Check every tier's limits and quotas for real, e.g. ARGS="--role free"
+stress-limits:
+	API_URL=$(API_URL) $(UV) run python -m geonames_server.scripts.stress_api limits --quota hour --quota month $(ARGS)
+
 # Call /metadata/ (needs a key, not a built dataset) with DEV_API_KEY_<$(1)> from .env
 define check_dev_key
 	@key=$$(sed -n 's/^DEV_API_KEY_$(1) *= *//p' .env); \
@@ -328,4 +340,4 @@ push-image: push-image-version
 push-image-version:
 	docker push $(IMAGE):$(VERSION)
 
-.PHONY: install install-dev help run tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version
+.PHONY: install install-dev help run api-call stress stress-limits tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version
