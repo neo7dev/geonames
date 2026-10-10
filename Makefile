@@ -101,8 +101,8 @@ lock:
 build: tests sync
 	$(UV) build
 
-## Start the API on port 9500
-run:
+## Build the web UI, then start the API on port 9500 (serves the UI at /ui)
+run: ui-build
 	$(UV) run uvicorn geonames_server.api.app:app --host 0.0.0.0 --port 9500
 
 ## Regenerate openapi.yaml from the app's routes (then make ui-types)
@@ -185,8 +185,12 @@ ui-install:
 ui-dev:
 	$(NPM) run dev
 
+# Installed only when missing; run make ui-install after package-lock.json changes
+frontend/node_modules:
+	$(NPM) ci
+
 ## Build the web UI into frontend/dist, which the API serves at /ui
-ui-build:
+ui-build: frontend/node_modules
 	$(NPM) run build
 
 ## Lint and type-check the web UI

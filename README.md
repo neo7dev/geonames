@@ -412,7 +412,7 @@ Please keep proper attribution to GeoNames in downstream uses of this data and r
 - Ingestion and sync logic lives under `src/geonames_server/ingestion`.
 - Alembic migrations are under `migrations/`.
 - A generated OpenAPI snapshot is in `openapi.yaml` (`make openapi` regenerates it).
-- The web UI lives in `frontend/` (Vite, React, TypeScript, Tailwind, shadcn components). In the devcontainer, which has Node 24, `make ui-dev` serves it with hot reload at http://localhost:5173/ui/ and passes API calls to uvicorn on 9500 (start the API with `make run` too). `make ui-build` builds it into `frontend/dist`, which the API serves at http://localhost:9500/ui/. After changing a portal endpoint, run `make openapi` then `make ui-types` so the UI's TypeScript types follow; `make ui-types-check` fails while they are stale.
+- The web UI lives in `frontend/` (Vite, React, TypeScript, Tailwind, shadcn components). In the devcontainer, which has Node 24, `make ui-dev` serves it with hot reload at http://localhost:5173/ui/ and passes API calls to uvicorn on 9500 (start the API with `make run` too). `make ui-build` builds it into `frontend/dist`, which the API serves at http://localhost:9500/ui/; `make run` builds it first, so the API always serves the current UI. After changing a portal endpoint, run `make openapi` then `make ui-types` so the UI's TypeScript types follow; `make ui-types-check` fails while they are stale.
 
 ### Checks before deploying
 
