@@ -1,5 +1,5 @@
 import { screen, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 
 import { fakeAuth, fakeSession } from '@/test/fake-supabase'
 import { baseRoutes, ME, mockFetch, USAGE } from '@/test/fetch'
@@ -73,6 +73,18 @@ it('gives a curl example against this server', async () => {
 
   expect(await screen.findByText(new RegExp(`${window.location.origin}/cities15000/\\?limit=5`))).toBeInTheDocument()
   expect(screen.getByText(/X-API-Key: YOUR_API_KEY/)).toBeInTheDocument()
+})
+
+it("points the curl example at the API under Vite's dev server", async () => {
+  vi.stubEnv('MODE', 'development')
+  vi.stubEnv('VITE_DEV_API_ORIGIN', 'http://localhost:9500')
+  onTestFinished(() => {
+    vi.unstubAllEnvs()
+  })
+  mockFetch(baseRoutes)
+  renderApp('/')
+
+  expect(await screen.findByText(/"http:\/\/localhost:9500\/cities15000\/\?limit=5"/)).toBeInTheDocument()
 })
 
 it('refetches the usage every 10 seconds', async () => {

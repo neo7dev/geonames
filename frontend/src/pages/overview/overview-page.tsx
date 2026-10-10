@@ -39,7 +39,9 @@ function Plan({ me }: { me: Me }) {
 }
 
 function QuickStart() {
-  const command = `curl -H "X-API-Key: YOUR_API_KEY" \\\n  "${window.location.origin}/cities15000/?limit=5"`
+  // The Vite dev server proxies the portal only, so there the API is elsewhere.
+  const origin = import.meta.env.MODE === 'development' ? import.meta.env.VITE_DEV_API_ORIGIN : window.location.origin
+  const command = `curl -H "X-API-Key: YOUR_API_KEY" \\\n  "${origin}/cities15000/?limit=5"`
   return (
     <section className="rounded-lg border p-4">
       <div className="flex items-center justify-between gap-2">

@@ -12,6 +12,8 @@ const proxied = ['/ui/config.json', '/portal', '/docs', '/openapi.json', '/healt
 
 export default defineConfig({
   base: '/ui/',
+  // The overview's curl example: the dev server does not proxy the data routes.
+  define: { 'import.meta.env.VITE_DEV_API_ORIGIN': JSON.stringify(api) },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, 'src') },
