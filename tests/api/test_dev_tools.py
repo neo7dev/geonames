@@ -103,6 +103,24 @@ def test_load_refuses_a_count_that_is_not_above_zero(option, capsys):
     assert "must be above 0" in capsys.readouterr().err
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("header", "seconds"),
+    [
+        ("30", 30),
+        ("Wed, 21 Oct 2015 07:28:00 GMT", 0),  # an HTTP date, long past
+        ("soon", None),
+    ],
+)
+async def test_retry_after_in_seconds_or_as_a_date(header, seconds):
+    client = _fake_api(_limited(retry_after=header))
+
+    result = await client.call("/metadata/")
+
+    assert result.status == 429
+    assert result.retry_after == seconds
+
+
 def test_summarise_counts_statuses_and_failures():
     results = [Result("/", 200, 0.01 * n) for n in range(1, 11)] + [
         Result("/", 429, 0.001),

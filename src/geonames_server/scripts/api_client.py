@@ -23,6 +23,7 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 import os
 import random
 import sys
@@ -30,6 +31,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -148,12 +150,11 @@ class ApiClient:
             )
         seconds = time.perf_counter() - start
         body = _json(resp)
-        retry_after = resp.headers.get("Retry-After")
         return Result(
             path=path,
             status=resp.status_code,
             seconds=seconds,
-            retry_after=int(retry_after) if retry_after else None,
+            retry_after=_retry_after(resp.headers.get("Retry-After")),
             detail=body.get("detail") if isinstance(body, dict) else None,
             body=body if keep_body else None,
             route=route,
@@ -189,6 +190,19 @@ class ApiClient:
 
     async def usage(self) -> dict:
         return await self.portal("/usage", days=1)
+
+
+def _retry_after(value: str | None) -> int | None:
+    """Retry-After in seconds. A proxy may send an HTTP date instead."""
+    if not value:
+        return None
+    if value.strip().isdigit():
+        return int(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, math.ceil(when.timestamp() - time.time()))
 
 
 def _json(resp: httpx.Response) -> Any:
