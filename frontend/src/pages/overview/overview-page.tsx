@@ -64,7 +64,8 @@ function QuickStart() {
 
 export function OverviewPage() {
   const me = useMe()
-  const usage = useUsage()
+  // Only the current counts show here: one day of history is the least to ask for.
+  const usage = useUsage(1)
   const current = usage.data?.current
 
   return (

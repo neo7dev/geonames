@@ -14,12 +14,14 @@ beforeEach(() => {
 const meter = (name: string) => screen.findByRole('meter', { name: `${name}: requests used` })
 
 it('shows the current windows against the limits', async () => {
-  mockFetch(baseRoutes)
+  const fetch = mockFetch(baseRoutes)
   renderApp('/')
 
   expect(await meter('This minute')).toHaveAttribute('aria-valuetext', '3 of 10')
   expect(await meter('This hour')).toHaveAttribute('aria-valuetext', '42 of 100')
   expect(await meter('This month (UTC)')).toHaveAttribute('aria-valuetext', '4,100 of 5,000')
+  // The history is not shown here, so it asks for the least of it
+  expect(fetch.mock.calls.map(([url]) => String(url))).toContain('/portal/usage?days=1')
 })
 
 it('turns the meter amber near the limit and red at it', async () => {
