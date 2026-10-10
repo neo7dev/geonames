@@ -1,4 +1,4 @@
-import { KeyRound, Plus, Trash2 } from 'lucide-react'
+import { KeyRound, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 
 import type { ApiKey } from '@/api/client'
@@ -11,12 +11,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format'
 import { CreateKeyDialog } from '@/pages/keys/create-key-dialog'
 import { RevokeKeyDialog } from '@/pages/keys/revoke-key-dialog'
+import { RollKeyDialog } from '@/pages/keys/roll-key-dialog'
 
 export function KeysPage() {
   const keys = useKeys()
   const me = useMe()
   const [creating, setCreating] = useState(false)
   const [revoking, setRevoking] = useState<ApiKey | null>(null)
+  const [rolling, setRolling] = useState<ApiKey | null>(null)
 
   const maxKeys = me.data?.limits.max_keys ?? null
   const atLimit = me.data !== undefined && maxKeys !== null && me.data.active_keys >= maxKeys
@@ -66,7 +68,7 @@ export function KeysPage() {
                   <TableHead>Key</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Last used</TableHead>
-                  <TableHead className="w-12">
+                  <TableHead className="w-20">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -83,7 +85,17 @@ export function KeysPage() {
                     >
                       {key.last_used_at ? formatRelative(key.last_used_at) : 'Never'}
                     </TableCell>
-                    <TableCell className="pr-2 text-right">
+                    <TableCell className="pr-2 text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground"
+                        aria-label={`Roll ${key.name}`}
+                        title="Roll: replace with a new key"
+                        onClick={() => setRolling(key)}
+                      >
+                        <RefreshCw />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -106,6 +118,7 @@ export function KeysPage() {
 
       <CreateKeyDialog open={creating} onOpenChange={setCreating} />
       <RevokeKeyDialog apiKey={revoking} onClose={() => setRevoking(null)} />
+      <RollKeyDialog apiKey={rolling} onClose={() => setRolling(null)} />
     </>
   )
 }

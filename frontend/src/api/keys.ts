@@ -43,3 +43,12 @@ export function useRevokeKey() {
     onSettled: refresh,
   })
 }
+
+/** Revoke a key and get a new one with the same name, in one request. */
+export function useRollKey() {
+  const refresh = useRefreshKeys()
+  return useMutation({
+    mutationFn: (id: string) => api<CreatedApiKey>(`/portal/keys/${id}/roll`, { method: 'POST' }),
+    onSettled: refresh,
+  })
+}

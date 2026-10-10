@@ -15,10 +15,11 @@ const KEY = {
   last_used_at: null,
 }
 const SECRET = 'gn_abcd1234-the-rest-of-a-secret-key'
+const ROLLED_SECRET = 'gn_new99999-the-rest-of-a-rolled-key'
 
 /**
  * The portal as a tiny in-memory server: keys can be created (up to
- * `maxKeys`) and revoked, and /portal/me counts them.
+ * `maxKeys`), revoked and rolled, and /portal/me counts them.
  */
 function portal({ keys = [] as (typeof KEY)[], maxKeys = 1 as number | null } = {}) {
   let list = [...keys]
@@ -40,6 +41,11 @@ function portal({ keys = [] as (typeof KEY)[], maxKeys = 1 as number | null } = 
     [`/portal/keys/${KEY.id}`]: () => {
       list = list.filter((k) => k.id !== KEY.id)
       return { status: 204 }
+    },
+    [`/portal/keys/${KEY.id}/roll`]: () => {
+      const rolled = { ...KEY, id: 'rolled', prefix: 'gn_new99999' }
+      list = [rolled, ...list.filter((k) => k.id !== KEY.id)]
+      return { status: 201, body: { ...rolled, key: ROLLED_SECRET } }
     },
   })
 }
@@ -187,5 +193,59 @@ describe('revoke', () => {
 
     expect(screen.getByText('laptop')).toBeInTheDocument()
     expect(fetch.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'DELETE')).toBe(false)
+  })
+})
+
+describe('roll', () => {
+  const isRoll = ([url, init]: unknown[]) =>
+    String(url).endsWith('/roll') && (init as RequestInit | undefined)?.method === 'POST'
+
+  it('asks first, then shows the new key once and lists it instead of the old one', async () => {
+    const fetch = portal({ keys: [KEY], maxKeys: 1 })
+    renderApp('/keys')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Roll laptop' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Roll "laptop"?')
+    expect(fetch.mock.calls.some(isRoll)).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Roll key' }))
+
+    expect(await screen.findByText('You will not see this key again')).toBeInTheDocument()
+    expect(screen.getByLabelText('Your new API key')).toHaveValue(ROLLED_SECRET)
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByLabelText('Your new API key')).toHaveValue(ROLLED_SECRET)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+
+    expect(await screen.findByText('gn_new99999…')).toBeInTheDocument()
+    expect(screen.queryByText('gn_abcd1234…')).not.toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(ROLLED_SECRET)
+  })
+
+  it('does nothing when cancelled', async () => {
+    const fetch = portal({ keys: [KEY] })
+    renderApp('/keys')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Roll laptop' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('gn_abcd1234…')).toBeInTheDocument()
+    expect(fetch.mock.calls.some(isRoll)).toBe(false)
+  })
+
+  it("shows the API's message when the roll fails", async () => {
+    mockFetch({
+      ...baseRoutes,
+      '/portal/keys': () => ({ body: [KEY] }),
+      [`/portal/keys/${KEY.id}/roll`]: () => ({ status: 404, body: { detail: `API key '${KEY.id}' not found` } }),
+    })
+    renderApp('/keys')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Roll laptop' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Roll key' }))
+
+    expect(await screen.findByText(/not found/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Your new API key')).not.toBeInTheDocument()
   })
 })

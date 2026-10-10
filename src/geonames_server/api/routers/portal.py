@@ -107,18 +107,37 @@ async def create_key(
                 ),
             )
 
+    created = await _add_key(session, principal.user_id, body.name)
+    await session.commit()
+    return created
+
+
+async def _add_key(
+    session: AsyncSession, user_id: uuid.UUID, name: str
+) -> CreatedApiKeyResponse:
     key, prefix, key_hash = generate_api_key()
-    api_key = ApiKey(
-        user_id=principal.user_id, name=body.name, prefix=prefix, key_hash=key_hash
-    )
+    api_key = ApiKey(user_id=user_id, name=name, prefix=prefix, key_hash=key_hash)
     session.add(api_key)
     # The INSERT returns the server-generated id and created_at
     await session.flush()
-    created = CreatedApiKeyResponse(
+    return CreatedApiKeyResponse(
         **ApiKeyResponse.model_validate(api_key).model_dump(), key=key
     )
-    await session.commit()
-    return created
+
+
+def _revoke(key_id: uuid.UUID, user_id: uuid.UUID):
+    return (
+        update(ApiKey)
+        .where(ApiKey.id == key_id, *_is_active_key_of(user_id))
+        .values(revoked_at=func.now())
+    )
+
+
+def _key_not_found(key_id: uuid.UUID) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"API key '{key_id}' not found",
+    )
 
 
 @router.delete("/keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -127,22 +146,40 @@ async def revoke_key(
     principal: Principal = Depends(require_user),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    result = await session.execute(
-        update(ApiKey)
-        .where(
-            ApiKey.id == key_id,
-            ApiKey.user_id == principal.user_id,
-            ApiKey.revoked_at.is_(None),
-        )
-        .values(revoked_at=func.now())
-    )
+    result = await session.execute(_revoke(key_id, principal.user_id))
     if result.rowcount == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API key '{key_id}' not found",
-        )
+        raise _key_not_found(key_id)
     await session.commit()
     forget_api_key(key_id)
+
+
+@router.post(
+    "/keys/{key_id}/roll",
+    response_model=CreatedApiKeyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def roll_key(
+    key_id: uuid.UUID,
+    principal: Principal = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Revoke a key and create one with the same name, in one transaction.
+
+    The active key count stays the same, so the tier's key limit does not apply.
+    """
+    # Same lock as create_key, so a concurrent create sees this roll's outcome.
+    await session.execute(
+        select(Profile.id).where(Profile.id == principal.user_id).with_for_update()
+    )
+    name = await session.scalar(
+        _revoke(key_id, principal.user_id).returning(ApiKey.name)
+    )
+    if name is None:
+        raise _key_not_found(key_id)
+    created = await _add_key(session, principal.user_id, name)
+    await session.commit()
+    forget_api_key(key_id)
+    return created
 
 
 async def _current_counts(

@@ -44,43 +44,7 @@ function CreateKeyContent({ onDone }: { onDone: () => void }) {
     create.mutate(name, { onSuccess: setCreated })
   }
 
-  if (created) {
-    return (
-      // Only Done closes it: a stray click outside must not lose the key.
-      <DialogContent
-        showCloseButton={false}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-        className="sm:max-w-lg"
-      >
-        <DialogHeader>
-          <DialogTitle>Copy your API key</DialogTitle>
-          <DialogDescription>
-            Key <span className="font-medium text-foreground">{created.name}</span> is ready. Send it in the{' '}
-            <code className="font-mono text-xs">X-API-Key</code> header.
-          </DialogDescription>
-        </DialogHeader>
-        <Alert variant="warning">
-          <TriangleAlert aria-hidden="true" />
-          <AlertTitle>You will not see this key again</AlertTitle>
-          <AlertDescription>Only a hash of it is stored. If you lose it, revoke it and create another.</AlertDescription>
-        </Alert>
-        <div className="flex gap-2">
-          <Input
-            readOnly
-            aria-label="Your new API key"
-            value={created.key}
-            className="font-mono text-xs"
-            onFocus={(e) => e.currentTarget.select()}
-          />
-          <CopyButton value={created.key} />
-        </div>
-        <DialogFooter>
-          <Button onClick={onDone}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    )
-  }
+  if (created) return <NewKeyContent created={created} onDone={onDone} />
 
   // ApiError carries the API's detail, e.g. the tier's key limit on a 409.
   const apiError = create.error?.message ?? null
@@ -116,6 +80,44 @@ function CreateKeyContent({ onDone }: { onDone: () => void }) {
           </Button>
         </DialogFooter>
       </form>
+    </DialogContent>
+  )
+}
+
+/** The new key, shown once. Only Done closes it: a stray click or Escape must not lose the key. */
+export function NewKeyContent({ created, onDone }: { created: CreatedApiKey; onDone: () => void }) {
+  return (
+    <DialogContent
+      showCloseButton={false}
+      onInteractOutside={(e) => e.preventDefault()}
+      onEscapeKeyDown={(e) => e.preventDefault()}
+      className="sm:max-w-lg"
+    >
+      <DialogHeader>
+        <DialogTitle>Copy your API key</DialogTitle>
+        <DialogDescription>
+          Key <span className="font-medium text-foreground">{created.name}</span> is ready. Send it in the{' '}
+          <code className="font-mono text-xs">X-API-Key</code> header.
+        </DialogDescription>
+      </DialogHeader>
+      <Alert variant="warning">
+        <TriangleAlert aria-hidden="true" />
+        <AlertTitle>You will not see this key again</AlertTitle>
+        <AlertDescription>Only a hash of it is stored. If you lose it, roll it to get a new one.</AlertDescription>
+      </Alert>
+      <div className="flex gap-2">
+        <Input
+          readOnly
+          aria-label="Your new API key"
+          value={created.key}
+          className="font-mono text-xs"
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <CopyButton value={created.key} />
+      </div>
+      <DialogFooter>
+        <Button onClick={onDone}>Done</Button>
+      </DialogFooter>
     </DialogContent>
   )
 }

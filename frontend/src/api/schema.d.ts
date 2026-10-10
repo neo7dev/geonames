@@ -570,6 +570,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/portal/keys/{key_id}/roll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Roll Key
+         * @description Revoke a key and create one with the same name, in one transaction.
+         *
+         *     The active key count stays the same, so the tier's key limit does not apply.
+         */
+        post: operations["roll_key_portal_keys__key_id__roll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/portal/usage": {
         parameters: {
             query?: never;
@@ -2288,6 +2310,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    roll_key_portal_keys__key_id__roll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedApiKeyResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

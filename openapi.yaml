@@ -2560,6 +2560,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /portal/keys/{key_id}/roll:
+    post:
+      tags:
+      - Portal
+      summary: Roll Key
+      description: 'Revoke a key and create one with the same name, in one transaction.
+
+
+        The active key count stays the same, so the tier''s key limit does not apply.'
+      operationId: roll_key_portal_keys__key_id__roll_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedApiKeyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /portal/usage:
     get:
       tags:

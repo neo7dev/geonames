@@ -380,6 +380,79 @@ class TestKeys:
         assert (await auth_client.get("/portal/keys", headers=other)).json() == []
 
 
+async def _roll(client, headers, key_id):
+    return await client.post(f"/portal/keys/{key_id}/roll", headers=headers)
+
+
+class TestRollKey:
+    @pytest.mark.asyncio
+    async def test_replaces_the_key_under_the_same_name(self, auth_client, login):
+        _, headers = await login()
+        old = (await _create_key(auth_client, headers, "laptop")).json()
+        # Used once, so the principal cache holds it
+        used = await auth_client.get("/deletions/", headers={"X-API-Key": old["key"]})
+        assert used.status_code == 200
+
+        resp = await _roll(auth_client, headers, old["id"])
+
+        assert resp.status_code == 201
+        new = resp.json()
+        assert new["name"] == "laptop"
+        assert new["id"] != old["id"]
+        assert new["key"] != old["key"]
+        assert new["key"].startswith(new["prefix"])
+        listed = (await auth_client.get("/portal/keys", headers=headers)).json()
+        assert [k["id"] for k in listed] == [new["id"]]
+        assert "key" not in listed[0]
+        new_call = await auth_client.get(
+            "/deletions/", headers={"X-API-Key": new["key"]}
+        )
+        old_call = await auth_client.get(
+            "/deletions/", headers={"X-API-Key": old["key"]}
+        )
+        assert new_call.status_code == 200
+        assert old_call.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_works_at_the_tiers_key_limit(self, auth_client, login):
+        _, headers = await login("free")  # basic tier: 1 key
+        old = (await _create_key(auth_client, headers)).json()
+
+        assert (await _roll(auth_client, headers, old["id"])).status_code == 201
+
+        me = (await auth_client.get("/portal/me", headers=headers)).json()
+        assert me["active_keys"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("which", ["another users", "revoked", "unknown"])
+    async def test_only_the_users_active_keys_roll(self, auth_client, login, which):
+        _, owner = await login()
+        _, other = await login()
+        key = (await _create_key(auth_client, owner)).json()
+        headers, key_id = owner, key["id"]
+        if which == "another users":
+            headers = other
+        elif which == "revoked":
+            await auth_client.delete(f"/portal/keys/{key_id}", headers=owner)
+        else:
+            key_id = str(uuid.uuid4())
+
+        resp = await _roll(auth_client, headers, key_id)
+
+        assert resp.status_code == 404
+        for h in (owner, other):
+            listed = (await auth_client.get("/portal/keys", headers=h)).json()
+            assert [k["id"] for k in listed] == (
+                [] if which == "revoked" or h is other else [key["id"]]
+            )
+
+    @pytest.mark.asyncio
+    async def test_needs_a_login_token(self, auth_client):
+        resp = await auth_client.post(f"/portal/keys/{uuid.uuid4()}/roll")
+
+        assert resp.status_code == 401
+
+
 class TestKeyLimits:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
