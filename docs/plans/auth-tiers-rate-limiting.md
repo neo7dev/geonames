@@ -491,7 +491,7 @@ A `/code-review` of phase 5 found 15 issues; each fix is one commit.
   - A rebuild from Postgres for a user who is not an outage user can, in a narrow race, count a request twice: Redis fails for the user's other request while the rebuild reads Postgres, and that request is flushed before the read. Closing it would need the lock around every rebuild, which would queue all users' rebuilds at the start of a month.
   - In-memory counts are lost if the process stops before they reach Postgres.
 
-### Phase 6: Frontend (`91950a9`..increment 6, branch `phase-6-frontend`)
+### Phase 6: Frontend (`91950a9`..`f8f78de`, branch `phase-6-frontend`)
 
 Built as scoped above in six increments, each checked live in a browser (gstack's headless browser) against the devcontainer's Supabase Auth, Mailpit and API.
 
@@ -501,7 +501,7 @@ Built as scoped above in six increments, each checked live in a browser (gstack'
 - Increment 3 (`5dfff03`): auth pages. Checked live: signup with the Mailpit link landing on the page asked for, wrong and right password, password reset, a used link, a ban showing the suspended page.
 - Increment 4 (`c0b7461`): keys page. Checked live: a key created in the UI answers 200, is gone from the page after Done, and gets 401 once revoked.
 - Increment 5 (`01f1527`): overview and usage pages, chart per the dataviz rules.
-- Increment 6: the Dockerfile's Node stage, `image-check` asserting the UI is in the image, README "Web UI", this progress.
+- Increment 6 (`0978d8e`): the Dockerfile's Node stage, `image-check` asserting the UI is in the image, README "Web UI", this progress.
 - Changed from the scope:
   - Errors show as inline alerts, not toasts (toasts slide in; the design has no motion).
   - The sidebar shows the user's email and tier with a sign-out button instead of a menu; signing out goes to a plain `/login`.
@@ -509,7 +509,17 @@ Built as scoped above in six increments, each checked live in a browser (gstack'
   - The usage page loads lazily, so Recharts (343 kB) downloads only there; React and Supabase are separate long-cached chunks. The first load is about 680 kB (200 kB gzipped).
   - `openapi-typescript` declares TypeScript 5 as a peer; an npm `overrides` entry lets it use the project's TypeScript 6.
 - Tests: 89 frontend tests (Vitest, against a fake Supabase client and the real routes) and `tests/api/test_ui.py`.
-- Left for increment 7: the full smoke test from the plan, including the Vite dev server's email links and the root compose stack serving `/ui/` from the image.
+- Smoke test (2026-10-10, increment 7), all nine steps above pass:
+  1. `/` redirects to `/ui/` and the login page; `/ui/keys` signed out keeps the route as `?next=/keys`.
+  2. Signup through the UI, then the Mailpit link: lands signed in on the overview, free role, 0 of 1 keys.
+  3. Key created; after Done it is not in the page; create is disabled with the basic tier's message.
+  4. Three `/cities15000/` calls: the overview's minute meter showed 3 of 10 after 8 s without a reload; after the flush (`USAGE_FLUSH_SECONDS=10`) `/ui/usage` showed 3 for the period and on the key.
+  5. Revoked in the UI: the next call gets 401.
+  6. Reset through Mailpit; the old password is refused, the new one logs in.
+  7. Role set to `admin` (SQL on `app.profiles`, as Studio does): max tier, everything Unlimited. Ban: the suspended page.
+  8. `make ui-dev`: signup on :5173, and the email link came back to `http://localhost:5173/ui`. Found and fixed here (`f8f78de`): the dev server served `theme-init.js` at `/ui/ui/` (404).
+  9. Root stack from a clean worktree of the branch as project `p6smoke` on ports 19500 / 18000, fresh secrets from `make supabase-keys`, email auto-confirm on (no Mailpit there): `/ui/` served from the image, `config.json` carried that deployment's URL and anon key, signup and login worked against its Kong. Torn down with its volumes afterwards.
+  - The copy button could not be checked in the headless browser, which denies clipboard writes to every page (`NotAllowedError: Write permission denied`); it showed its fallback ("Copy failed: select and copy"). A unit test covers the success path; check it once by hand in a real browser.
 
 ## Risks
 
