@@ -1,3 +1,5 @@
+import { toast } from 'sonner'
+
 import { useDeleteUser } from '@/api/admin'
 import type { AdminUser } from '@/api/client'
 import { ErrorAlert } from '@/components/form'
@@ -45,7 +47,17 @@ export function DeleteUserDialog({ user, onClose }: { user: AdminUser | null; on
             <Button
               variant="destructive"
               disabled={remove.isPending}
-              onClick={() => remove.mutate({ id: user.id, permanent }, { onSuccess: onClose })}
+              onClick={() =>
+                remove.mutate(
+                  { id: user.id, permanent },
+                  {
+                    onSuccess: () => {
+                      toast.success(permanent ? `Permanently deleted ${name}` : `Deleted ${name}`)
+                      onClose()
+                    },
+                  },
+                )
+              }
             >
               {permanent ? 'Delete permanently' : 'Delete user'}
             </Button>

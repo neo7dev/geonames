@@ -1,12 +1,13 @@
 import type { AuthError } from '@supabase/supabase-js'
 import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { toast } from 'sonner'
 
 import { useAuthSettings } from '@/auth/auth-settings'
 import { authErrorMessage } from '@/auth/errors'
 import { callbackUrl } from '@/auth/urls'
 import { AuthCard } from '@/components/auth-layout'
-import { ErrorAlert, Field, SubmitButton, SuccessAlert } from '@/components/form'
+import { ErrorAlert, Field, SubmitButton } from '@/components/form'
 import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,13 +22,11 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
-  const [resent, setResent] = useState(false)
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setPending(true)
     setError(null)
-    setResent(false)
     // On success the guard sends the user on to `next`.
     const { error } = await supabase().auth.signInWithPassword({ email, password })
     setError(error)
@@ -43,7 +42,7 @@ export function LoginPage() {
     })
     setPending(false)
     if (error) setError(error)
-    else setResent(true)
+    else toast.success(`Confirmation email sent to ${email}.`)
   }
 
   const signupHref = next === '/' ? '/signup' : `/signup?next=${encodeURIComponent(next)}`
@@ -74,7 +73,6 @@ export function LoginPage() {
             )}
           </ErrorAlert>
         )}
-        {resent && <SuccessAlert>Confirmation email sent to {email}.</SuccessAlert>}
         <Field id="email" label="Email">
           <Input
             id="email"

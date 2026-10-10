@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, LoaderCircle } from 'lucide-react'
+import { CircleAlert, LoaderCircle } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -51,15 +51,6 @@ export function ErrorAlert({ children }: { children: ReactNode }) {
   return (
     <Alert variant="destructive">
       <CircleAlert aria-hidden="true" />
-      <AlertDescription>{children}</AlertDescription>
-    </Alert>
-  )
-}
-
-export function SuccessAlert({ children }: { children: ReactNode }) {
-  return (
-    <Alert role="status">
-      <CircleCheck className="text-primary" aria-hidden="true" />
       <AlertDescription>{children}</AlertDescription>
     </Alert>
   )

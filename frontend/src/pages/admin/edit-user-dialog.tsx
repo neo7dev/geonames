@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { toast } from 'sonner'
 
 import { roleLabel, useRoles, useUpdateUser, type UserChanges } from '@/api/admin'
 import type { AdminUser } from '@/api/client'
@@ -57,7 +58,15 @@ function EditUserContent({ user, isSelf, onDone }: { user: AdminUser; isSelf: bo
     const problem = displayNameError(name)
     setNameProblem(problem)
     if (problem) return
-    update.mutate({ id: user.id, changes }, { onSuccess: onDone })
+    update.mutate(
+      { id: user.id, changes },
+      {
+        onSuccess: (saved) => {
+          toast.success(`Saved ${saved.display_name ?? saved.email}`)
+          onDone()
+        },
+      },
+    )
   }
 
   const error = update.error?.message ?? roles.error?.message ?? null

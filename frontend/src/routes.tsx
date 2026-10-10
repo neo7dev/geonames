@@ -4,6 +4,7 @@ import { AuthProvider } from '@/auth/auth-provider'
 import { GuestOnly, RequireAuth } from '@/auth/guards'
 import { AppShell } from '@/components/app-shell'
 import { AuthLayout } from '@/components/auth-layout'
+import { Toaster } from '@/components/ui/sonner'
 import { AdminPage } from '@/pages/admin/admin-page'
 import { AuthCallbackPage } from '@/pages/auth-callback'
 import { KeysPage } from '@/pages/keys/keys-page'
@@ -21,6 +22,7 @@ export const routes: RouteObject[] = [
     element: (
       <AuthProvider>
         <Outlet />
+        <Toaster />
       </AuthProvider>
     ),
     errorElement: (

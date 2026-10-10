@@ -1,5 +1,6 @@
 import { Pencil, Plus, RotateCcw, Search, Trash2, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
 import { PAGE_SIZE, useAdminUsers, useUpdateUser } from '@/api/admin'
 import type { AdminUser, UserStatus } from '@/api/client'
@@ -168,7 +169,12 @@ function Administration({ myId }: { myId: string }) {
                             aria-label={`Restore ${label}`}
                             title="Restore"
                             disabled={restore.isPending}
-                            onClick={() => restore.mutate({ id: user.id, changes: { is_deleted: false } })}
+                            onClick={() =>
+                              restore.mutate(
+                                { id: user.id, changes: { is_deleted: false } },
+                                { onSuccess: () => toast.success(`Restored ${user.display_name ?? label}`) },
+                              )
+                            }
                           >
                             <RotateCcw />
                           </Button>

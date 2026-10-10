@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { toast } from 'sonner'
 
 import { roleLabel, useCreateUser, useRoles } from '@/api/admin'
 import { displayNameError, MAX_DISPLAY_NAME } from '@/api/queries'
@@ -49,7 +50,12 @@ function CreateUserContent({ onDone }: { onDone: () => void }) {
     setProblem(null)
     create.mutate(
       { email: trimmed, password, role: chosenRole, display_name: name.trim() || null },
-      { onSuccess: onDone },
+      {
+        onSuccess: (user) => {
+          toast.success(`Created ${user.display_name ?? user.email}`)
+          onDone()
+        },
+      },
     )
   }
 

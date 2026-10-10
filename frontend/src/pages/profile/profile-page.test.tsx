@@ -61,8 +61,12 @@ describe('name', () => {
     await userEvent.type(await screen.findByLabelText('Display name'), '  Ada Lovelace ')
     await userEvent.click(screen.getByRole('button', { name: 'Save name' }))
 
-    expect(await screen.findByText('Name saved.')).toBeInTheDocument()
+    // A toast, not a message in the form, and gone after about 2 seconds
+    const saved = await screen.findByText('Name saved.')
+    expect(saved.closest('[data-sonner-toast]')).not.toBeNull()
+    expect(saved.closest('form')).toBeNull()
     expect(patches).toEqual([{ display_name: 'Ada Lovelace' }])
+    await waitFor(() => expect(screen.queryByText('Name saved.')).not.toBeInTheDocument(), { timeout: 4000 })
   })
 
   it('clears the name when emptied', async () => {
@@ -86,7 +90,7 @@ describe('email', () => {
     await userEvent.type(await screen.findByLabelText('New email'), 'new@example.com')
     await userEvent.click(screen.getByRole('button', { name: 'Change email' }))
 
-    expect(await screen.findByText(/We sent a confirmation link to new@example.com/)).toBeInTheDocument()
+    expect(await screen.findByText('Confirmation link sent to new@example.com')).toBeInTheDocument()
     expect(fakeAuth.updateUser).toHaveBeenCalledWith(
       { email: 'new@example.com' },
       { emailRedirectTo: 'http://localhost:3000/ui/auth/callback?next=%2Fprofile' },

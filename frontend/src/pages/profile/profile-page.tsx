@@ -1,13 +1,14 @@
 import type { AuthError } from '@supabase/supabase-js'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router'
+import { toast } from 'sonner'
 
 import type { Me } from '@/api/client'
 import { displayNameError, MAX_DISPLAY_NAME, useMe, useUpdateMe } from '@/api/queries'
 import { authErrorMessage } from '@/auth/errors'
 import { callbackUrl } from '@/auth/urls'
 import { useAuth } from '@/auth/use-auth'
-import { ErrorAlert, Field, SuccessAlert } from '@/components/form'
+import { ErrorAlert, Field } from '@/components/form'
 import { PageHeader } from '@/components/page-header'
 import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
@@ -58,14 +59,13 @@ function NameSection({ me }: { me: Me }) {
     event.preventDefault()
     const error = displayNameError(name)
     setProblem(error)
-    if (!error) update.mutate(name)
+    if (!error) update.mutate(name, { onSuccess: () => toast.success('Name saved.') })
   }
 
   return (
     <Section title="Name" description="How you appear in the portal. Leave it empty to show your email instead.">
       <form onSubmit={onSubmit} className="grid gap-3" noValidate>
         {update.error && <ErrorAlert>{update.error.message}</ErrorAlert>}
-        {update.isSuccess && !changed && <SuccessAlert>Name saved.</SuccessAlert>}
         <Field id="display-name" label="Display name" hint={problem ?? `Up to ${MAX_DISPLAY_NAME} characters.`}>
           <Input
             id="display-name"
@@ -76,7 +76,6 @@ function NameSection({ me }: { me: Me }) {
             onChange={(e) => {
               setName(e.target.value)
               setProblem(null)
-              update.reset()
             }}
           />
         </Field>
@@ -98,12 +97,9 @@ function EmailSection() {
   const [email, setEmail] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<AuthError | string | null>(null)
-  const [sentTo, setSentTo] = useState<string | null>(null)
-
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
-    setSentTo(null)
     const next = email.trim()
     if (!EMAIL_PATTERN.test(next)) return setError('Enter an email address.')
     if (next.toLowerCase() === current.toLowerCase()) return setError('That is already your email address.')
@@ -111,7 +107,9 @@ function EmailSection() {
     const { error } = await supabase().auth.updateUser({ email: next }, { emailRedirectTo: callbackUrl('/profile') })
     setPending(false)
     if (error) return setError(error)
-    setSentTo(next)
+    toast.success(`Confirmation link sent to ${next}`, {
+      description: `Your email changes once you open it. You may also need to confirm from ${current}.`,
+    })
     setEmail('')
   }
 
@@ -126,17 +124,10 @@ function EmailSection() {
     >
       <form onSubmit={onSubmit} className="grid gap-3" noValidate>
         {error && <ErrorAlert>{typeof error === 'string' ? error : authErrorMessage(error)}</ErrorAlert>}
-        {sentTo ? (
-          <SuccessAlert>
-            We sent a confirmation link to {sentTo}. Your email changes once you open it; you may also need to confirm
-            from a link sent to {current}.
-          </SuccessAlert>
-        ) : (
-          pendingEmail && (
-            <p className="rounded-lg border px-3 py-2 text-sm text-muted-foreground">
-              A change to {pendingEmail} is waiting for confirmation.
-            </p>
-          )
+        {pendingEmail && (
+          <p className="rounded-lg border px-3 py-2 text-sm text-muted-foreground">
+            A change to {pendingEmail} is waiting for confirmation.
+          </p>
         )}
         <Field id="new-email" label="New email">
           <Input
@@ -163,19 +154,17 @@ function PasswordSection() {
   const [confirm, setConfirm] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<AuthError | string | null>(null)
-  const [done, setDone] = useState(false)
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
-    setDone(false)
     if (password.length < minLength) return setError(`Use a password of at least ${minLength} characters.`)
     if (password !== confirm) return setError('The passwords do not match.')
     setPending(true)
     const { error } = await supabase().auth.updateUser({ password })
     setPending(false)
     if (error) return setError(error)
-    setDone(true)
+    toast.success('Password changed.')
     setPassword('')
     setConfirm('')
   }
@@ -184,7 +173,6 @@ function PasswordSection() {
     <Section title="Password">
       <form onSubmit={onSubmit} className="grid gap-3" noValidate>
         {error && <ErrorAlert>{typeof error === 'string' ? error : authErrorMessage(error)}</ErrorAlert>}
-        {done && <SuccessAlert>Password changed.</SuccessAlert>}
         <Field id="new-password" label="New password" hint={`At least ${minLength} characters.`}>
           <PasswordInput
             id="new-password"

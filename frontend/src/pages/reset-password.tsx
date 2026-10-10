@@ -1,11 +1,12 @@
 import type { AuthError } from '@supabase/supabase-js'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
+import { toast } from 'sonner'
 
 import { authErrorMessage } from '@/auth/errors'
 import { updatePasswordUrl } from '@/auth/urls'
 import { AuthCard } from '@/components/auth-layout'
-import { ErrorAlert, Field, SubmitButton, SuccessAlert } from '@/components/form'
+import { ErrorAlert, Field, SubmitButton } from '@/components/form'
 import { Input } from '@/components/ui/input'
 import { supabase } from '@/lib/supabase'
 
@@ -13,7 +14,6 @@ export function ResetPasswordPage() {
   const [email, setEmail] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
-  const [sent, setSent] = useState(false)
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -23,7 +23,7 @@ export function ResetPasswordPage() {
     setPending(false)
     // GoTrue answers the same for unknown addresses, so this says nothing about who has an account.
     if (error) setError(error)
-    else setSent(true)
+    else toast.success(`If an account exists for ${email}, an email with a reset link is on its way.`)
   }
 
   return (
@@ -38,9 +38,6 @@ export function ResetPasswordPage() {
     >
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
         {error && <ErrorAlert>{authErrorMessage(error)}</ErrorAlert>}
-        {sent && (
-          <SuccessAlert>If an account exists for {email}, an email with a reset link is on its way.</SuccessAlert>
-        )}
         <Field id="email" label="Email">
           <Input
             id="email"
