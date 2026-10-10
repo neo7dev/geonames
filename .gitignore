@@ -18,3 +18,5 @@ geonames_server.egg-info
 .ruff_cache
 .gstack/
 .DS_Store
+# CodeGraph index (local, rebuilt with codegraph init)
+.codegraph/
