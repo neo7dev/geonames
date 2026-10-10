@@ -50,6 +50,15 @@ class SmtpStatus(StrEnum):
     failed = "failed"
 
 
+# Found by the last preflight; None before it runs. The web UI gets it through
+# /ui/config.json, to tell users when a feature needs email that cannot be sent.
+_smtp_status: SmtpStatus | None = None
+
+
+def smtp_status() -> SmtpStatus | None:
+    return _smtp_status
+
+
 @dataclass(frozen=True)
 class _Check:
     name: str
@@ -257,5 +266,8 @@ async def run_preflight() -> None:
             log.critical(f"Preflight failed: {failure}")
         raise PreflightError("; ".join(failures))
 
-    _warn_smtp(*await smtp)
+    global _smtp_status
+    status, error = await smtp
+    _smtp_status = status
+    _warn_smtp(status, error)
     _warn_web_ui()

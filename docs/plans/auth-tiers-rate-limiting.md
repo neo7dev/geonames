@@ -539,6 +539,7 @@ Built as scoped above in six increments, each checked live in a browser (gstack'
 - `LOG_LEVEL` reaches the app's logs, default INFO (`d8bb653`); SQL statements and httpx requests only at DEBUG.
 - Supabase Auth starts with the SMTP settings blank (`9a934bb`).
 - Preflight before anything else at startup: database, Redis (when set), Supabase Auth and `JWT_SECRET` are required, retried, and stop the server listing every failure. SMTP is checked by connecting and logging in like Supabase Auth, without sending: separate warnings for not configured and configured but failing. Checked in the deploy stack: empty SMTP, a wrong host (signup then fails with "Error sending confirmation email", as warned), and Redis stopped (the app exits, Docker restarts it, it recovers once Redis is back).
+- Email features in the web UI follow the SMTP status from preflight (in `/ui/config.json`): signup (without autoconfirm), "Forgot password?", resending a confirmation and changing an email stop with a toast, a browser console warning and a report to `POST /ui/email-problem`, which the server logs at most once a minute per kind. Checked in the deploy stack with SMTP empty: toast, console line and server warning all show.
 - Still to do: CI, backups, key scopes and expiry, publishing the image.
 
 ## Risks

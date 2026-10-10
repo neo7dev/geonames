@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 
 import { useAuthSettings } from '@/auth/auth-settings'
+import { canSendEmail, isEmailSendError, reportEmailProblem } from '@/auth/email'
 import { authErrorMessage } from '@/auth/errors'
 import { callbackUrl } from '@/auth/urls'
 import { AuthCard } from '@/components/auth-layout'
@@ -34,6 +35,7 @@ export function LoginPage() {
   }
 
   const resend = async () => {
+    if (!canSendEmail('resend_confirmation')) return
     setPending(true)
     const { error } = await supabase().auth.resend({
       type: 'signup',
@@ -41,7 +43,8 @@ export function LoginPage() {
       options: { emailRedirectTo: callbackUrl(next) },
     })
     setPending(false)
-    if (error) setError(error)
+    if (error && isEmailSendError(error)) reportEmailProblem('resend_confirmation', 'send_failed')
+    else if (error) setError(error)
     else toast.success(`Confirmation email sent to ${email}.`)
   }
 

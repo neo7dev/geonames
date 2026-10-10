@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 
 import { cleanup } from '@testing-library/react'
+import { toast } from 'sonner'
 import { afterEach, beforeEach, vi } from 'vitest'
 
 import { setUiConfig } from '@/config'
@@ -11,11 +12,13 @@ vi.mock('@/lib/supabase', async () => (await import('@/test/fake-supabase')).sup
 
 beforeEach(() => {
   resetFakeSupabase()
-  setUiConfig({ supabase_url: 'http://supabase.test', anon_key: 'anon-key', password_min_length: 8 })
+  setUiConfig({ supabase_url: 'http://supabase.test', anon_key: 'anon-key', password_min_length: 8, email: 'ok' })
 })
 
 afterEach(() => {
   cleanup()
+  // Sonner keeps toasts in module state: without this, a long one shows up in the next test.
+  toast.dismiss()
   // Also after a test that failed before switching back
   vi.useRealTimers()
   vi.unstubAllGlobals()

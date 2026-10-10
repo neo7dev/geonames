@@ -3,6 +3,8 @@ export type UiConfig = {
   supabase_url: string
   anon_key: string
   password_min_length: number
+  /** SMTP as the server's startup check found it; "unknown" before it ran. */
+  email: 'ok' | 'not_configured' | 'failed' | 'unknown'
 }
 
 let current: UiConfig | null = null

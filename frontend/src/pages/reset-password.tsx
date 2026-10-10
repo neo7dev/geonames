@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
 
+import { canSendEmail, isEmailSendError, reportEmailProblem } from '@/auth/email'
 import { authErrorMessage } from '@/auth/errors'
 import { updatePasswordUrl } from '@/auth/urls'
 import { AuthCard } from '@/components/auth-layout'
@@ -17,12 +18,14 @@ export function ResetPasswordPage() {
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    setPending(true)
     setError(null)
+    if (!canSendEmail('password_reset')) return
+    setPending(true)
     const { error } = await supabase().auth.resetPasswordForEmail(email, { redirectTo: updatePasswordUrl() })
     setPending(false)
     // GoTrue answers the same for unknown addresses, so this says nothing about who has an account.
-    if (error) setError(error)
+    if (error && isEmailSendError(error)) reportEmailProblem('password_reset', 'send_failed')
+    else if (error) setError(error)
     else toast.success(`If an account exists for ${email}, an email with a reset link is on its way.`)
   }
 

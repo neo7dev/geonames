@@ -5,12 +5,20 @@ router, so any path without a file extension gets index.html. A missing file
 (a path with an extension) is a real 404, so a stale asset URL fails loudly.
 """
 
+import time
+from enum import StrEnum
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from pydantic import BaseModel
 
+from geonames_server.api.preflight import SmtpStatus, smtp_status
 from geonames_server.config.config import settings
+from geonames_server.log.mylogger import get_logger
+
+log = get_logger()
 
 router = APIRouter(include_in_schema=False)
 
@@ -80,9 +88,80 @@ async def ui_config() -> Response:
             "supabase_url": settings.supabase_public_url,
             "anon_key": settings.anon_key,
             "password_min_length": settings.password_min_length,
+            # SMTP as found at startup: ok, not_configured, failed, or unknown
+            # before the check ran. Only the status: the error may name the server.
+            "email": smtp_status() or "unknown",
         },
         headers=_headers(),
     )
+
+
+class EmailFeature(StrEnum):
+    signup = "signup"
+    password_reset = "password_reset"
+    email_change = "email_change"
+    resend_confirmation = "resend_confirmation"
+
+
+_FEATURES = {
+    EmailFeature.signup: "to sign up",
+    EmailFeature.password_reset: 'to reset a password ("Forgot password?")',
+    EmailFeature.email_change: "to change an email address",
+    EmailFeature.resend_confirmation: "to resend a confirmation email",
+}
+
+
+class EmailProblem(BaseModel):
+    feature: EmailFeature
+    # unavailable: the UI stopped it, as SMTP is off or broken. send_failed:
+    # Supabase Auth tried and could not send the email.
+    reason: Literal["unavailable", "send_failed"]
+
+
+# Each kind of report is logged at most this often, so the endpoint (open to
+# anyone, like the pages) cannot flood the logs.
+REPORT_INTERVAL_SECONDS = 60
+_last_report: dict[tuple[EmailFeature, str], float] = {}
+
+
+@router.post("/ui/email-problem", status_code=status.HTTP_204_NO_CONTENT)
+async def email_problem(report: EmailProblem) -> Response:
+    """The web UI reports a feature that needed email, for the server's log."""
+    smtp = smtp_status()
+    feature = _FEATURES[report.feature]
+    if report.reason == "send_failed":
+        message = (
+            f"A user tried {feature} in the web UI, but Supabase Auth could not "
+            "send the email. Check SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and "
+            "SMTP_ADMIN_EMAIL in .env and Supabase Auth's log (`docker compose "
+            "logs auth`), then run `docker compose up -d`."
+        )
+    elif smtp is SmtpStatus.not_configured:
+        message = (
+            f"A user tried {feature} in the web UI, but SMTP is not configured "
+            "(SMTP_HOST is empty), so no email can be sent. Set SMTP_HOST, "
+            "SMTP_PORT, SMTP_USER, SMTP_PASS and SMTP_ADMIN_EMAIL in .env, then "
+            "run `docker compose up -d`."
+        )
+    elif smtp is SmtpStatus.failed:
+        message = (
+            f"A user tried {feature} in the web UI, but SMTP is not working (see "
+            "the SMTP warning at startup). Fix the SMTP settings in .env, then run "
+            "`docker compose up -d`."
+        )
+    else:
+        # Email works as far as the server knows; nothing to report.
+        message = None
+
+    key = (report.feature, report.reason)
+    now = time.monotonic()
+    if (
+        message
+        and now - _last_report.get(key, float("-inf")) >= REPORT_INTERVAL_SECONDS
+    ):
+        _last_report[key] = now
+        log.warning(message)
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers=_headers())
 
 
 @router.get("/ui")

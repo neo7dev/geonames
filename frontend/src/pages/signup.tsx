@@ -5,6 +5,7 @@ import { Link, useSearchParams } from 'react-router'
 
 import { MAX_DISPLAY_NAME } from '@/api/queries'
 import { useAuthSettings } from '@/auth/auth-settings'
+import { canSendEmail, isEmailSendError, reportEmailProblem } from '@/auth/email'
 import { authErrorMessage } from '@/auth/errors'
 import { callbackUrl } from '@/auth/urls'
 import { AuthCard } from '@/components/auth-layout'
@@ -62,6 +63,9 @@ export function SignupPage() {
       setError(`Use a password of at least ${minLength} characters.`)
       return
     }
+    // A confirmation email is needed unless Supabase Auth confirms signups itself.
+    const needsEmail = !settings.data?.mailer_autoconfirm
+    if (needsEmail && !canSendEmail('signup')) return
     setPending(true)
     const { data, error } = await supabase().auth.signUp({
       email,
@@ -70,7 +74,8 @@ export function SignupPage() {
       options: { emailRedirectTo: callbackUrl(next), data: name.trim() ? { full_name: name.trim() } : undefined },
     })
     setPending(false)
-    if (error) setError(error)
+    if (error && isEmailSendError(error)) reportEmailProblem('signup', 'send_failed')
+    else if (error) setError(error)
     // With a session (email confirmation off) the guard moves on to `next`.
     else if (!data.session) setSentTo(email)
   }

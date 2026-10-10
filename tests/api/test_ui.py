@@ -4,7 +4,10 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from geonames_server.api import preflight
 from geonames_server.api.app import app
+from geonames_server.api.preflight import SmtpStatus
+from geonames_server.api.routers import ui
 from geonames_server.config.config import settings
 
 SUPABASE = "http://localhost:8000"
@@ -188,6 +191,7 @@ class TestConfig:
             "supabase_url": SUPABASE,
             "anon_key": "anon-key",
             "password_min_length": 8,
+            "email": "unknown",
         }
         assert response.headers["cache-control"] == "no-cache"
         assert_ui_headers(response)
@@ -207,3 +211,80 @@ class TestConfig:
             response = await client.get("/ui/")
 
         assert "connect-src 'self';" in response.headers["content-security-policy"]
+
+
+@pytest.fixture
+def smtp():
+    """Set the SMTP status preflight found; forget earlier reports."""
+
+    def _set(value: SmtpStatus | None):
+        patcher = patch.object(preflight, "_smtp_status", value)
+        patcher.start()
+        return patcher
+
+    patchers = []
+    with patch.dict(ui._last_report, clear=True):
+        yield lambda value: patchers.append(_set(value))
+    for patcher in patchers:
+        patcher.stop()
+
+
+class TestEmail:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", list(SmtpStatus))
+    async def test_config_carries_the_smtp_status(self, client, smtp, value):
+        smtp(value)
+        response = await client.get("/ui/config.json")
+        assert response.json()["email"] == value
+
+    @pytest.mark.asyncio
+    async def test_report_logs_once_a_minute(self, client, smtp, caplog):
+        smtp(SmtpStatus.not_configured)
+        body = {"feature": "password_reset", "reason": "unavailable"}
+
+        first = await client.post("/ui/email-problem", json=body)
+        await client.post("/ui/email-problem", json=body)
+
+        assert first.status_code == 204
+        assert_ui_headers(first)
+        warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 1
+        assert "reset a password" in warnings[0]
+        assert "SMTP is not configured (SMTP_HOST is empty)" in warnings[0]
+
+    @pytest.mark.asyncio
+    async def test_each_feature_is_logged(self, client, smtp, caplog):
+        smtp(SmtpStatus.failed)
+        for feature in ("signup", "email_change"):
+            await client.post(
+                "/ui/email-problem", json={"feature": feature, "reason": "unavailable"}
+            )
+        warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 2
+        assert all("SMTP is not working" in w for w in warnings)
+
+    @pytest.mark.asyncio
+    async def test_a_failed_send_is_logged_even_when_smtp_looked_fine(
+        self, client, smtp, caplog
+    ):
+        smtp(SmtpStatus.ok)
+        await client.post(
+            "/ui/email-problem", json={"feature": "signup", "reason": "send_failed"}
+        )
+        assert "Supabase Auth could not send the email" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_unavailable_is_ignored_while_smtp_works(self, client, smtp, caplog):
+        smtp(SmtpStatus.ok)
+        response = await client.post(
+            "/ui/email-problem", json={"feature": "signup", "reason": "unavailable"}
+        )
+        assert response.status_code == 204
+        assert "WARNING" not in [r.levelname for r in caplog.records]
+
+    @pytest.mark.asyncio
+    async def test_rejects_unknown_reports(self, client, smtp):
+        response = await client.post(
+            "/ui/email-problem", json={"feature": "anything", "reason": "unavailable"}
+        )
+        assert response.status_code == 422

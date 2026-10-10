@@ -47,6 +47,8 @@ def services():
         patch.object(settings, "redis_url", "redis://:secret@redis:6379/0"),
         patch.object(settings, "jwt_secret", SecretStr("x" * 32)),
         patch.object(settings, "smtp_host", None),
+        # run_preflight records the SMTP status for /ui/config.json
+        patch.object(preflight, "_smtp_status", None),
     ):
         yield {"database": database, "redis": redis, "auth": auth}
 
@@ -197,6 +199,7 @@ class TestSmtpWarnings:
     @pytest.mark.asyncio
     async def test_not_configured_warns_but_starts(self, services, caplog):
         await run_preflight()
+        assert preflight.smtp_status() is SmtpStatus.not_configured
         assert "SMTP is not configured (SMTP_HOST is empty)" in caplog.text
         assert '"Forgot password?"' in caplog.text
         assert "DISABLE_SIGNUP=true" in caplog.text

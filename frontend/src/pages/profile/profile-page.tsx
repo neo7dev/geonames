@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import type { Me } from '@/api/client'
 import { displayNameError, MAX_DISPLAY_NAME, useMe, useUpdateMe } from '@/api/queries'
+import { canSendEmail, isEmailSendError, reportEmailProblem } from '@/auth/email'
 import { authErrorMessage } from '@/auth/errors'
 import { callbackUrl } from '@/auth/urls'
 import { useAuth } from '@/auth/use-auth'
@@ -103,9 +104,12 @@ function EmailSection() {
     const next = email.trim()
     if (!EMAIL_PATTERN.test(next)) return setError('Enter an email address.')
     if (next.toLowerCase() === current.toLowerCase()) return setError('That is already your email address.')
+    // Supabase Auth confirms the new address by email.
+    if (!canSendEmail('email_change')) return
     setPending(true)
     const { error } = await supabase().auth.updateUser({ email: next }, { emailRedirectTo: callbackUrl('/profile') })
     setPending(false)
+    if (error && isEmailSendError(error)) return reportEmailProblem('email_change', 'send_failed')
     if (error) return setError(error)
     toast.success(`Confirmation link sent to ${next}`, {
       description: `Your email changes once you open it. You may also need to confirm from ${current}.`,
