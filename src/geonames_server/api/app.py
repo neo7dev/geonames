@@ -8,7 +8,6 @@ starts the AsyncIOScheduler for daily updates. /health reports progress.
 from __future__ import annotations
 
 import asyncio
-import logging
 import sys
 import threading
 from contextlib import asynccontextmanager, suppress
@@ -48,23 +47,15 @@ from geonames_server.ingestion.pipeline import (
 )
 from geonames_server.ingestion.registry import get_all_datasets
 from geonames_server.ingestion.scheduler import start_scheduler, stop_scheduler
-from geonames_server.log.mylogger import get_logger
+from geonames_server.log.mylogger import get_logger, set_log_level
 
 log = get_logger()
 
 
-def _change_log_levels() -> None:
-    """Match third-party logger levels to the application's LOG_LEVEL setting."""
-    _level = settings.log_level.upper()
-    logging.getLogger("sqlalchemy.engine").setLevel(_level)
-    logging.getLogger("uvicorn").setLevel(_level)
-    logging.getLogger("uvicorn.error").setLevel(_level)
-    logging.getLogger("uvicorn.access").setLevel(_level)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _change_log_levels()
+    # uvicorn reset its loggers when it started
+    set_log_level(settings.log_level)
 
     log.info("Starting GeoNames Server lifespan")
 

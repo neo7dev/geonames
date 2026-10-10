@@ -399,7 +399,7 @@ Main runtime settings (environment variables):
 - `MAX_RESULTS`
 - `SYNC_SCHEDULE_HOURS`
 - `FORCE_REBUILD`
-- `LOG_LEVEL`
+- `LOG_LEVEL` (default `INFO`; `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`, any case. `DEBUG` also logs every SQL statement)
 
 Notes:
 - `MAX_RESULTS` caps list/filter endpoint page size.

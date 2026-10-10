@@ -60,7 +60,7 @@
 
   "loggers": {
     "sqlalchemy.engine": {
-      "level": "INFO",
+      "level": "WARNING",
       "handlers": [],
       "propagate": true
     },
@@ -82,7 +82,7 @@
   },
 
   "root": {
-    "level": "DEBUG",
+    "level": "INFO",
     "handlers": ["console", "file"]
   }
 

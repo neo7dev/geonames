@@ -61,5 +61,20 @@ def setup_logging():
 setup_logging()
 
 
+def set_log_level(level: str) -> None:
+    """Apply LOG_LEVEL to the app's logs and the third-party loggers.
+
+    SQLAlchemy logs every statement at INFO, so its engine logger shows them
+    only when LOG_LEVEL is DEBUG. Called again once uvicorn has set up its own
+    loggers, which resets their levels.
+    """
+    logging.getLogger().setLevel(level)
+    logging.getLogger("sqlalchemy.engine").setLevel(
+        logging.INFO if level == "DEBUG" else logging.WARNING
+    )
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(name).setLevel(level)
+
+
 def get_logger(name: str = None) -> logging.Logger:
     return logging.getLogger(name or "geonames_server")

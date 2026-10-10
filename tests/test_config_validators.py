@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from geonames_server.config.validators import (
     create_directory,
     find_project_root,
 )
+from geonames_server.log.mylogger import set_log_level
 
 
 class TestCheckReadPermissions:
@@ -87,6 +89,38 @@ class TestPostgresSchema:
     def test_rejects_names_that_need_quoting(self, schema):
         with pytest.raises(ValidationError, match="lowercase identifier"):
             Settings(postgres_schema=schema)
+
+
+class TestLogLevel:
+    @pytest.mark.parametrize("value", ["info", " Debug ", "WARNING"])
+    def test_any_case(self, value):
+        assert Settings(log_level=value).log_level == value.strip().upper()
+
+    def test_defaults_to_info(self, monkeypatch):
+        monkeypatch.delenv("LOG_LEVEL", raising=False)
+        assert Settings(_env_file=None).log_level == "INFO"
+
+    @pytest.mark.parametrize("value", ["verbose", "", "10"])
+    def test_rejects_unknown_levels(self, value):
+        with pytest.raises(ValidationError, match="log_level"):
+            Settings(log_level=value)
+
+    @pytest.mark.parametrize(
+        ("level", "sql_level"), [("DEBUG", logging.INFO), ("INFO", logging.WARNING)]
+    )
+    def test_applies_to_app_logs_and_sql_only_when_debugging(self, level, sql_level):
+        root, sql = logging.getLogger(), logging.getLogger("sqlalchemy.engine")
+        before = root.level, sql.level
+        try:
+            set_log_level(level)
+            assert root.level == logging.getLevelName(level)
+            assert (
+                logging.getLogger("geonames_server").getEffectiveLevel() == root.level
+            )
+            assert sql.level == sql_level
+        finally:
+            root.setLevel(before[0])
+            sql.setLevel(before[1])
 
 
 class TestJwtSecret:

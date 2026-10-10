@@ -2,14 +2,14 @@ import re
 import tomllib
 from functools import cache, lru_cache
 from pathlib import Path
-from typing import Annotated, override
+from typing import Annotated
 
 from dotenv import find_dotenv
 from pydantic import Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import URL
 
-from geonames_server.log.mylogger import get_logger
+from geonames_server.log.mylogger import get_logger, set_log_level
 
 log = get_logger()
 
@@ -26,6 +26,8 @@ def _project_version() -> str:
     with _PYPROJECT.open("rb") as f:
         return tomllib.load(f)["project"]["version"]
 
+
+_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 # Supabase Auth (GoTrue) needs a JWT secret of at least 32 characters.
 _MIN_JWT_SECRET_LENGTH = 32
@@ -91,7 +93,7 @@ class Settings(BaseSettings):
 
     log_level: str = Field(
         default="INFO",
-        description="Logging level for the application",
+        description="Logging level: DEBUG, INFO, WARNING, ERROR or CRITICAL (any case). DEBUG also logs SQL statements",
     )
 
     max_results: int = Field(
@@ -335,6 +337,16 @@ class Settings(BaseSettings):
             )
         return value.rstrip("/")
 
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        level = value.strip().upper()
+        if level not in _LOG_LEVELS:
+            raise ValueError(
+                f"log_level must be one of {', '.join(_LOG_LEVELS)}, not {value!r}"
+            )
+        return level
+
     @field_validator("sync_schedule_hours", mode="before")
     @classmethod
     def validate_sync_schedule_hours(cls, value):
@@ -346,28 +358,6 @@ class Settings(BaseSettings):
             "sync_schedule_hours must be a comma-separated string or a list of ints"
         )
 
-    @override
-    def model_post_init(self, context):
-        log.debug(
-            "Settings initialised",
-            extra={
-                "app_name": self.app_name,
-                "log_level": self.log_level,
-                "debug": self.debug,
-                "root_dir": self.root_dir,
-                "cache_dir": self.cache_dir,
-                "data_dir": self.data_dir,
-                "project_dir": self.project_dir,
-                "gostatic_dir": self.gostatic_dir,
-                "logging_config_file": self.logging_config_file,
-                "geonames_url": self.geonames_url,
-                "enabled_datasets": self.enabled_datasets,
-                "sync_schedule_hours": self.sync_schedule_hours,
-                "force_rebuild": self.force_rebuild,
-            },
-        )
-        return super().model_post_init(context)
-
 
 @lru_cache
 def get_settings() -> Settings:
@@ -375,3 +365,22 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+set_log_level(settings.log_level)
+log.debug(
+    "Settings initialised",
+    extra={
+        "app_name": settings.app_name,
+        "log_level": settings.log_level,
+        "debug": settings.debug,
+        "root_dir": settings.root_dir,
+        "cache_dir": settings.cache_dir,
+        "data_dir": settings.data_dir,
+        "project_dir": settings.project_dir,
+        "gostatic_dir": settings.gostatic_dir,
+        "logging_config_file": settings.logging_config_file,
+        "geonames_url": settings.geonames_url,
+        "enabled_datasets": settings.enabled_datasets,
+        "sync_schedule_hours": settings.sync_schedule_hours,
+        "force_rebuild": settings.force_rebuild,
+    },
+)
