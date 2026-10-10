@@ -15,7 +15,7 @@ from geonames_server.config.config import settings
 router = APIRouter(include_in_schema=False)
 
 # Vite puts content-hashed files here; a new build gets new names.
-_ASSETS = "assets/"
+_ASSETS = "assets"
 _IMMUTABLE = "public, max-age=31536000, immutable"
 _NO_CACHE = "no-cache"
 
@@ -95,7 +95,8 @@ async def ui(path: str = "") -> Response:
 
     found = _file(root, path) if path else None
     if found is not None:
-        cache = _IMMUTABLE if path.startswith(_ASSETS) else _NO_CACHE
+        # By where the file is, not the path: assets/../index.html is no asset.
+        cache = _IMMUTABLE if found.is_relative_to(root / _ASSETS) else _NO_CACHE
         return FileResponse(found, headers=_headers(cache))
     if PurePosixPath(path).suffix:
         return _not_found(f"/ui/{path} not found")

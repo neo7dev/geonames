@@ -99,6 +99,14 @@ class TestFiles:
         assert_ui_headers(response)
 
     @pytest.mark.asyncio
+    async def test_path_out_of_assets_is_not_cached_for_good(self, client):
+        response = await client.get("/ui/assets/..%2findex.html")
+
+        assert response.status_code == 200
+        assert response.text == INDEX
+        assert response.headers["cache-control"] == "no-cache"
+
+    @pytest.mark.asyncio
     async def test_unhashed_file_is_revalidated(self, client):
         response = await client.get("/ui/theme-init.js")
 
