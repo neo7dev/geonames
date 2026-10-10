@@ -10,6 +10,7 @@ import { LoginPage } from '@/pages/login'
 import { NotFound } from '@/pages/not-found'
 import { OverviewPage } from '@/pages/overview/overview-page'
 import { ResetPasswordPage } from '@/pages/reset-password'
+import { RouteError } from '@/pages/route-error'
 import { SignupPage } from '@/pages/signup'
 import { UpdatePasswordPage } from '@/pages/update-password'
 
@@ -19,6 +20,11 @@ export const routes: RouteObject[] = [
       <AuthProvider>
         <Outlet />
       </AuthProvider>
+    ),
+    errorElement: (
+      <main className="mx-auto max-w-xl p-6">
+        <RouteError />
+      </main>
     ),
     children: [
       {
@@ -42,14 +48,20 @@ export const routes: RouteObject[] = [
           {
             element: <AppShell />,
             children: [
-              { index: true, element: <OverviewPage /> },
-              { path: 'keys', element: <KeysPage /> },
-              // The chart library loads only when this page opens.
               {
-                path: 'usage',
-                lazy: async () => ({ Component: (await import('@/pages/usage/usage-page')).UsagePage }),
+                // Inside the shell, so the navigation stays usable.
+                errorElement: <RouteError />,
+                children: [
+                  { index: true, element: <OverviewPage /> },
+                  { path: 'keys', element: <KeysPage /> },
+                  // The chart library loads only when this page opens.
+                  {
+                    path: 'usage',
+                    lazy: async () => ({ Component: (await import('@/pages/usage/usage-page')).UsagePage }),
+                  },
+                  { path: '*', element: <NotFound /> },
+                ],
               },
-              { path: '*', element: <NotFound /> },
             ],
           },
         ],
