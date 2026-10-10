@@ -8,6 +8,10 @@ it("reads GoTrue's error from the fragment", () => {
   )
 })
 
+it('keeps a plus sign that was encoded in the description', () => {
+  expect(linkError('#error=x&error_description=Use+1%2B1+characters')).toBe('Use 1+1 characters')
+})
+
 it('falls back to a general message for an error without a description', () => {
   expect(linkError('#error=server_error')).toBe('This link could not be used.')
 })

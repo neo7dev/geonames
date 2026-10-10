@@ -9,7 +9,8 @@ export const initialHash = typeof window === 'undefined' ? '' : window.location.
 export function linkError(hash: string = initialHash): string | null {
   const params = new URLSearchParams(hash.replace(/^#/, ''))
   const description = params.get('error_description')
-  if (description) return description.replace(/\+/g, ' ')
+  // URLSearchParams has already turned + into spaces; a + left is a real one (%2B).
+  if (description) return description
   return params.get('error') ? 'This link could not be used.' : null
 }
 
