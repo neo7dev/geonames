@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 
 import { useUsage } from '@/api/usage'
@@ -26,6 +27,9 @@ export function UsagePage() {
   const usage = useUsage(days)
   const data = usage.data
   const total = data?.daily.reduce((sum, d) => sum + d.requests, 0) ?? 0
+  // The range `data` covers: while a new range loads, still the old one.
+  const [dataDays, setDataDays] = useState(days)
+  if (data && !usage.isPlaceholderData && dataDays !== days) setDataDays(days)
 
   return (
     <>
@@ -63,7 +67,7 @@ export function UsagePage() {
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="font-medium">Requests per day</h2>
               <p className="text-sm text-muted-foreground">
-                {formatNumber(total)} in the last {days} days
+                {formatNumber(total)} in the last {dataDays} days
               </p>
             </div>
             <DailyChart daily={data.daily} />

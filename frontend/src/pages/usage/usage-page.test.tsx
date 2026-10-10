@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, expect, it } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 
 import { fakeAuth, fakeSession } from '@/test/fake-supabase'
 import { baseRoutes, mockFetch, USAGE } from '@/test/fetch'
@@ -33,6 +33,24 @@ it('switches the range and keeps it in the URL', async () => {
 
   await waitFor(() => expect(usageCalls(fetch)).toContain('/portal/usage?days=7'))
   expect(currentPath(router)).toBe('/usage?days=7')
+  expect(await screen.findByText('1,234 in the last 7 days')).toBeInTheDocument()
+})
+
+it("labels the old range's total as such until the new range arrives", async () => {
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  const respond = mockFetch(baseRoutes)
+  vi.stubGlobal('fetch', vi.fn(async (...args: Parameters<typeof respond>) => {
+    if (String(args[0]).endsWith('days=7')) await gate
+    return respond(...args)
+  }))
+  renderApp('/usage')
+  await screen.findByText('1,234 in the last 30 days')
+
+  await userEvent.click(screen.getByRole('button', { name: '7 days' }))
+
+  expect(screen.getByText('1,234 in the last 30 days')).toBeInTheDocument()
+  release()
   expect(await screen.findByText('1,234 in the last 7 days')).toBeInTheDocument()
 })
 
