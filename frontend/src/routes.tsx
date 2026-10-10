@@ -8,10 +8,11 @@ import { AuthCallbackPage } from '@/pages/auth-callback'
 import { KeysPage } from '@/pages/keys/keys-page'
 import { LoginPage } from '@/pages/login'
 import { NotFound } from '@/pages/not-found'
-import { Placeholder } from '@/pages/placeholder'
+import { OverviewPage } from '@/pages/overview/overview-page'
 import { ResetPasswordPage } from '@/pages/reset-password'
 import { SignupPage } from '@/pages/signup'
 import { UpdatePasswordPage } from '@/pages/update-password'
+import { UsagePage } from '@/pages/usage/usage-page'
 
 export const routes: RouteObject[] = [
   {
@@ -42,9 +43,9 @@ export const routes: RouteObject[] = [
           {
             element: <AppShell />,
             children: [
-              { index: true, element: <Placeholder title="Overview" /> },
+              { index: true, element: <OverviewPage /> },
               { path: 'keys', element: <KeysPage /> },
-              { path: 'usage', element: <Placeholder title="Usage" /> },
+              { path: 'usage', element: <UsagePage /> },
               { path: '*', element: <NotFound /> },
             ],
           },

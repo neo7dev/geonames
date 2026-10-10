@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it } from 'vitest'
 
@@ -37,7 +37,8 @@ it('opens the menu, navigates and closes it again', async () => {
 it('links to the API docs in a new tab', async () => {
   renderApp('/')
 
-  const docs = await screen.findByRole('link', { name: 'API docs' })
+  const nav = (await screen.findAllByRole('navigation', { name: 'Main' }))[0]
+  const docs = within(nav.parentElement!).getByRole('link', { name: 'API docs' })
   expect(docs).toHaveAttribute('href', '/docs')
   expect(docs).toHaveAttribute('target', '_blank')
 })

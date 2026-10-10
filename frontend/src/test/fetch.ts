@@ -33,11 +33,34 @@ export const ME = {
   active_keys: 0,
 }
 
+const window_ = (used: number | null, limit: number | null, resets_at: string) => ({ used, limit, resets_at })
+
+/** /portal/usage for a basic-tier user with a little traffic. */
+export const USAGE = {
+  tier: 'basic',
+  live: true,
+  current: {
+    minute: window_(3, 10, '2026-10-09T12:01:00Z'),
+    hour: window_(42, 100, '2026-10-09T13:00:00Z'),
+    month: window_(4100, 5000, '2026-11-01T00:00:00Z'),
+  },
+  daily: [
+    { date: '2026-10-07', requests: 0 },
+    { date: '2026-10-08', requests: 1200 },
+    { date: '2026-10-09', requests: 34 },
+  ],
+  keys: [
+    { id: 'k1', name: 'laptop', prefix: 'gn_abcd1234', revoked: false, requests_this_month: 4000 },
+    { id: 'k2', name: 'old', prefix: 'gn_zzzz9999', revoked: true, requests_this_month: 100 },
+  ],
+}
+
 export const AUTH_SETTINGS = { disable_signup: false, mailer_autoconfirm: false }
 
 /** What every signed-in page needs: the profile and GoTrue's settings. */
 export const baseRoutes = {
   '/portal/me': { body: ME },
   '/portal/keys': { body: [] },
+  '/portal/usage': { body: USAGE },
   '/auth/v1/settings': { body: AUTH_SETTINGS },
 }

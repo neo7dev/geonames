@@ -5,6 +5,12 @@ const numberFormat = new Intl.NumberFormat()
 
 export const formatNumber = (n: number) => numberFormat.format(n)
 
+// Dates are UTC days ("2026-10-09"); format them as UTC so no time zone shifts the day.
+const dayFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+const longDayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
+export const formatDay = (date: string) => dayFormat.format(new Date(`${date}T00:00:00Z`))
+export const formatLongDay = (date: string) => longDayFormat.format(new Date(`${date}T00:00:00Z`))
+
 export const formatDate = (iso: string) => dateFormat.format(new Date(iso))
 
 export const formatDateTime = (iso: string) => dateTimeFormat.format(new Date(iso))
