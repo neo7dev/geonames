@@ -18,8 +18,32 @@ services:
     environment:
       - PYTHONPATH=/workspace/src
       - ENABLED_DATASETS=${ENABLED_DATASETS}
+      # Token for `gh` (make gh-auth), a fine-grained PAT for this repository only.
+      # ~/.zsh/host/macbook.secrets.zsh exports GEONAMES_GH_TOKEN from the Keychain
+      # (gh-token-geonames) only in the shell VS Code spawns to resolve its
+      # environment, so host terminals keep their own gh login. Renamed to
+      # GH_TOKEN only in here; nothing is written to disk. A new value needs
+      # VS Code fully quit and relaunched: Reload Window and Rebuild Container
+      # reuse the cached environment.
+      - GH_TOKEN=${GEONAMES_GH_TOKEN:-}
     volumes:
       - ..:/workspace:cached
+      # One GitHub identity: the neo7dev key, not the host's whole ~/.ssh (whose
+      # agent offers every key, and GitHub answers as the first it knows).
+      # ssh-config, symlinked to ~/.ssh/config by postCreateCommand, names only
+      # id_container. The key stays passphrase-protected: VS Code forwards the
+      # host ssh-agent, which signs. Long syntax because the devcontainers CLI
+      # drops `readonly` from a mount string. ~/.ssh is a volume so known_hosts
+      # survives a rebuild.
+      - ssh_home:/home/devuser/.ssh
+      - type: bind
+        source: ${HOME}/.ssh/${GEONAMES_SSH_KEY:-neo7_github}
+        target: /home/devuser/.ssh/id_container
+        read_only: true
+      - type: bind
+        source: ${HOME}/.ssh/${GEONAMES_SSH_KEY:-neo7_github}.pub
+        target: /home/devuser/.ssh/id_container.pub
+        read_only: true
     ports:
       - "9500:9500"
       # Vite dev server for the web UI (make ui-dev)
@@ -129,3 +153,7 @@ services:
 
 networks:
   geonames:
+
+volumes:
+  # ~/.ssh for known_hosts; the key is bound read-only on top of it.
+  ssh_home:

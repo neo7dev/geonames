@@ -1,0 +1,15 @@
+# ssh configuration for the dev container, symlinked to ~/.ssh/config by
+# devcontainer.json's postCreateCommand. The host's ~/.ssh/config is not mounted.
+#
+# One GitHub identity: id_container, the host key docker-compose.yml binds there
+# (${GEONAMES_SSH_KEY}, default neo7_github, the neo7dev account). Both names
+# resolve to it: origin uses the github.com-neo7 alias, which the host's own
+# config also maps to that key, and a bare github.com answers as neo7dev too.
+#
+# IdentitiesOnly keeps the forwarded agent from offering its other keys; the
+# agent still does the signing.
+Host github.com github.com-neo7
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_container
+  IdentitiesOnly yes

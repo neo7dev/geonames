@@ -35,6 +35,10 @@ curl -H "X-API-Key: $KEY" "http://localhost:9500/cities15000/?limit=5"
 
 With the API running (`make run`), `make check-keys` calls the API with all four keys and reports each as ok, rejected (rerun `make seed-users`) or unreachable; `make check-key-free` (or `-tester`, `-dev`, `-admin`) checks one. `API_URL=...` points them elsewhere.
 
+## GitHub access
+
+The container pushes as `neo7dev`: `docker-compose.yml` mounts that one key (`~/.ssh/neo7_github`, or `GEONAMES_SSH_KEY`) read-only as `~/.ssh/id_container`, `ssh-config` makes it the only identity for `github.com` and the `github.com-neo7` alias, and the host's ssh-agent, forwarded by VS Code, does the signing. `gh` gets `GH_TOKEN` from `GEONAMES_GH_TOKEN`, which the host exports from the Keychain (`gh-token-geonames`) only for VS Code. Both need VS Code fully quit and relaunched after a change; Reload Window and Rebuild Container reuse the cached environment. `make gh-auth` and `make git-auth` check them from a VS Code terminal (`docker exec` gets no forwarded agent).
+
 ## OAuth (optional)
 
 Create a GitHub and/or Google OAuth app with callback URL `http://localhost:8000/auth/v1/callback`, put the client id and secret in `.devcontainer/.env`, set `GITHUB_ENABLED` / `GOOGLE_ENABLED` to `true`, then recreate the `auth` service.

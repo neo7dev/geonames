@@ -359,4 +359,111 @@ push-image: push-image-version
 push-image-version:
 	docker push $(IMAGE):$(VERSION)
 
-.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version
+##@ GitHub (run in the dev container)
+
+# The GitHub account that owns this repository. gh-auth compares the logged-in
+# account with it: the host's gh is a different account, and gh's own error
+# does not say so.
+GH_OWNER ?= neo7dev
+
+# Colours only on a terminal, so piped output and CI logs stay plain.
+ifneq (,$(findstring xterm,$(TERM)))
+  BOLD   := $(shell tput bold)
+  RED    := $(shell tput setaf 1)
+  GREEN  := $(shell tput setaf 2)
+  YELLOW := $(shell tput setaf 3)
+  BLUE   := $(shell tput setaf 4)
+  RESET  := $(shell tput sgr0)
+endif
+SAY  := printf "$(BLUE)==>$(RESET) $(BOLD)%s$(RESET)\n"
+OK   := printf "$(GREEN)  ok$(RESET) %s\n"
+WARN := printf "$(YELLOW)  !!$(RESET) %s\n"
+
+# Nothing here reads, echoes, masks or length-checks GH_TOKEN: presence is tested
+# with [ -n ] and identity is asked of GitHub. `gh auth status` is not used
+# because it prints a masked token, which still discloses part of it.
+
+## Check that gh is authenticated as the account that owns this repository
+gh-auth:
+	@$(SAY) "gh authentication"
+	@if ! command -v gh >/dev/null 2>&1; then \
+	  printf "  %-14s $(RED)%s$(RESET)\n" "gh" "not installed"; \
+	  $(WARN) "these targets run inside the dev container - reopen the repo in it"; exit 1; fi
+	@printf "  %-14s %s\n" "gh" "$$(gh --version | head -1)"
+	@if [ -z "$${GH_TOKEN:-}" ]; then \
+	  printf "  %-14s $(YELLOW)%s$(RESET)\n" "GH_TOKEN" "unset or empty"; \
+	  printf "  %-14s %s\n" "" "the container reads it from GEONAMES_GH_TOKEN on the host"; \
+	  printf "  %-14s %s\n" "" "exported for VS Code by ~/.zsh/host/macbook.secrets.zsh"; \
+	  printf "  %-14s %s\n" "" "if that export exists: quit VS Code fully and relaunch - Reload"; \
+	  printf "  %-14s %s\n" "" "Window and Rebuild Container both reuse the cached shell env"; \
+	else \
+	  printf "  %-14s $(GREEN)%s$(RESET)\n" "GH_TOKEN" "present"; \
+	fi
+	@login=""; \
+	 if out="$$(gh api user --jq .login 2>/dev/null)"; then login="$$(printf '%s' "$$out" | head -1)"; fi; \
+	 case "$$login" in *[!A-Za-z0-9-]*) login="" ;; esac; \
+	 if [ -z "$$login" ]; then \
+	   printf "  %-14s $(RED)%s$(RESET)\n" "identity" "not authenticated"; \
+	   if [ -n "$${GH_TOKEN:-}" ]; then \
+	     $(WARN) "GH_TOKEN is set but GitHub rejected it - expired or revoked"; \
+	     $(WARN) "after rotating it the container still holds the old value until"; \
+	     $(WARN) "VS Code is fully quit and relaunched"; \
+	   else \
+	     $(WARN) "no credential at all - see GH_TOKEN above"; \
+	   fi; \
+	   exit 1; \
+	 elif [ "$$login" != "$(GH_OWNER)" ]; then \
+	   printf "  %-14s $(RED)%s$(RESET)\n" "identity" "$$login"; \
+	   $(WARN) "this repository belongs to $(GH_OWNER) - $$login is not a collaborator"; \
+	   $(WARN) "gh pr create would fail with 'must be a collaborator'"; \
+	   $(WARN) "run make inside the dev container - the host gh is a different account"; \
+	   exit 1; \
+	 else \
+	   printf "  %-14s $(GREEN)%s$(RESET)\n" "identity" "$$login"; \
+	 fi
+	@$(OK) "gh can write to $(GH_OWNER)"
+
+## Check the git identity and that origin is reachable for pushing
+git-auth:
+	@$(SAY) "git authentication"
+	@printf "  %-14s %s\n" "user.name" "$$(git config user.name || echo '(unset)')"
+	@printf "  %-14s %s\n" "user.email" "$$(git config user.email || echo '(unset)')"
+	@if [ -z "$$(git config user.name)" ] || [ -z "$$(git config user.email)" ]; then \
+	  $(WARN) "this repo is owned by a different account than the host default -"; \
+	  $(WARN) "set them repo-locally rather than relying on the global config"; \
+	fi
+	@url="$$(git remote get-url origin 2>/dev/null || true)"; \
+	 if [ -z "$$url" ]; then printf "  %-14s $(RED)%s$(RESET)\n" "origin" "no remote"; exit 1; fi; \
+	 printf "  %-14s %s\n" "origin" "$$url"; \
+	 case "$$url" in \
+	   git@github.com-neo7:*) ;; \
+	   git@github.com:*) $(WARN) "plain github.com selects the host's default key - this repo" ; \
+	                     $(WARN) "needs the github.com-neo7 ssh alias" ;; \
+	 esac
+	@if [ -n "$${SSH_AUTH_SOCK:-}" ] && [ -S "$${SSH_AUTH_SOCK:-}" ]; then \
+	   printf "  %-14s $(GREEN)%s$(RESET)\n" "ssh-agent" "forwarded"; \
+	 else \
+	   printf "  %-14s $(YELLOW)%s$(RESET)\n" "ssh-agent" "not forwarded"; \
+	   printf "  %-14s %s\n" "" "VS Code forwards it to terminals it opens; a plain"; \
+	   printf "  %-14s %s\n" "" "'docker exec' does not - push from a VS Code terminal"; \
+	 fi
+# Reachability and emptiness are separate questions. `ls-remote --exit-code` exits 2
+# when no refs MATCH, so on a repository that exists but has no commits yet it is
+# indistinguishable from an auth failure - which reported "origin unreachable" on a
+# correctly configured new repo, sending you to debug an agent that was fine.
+	@refs=$$(git ls-remote --heads origin 2>/dev/null); rc=$$?; \
+	 if [ $$rc -ne 0 ]; then \
+	   printf "  %-14s $(RED)%s$(RESET)\n" "push access" "origin unreachable"; \
+	   $(WARN) "the host keys are mounted read-only and the agent does the signing"; \
+	   $(WARN) "so this usually means the agent is missing rather than a bad key"; \
+	   $(WARN) "check in a VS Code terminal: ssh-add -l"; \
+	   exit 1; \
+	 elif [ -z "$$refs" ]; then \
+	   printf "  %-14s $(GREEN)%s$(RESET)\n" "push access" "origin reachable (no branches yet)"; \
+	   $(OK) "git can reach origin; it has no commits, so nothing to compare against"; \
+	 else \
+	   printf "  %-14s $(GREEN)%s$(RESET)\n" "push access" "origin reachable"; \
+	   $(OK) "git can push to origin"; \
+	 fi
+
+.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version gh-auth git-auth
