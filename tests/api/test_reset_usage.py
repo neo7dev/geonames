@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from geonames_server.api.rate_limit import Windows
+from geonames_server.api.usage_flush import flush_usage
 from geonames_server.scripts import reset_usage
 from geonames_server.scripts.reset_usage import reset_counters
 
@@ -57,21 +58,37 @@ async def test_only_the_chosen_windows_are_reset(
 async def test_a_month_reset_is_not_undone_by_a_rebuild(
     auth_client, limiter, redis, clock, make_user, make_key, session_factory
 ):
-    # The month counter is gone (Redis restarted) and Postgres has the usage:
-    # the reset must stop the rebuild from bringing the month back.
+    # Postgres has the usage and the counters are gone (Redis restarted): a
+    # missing counter is rebuilt from Postgres, so the reset must leave a 0.
     user_id = await make_user("free")
     key = await make_key(user_id)
-    windows = Windows.at(clock.now)
-    month_key = windows.counter_keys(user_id)[2]
-    await _calls(auth_client, key, 1)
-    await redis.set(month_key, 5000, keepttl=True)
-    assert await _calls(auth_client, key, 1) == [429]
+    keys = Windows.at(clock.now).counter_keys(user_id)
+    assert await _calls(auth_client, key, 3) == [200] * 3
+    assert await flush_usage(limiter, session_factory) == 3
+    await redis.delete(keys[1], keys[2])
 
     await reset_counters(redis, user_id, ["hour", "month"], clock.now)
 
     assert await _calls(auth_client, key, 1) == [200]
     assert (await _counters(redis, user_id, clock.now))[1:] == [1, 1]
-    assert await redis.ttl(month_key) > 0
+    assert await redis.ttl(keys[2]) > 0
+
+
+@pytest.mark.asyncio
+async def test_without_a_reset_the_rebuild_brings_the_usage_back(
+    auth_client, limiter, redis, clock, make_user, make_key, session_factory
+):
+    # What the test above guards against
+    user_id = await make_user("free")
+    key = await make_key(user_id)
+    keys = Windows.at(clock.now).counter_keys(user_id)
+    await _calls(auth_client, key, 3)
+    await flush_usage(limiter, session_factory)
+    await redis.delete(keys[1], keys[2])
+
+    await _calls(auth_client, key, 1)
+
+    assert (await _counters(redis, user_id, clock.now))[1:] == [4, 4]
 
 
 def test_refuses_outside_the_devcontainer():
