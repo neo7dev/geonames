@@ -27,7 +27,7 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | 4. Auth + API keys | Done (merged to `main` 2026-10-09) | Tiers, roles and user tables; new signups get the default role (free); login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
 | 5. Rate limits + quota | Done (merged to `main` with its review fixes) | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
 | 6. Frontend | Done (merged to `main`) | React + Vite + Tailwind + shadcn at `/ui`: signup/login with email + password, key management, usage page | Sign up, create a key, call the API, see the usage update |
-| 7. Ops | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry; then ship the image | Image published to ghcr |
+| 7. Ops | In progress | Check the built image deploys with the full stack; first admin from `.env`; CI that builds and pushes the image, backups, key scopes and expiry; then ship the image. TLS is the deployer's own reverse proxy | Image published to ghcr |
 | 8. GitHub and Google login | Not started | An incremental update after the image ships: OAuth buttons on login and signup (scope below) | Login with GitHub lands on the overview |
 
 ## Tiers
@@ -528,6 +528,14 @@ Built as scoped above in six increments, each checked live in a browser (gstack'
 - Display names that users change on a new profile page and admins on the Administration page (`689ed60`, `79ceca5`).
 - Confirmations show as toasts that close after 2 seconds (`d5e9222`); errors stay inline alerts.
 - Review fixes (`f3281d3`..`7b03a26`).
+
+### Phase 7: Ops (branch `phase-7-deploy-check`)
+
+- No TLS in the stack: deployers put their own reverse proxy in front of the app port and Kong.
+- First admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` (`2ee806e`): on startup, while no profile has an admin role, the server creates the user through Supabase Auth's admin API (or promotes an already registered email) and gives it the `admin` role. Ignored once any admin exists. A Supabase Auth failure is logged and retried on the next start.
+- Deploy compose runs `GEONAMES_IMAGE` instead of building, with `APP_PORT` / `KONG_HTTP_PORT` (`92698c9`). It needs only `docker-compose.yml`, `supabase/` and `.env`.
+- Deploy check (2026-10-10): `make image-check`, then the stack from a directory holding only those three files, fresh secrets, ports 9600/8100, `cities15000`. All 7 services healthy; the admin was created on the first start and left alone after a restart; admin login through Kong, `/portal/me` (admin, max), `/portal/admin/users`, a new API key served `/cities15000/filter`, no key got 401; `/ui` login page rendered with no console errors; Studio 401 without and 200 with basic auth. `make predeploy` passes.
+- Still to do: CI, backups, key scopes and expiry, publishing the image.
 
 ## Risks
 
