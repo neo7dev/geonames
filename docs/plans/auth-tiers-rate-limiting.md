@@ -1,6 +1,6 @@
 # Plan: Deployable image, auth, tiers, rate limiting
 
-Goal: ship one deployable app image, run via docker compose alongside Redis and self-hosted Supabase. Users sign up (email + password, GitHub, Google), manage API keys, and view usage/quota. Roles map to tiers. Admin dashboard is Supabase Studio. Internal tool, no paywall.
+Goal: ship one deployable app image, run via docker compose alongside Redis and self-hosted Supabase. Users sign up (email + password, GitHub, Google), manage API keys, and view usage/quota. Roles map to tiers. Admins manage users on the UI's Administration page; Supabase Studio for the rest. Internal tool, no paywall.
 
 Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with the review fixes below. Each later phase gets its own branch.
 
@@ -26,8 +26,9 @@ Phases 1-3 were built on `dev-supabase-stack` and are merged into `main` with th
 | 3. Deploy image + compose | Done | Prod Dockerfile; root compose with the same services as dev, plus Redis; startup no longer waits for data loads; public `/health` | `docker compose up` brings it all up, `/health` returns 200, Studio opens |
 | 4. Auth + API keys | Done (merged to `main` 2026-10-09) | Tiers, roles and user tables; new signups get the default role (free); login token checked for portal routes; API key (shown once, stored hashed) checked for data routes; `/portal/*` endpoints; `POST /sync` admin-only | Requests without a valid key get 401 and a non-admin sync gets 403 |
 | 5. Rate limits + quota | Done (merged to `main` with its review fixes) | One Redis check covers per-minute, hourly and monthly limits; 429 with `Retry-After`; usage copied to Postgres every 5 min; requests still go through if Redis is down | The 11th call in a minute on basic gets 429; a role change in Studio applies within 60s |
-| 6. Frontend | Done (merged to `main`); GitHub and Google login not started | React + Vite + Tailwind + shadcn at `/ui`: signup/login with email + password (GitHub and Google later in the phase), key management, usage page | Sign up, create a key, call the API, see the usage update |
-| 7. Ops (later) | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry | Image published to ghcr |
+| 6. Frontend | Done (merged to `main`) | React + Vite + Tailwind + shadcn at `/ui`: signup/login with email + password, key management, usage page | Sign up, create a key, call the API, see the usage update |
+| 7. Ops | Not started | CI that builds and pushes the image, backups, TLS, key scopes and expiry; then ship the image | Image published to ghcr |
+| 8. GitHub and Google login | Not started | An incremental update after the image ships: OAuth buttons on login and signup (scope below) | Login with GitHub lands on the overview |
 
 ## Tiers
 
@@ -247,7 +248,7 @@ Branch `phase-6-frontend` from `main`.
 ### Verified first (devcontainer stack, GoTrue v2.196.0, Kong 3.9.3, 2026-10-10)
 
 - **CORS needs no change.** Kong's `cors` plugin (no config) answers a preflight from `http://localhost:5173` for `POST /auth/v1/token` with `Access-Control-Allow-Origin: *` and echoes the requested headers (`apikey`, `authorization`, `content-type`, `x-client-info`, `x-supabase-api-version`). supabase-js sends its tokens in headers, not cookies, so `*` is enough.
-- **GoTrue says which logins are on.** `GET /auth/v1/settings` (with the `apikey` header) returns `external.email`, `external.github`, `external.google` and `disable_signup`. The UI reads `disable_signup` now, and the provider flags when OAuth is added ("Later in phase 6"); the app does not need the `*_ENABLED` settings.
+- **GoTrue says which logins are on.** `GET /auth/v1/settings` (with the `apikey` header) returns `external.email`, `external.github`, `external.google` and `disable_signup`. The UI reads `disable_signup` now, and the provider flags when OAuth is added (phase 8); the app does not need the `*_ENABLED` settings.
 - **Redirects.** A signup with `redirect_to=http://localhost:5173/ui/auth/callback` and an empty `ADDITIONAL_REDIRECT_URLS` got a confirmation link that redirected (303) to that URL with `#access_token=...&refresh_token=...&type=signup` (implicit flow, tokens in the fragment). GoTrue allows any localhost redirect. A recovery request with `redirect_to=https://geo.example.com/...` fell back to `SITE_URL`, which is `http://localhost:9500`: a page that does not exist. So `SITE_URL` has to point at the UI, and production needs the UI's URL in `SITE_URL` or `ADDITIONAL_REDIRECT_URLS`.
 - Nothing answers on `/` or `/ui` today. The probe user was deleted afterwards.
 
@@ -279,7 +280,7 @@ Branch `phase-6-frontend` from `main`.
 - **API client** (`src/api/client.ts`): reads the current access token from supabase-js for each call and sends it as `Authorization: Bearer`. A 401 signs out and goes to `/login?next=...`. A 403 (suspended or no profile) shows a full-page "account suspended, ask an admin" with sign out. Other errors show the API's `detail` in an inline alert where the action was taken (no toasts: they slide in, and the design has no motion). 422 details map to form fields where there is one. Signing out from the sidebar goes to a plain `/login`, without a `next` back to the page left.
 - **Numbers.** Null limits show as "Unlimited"; counts use `Intl.NumberFormat`; `resets_at` shows as relative time ("in 42 s", "in 3 days") with the UTC time in a tooltip. Days on the chart are UTC days, labelled as such.
 - **Passwords of 8 or more characters.** GoTrue's default minimum is 6; Supabase advises against anything under 8. `PASSWORD_MIN_LENGTH = 8` in every env file feeds GoTrue (`GOTRUE_PASSWORD_MIN_LENGTH`, default 8 in the compose file) and the app, which passes it to the UI in `config.json`, so the form and the server agree. No character-class rules (length matters more) and no leaked-password check (`GOTRUE_PASSWORD_HIBP_ENABLED` sends hash prefixes to an outside service; not for now). The dev seed password, `dev-password`, is 12 characters.
-- **Email and password only for now.** GitHub and Google login come later in this phase (below), so the first cut ships without needing OAuth apps.
+- **Email and password only.** GitHub and Google login come in phase 8 (below), after the image ships, so it ships without needing OAuth apps.
 - **Not in phase 6:** account deletion (GoTrue only lets the service role delete users), email change, MFA, admin pages (Studio stays the admin UI), per-key usage charts, i18n, end-to-end browser tests in CI (the smoke test covers them by hand), `X-RateLimit-*` headers.
 
 ### Design
@@ -356,9 +357,9 @@ Rules:
 5. Overview and usage pages with the chart, and their tests.
 6. Dockerfile UI stage, `predeploy` / `image-check`, README, plan progress.
 
-### Later in phase 6: GitHub and Google login
+## Phase 8 scope: GitHub and Google login
 
-After the email and password cut is merged.
+An incremental update after phase 7 ships the image.
 
 - `/login` (and `/signup`) show GitHub and Google buttons when `GET /auth/v1/settings` reports `external.github` / `external.google`. A button calls `auth.signInWithOAuth({provider, options: {redirectTo: <origin>/ui/auth/callback?next=...}})`; GoTrue's own callback is `${API_EXTERNAL_URL}/callback`, already set in the compose file.
 - `/auth/callback` already handles a session in the fragment; it also shows the provider's `error_description` (consent denied).
