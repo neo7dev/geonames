@@ -9,23 +9,19 @@ RUN npm run build
 
 FROM python:3.12-slim
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.24 /uv /usr/local/bin/uv
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Dependencies come from uv.lock. The virtualenv lives outside /app so the
-# entrypoint's chown of /app stays fast.
-ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    UV_NO_CACHE=1
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+# Runtime dependencies only, pinned in requirements.txt (exported from uv.lock by
+# make requirements; make requirements-check keeps the two in step). No uv here.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 
+# The app reads its version from pyproject.toml.
+COPY pyproject.toml .
 COPY alembic.ini .
 COPY migrations/ migrations/
 COPY src/ src/
@@ -36,7 +32,6 @@ RUN mkdir -p data/cache data/geonames logs
 
 ENV PUID=1000
 ENV PGID=1000
-ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 ENV UI_DIR=/app/ui
