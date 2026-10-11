@@ -71,7 +71,13 @@ def set_log_level(level: str) -> None:
     logging.getLogger().setLevel(level)
     # SQL statements and every outgoing HTTP request: only when debugging
     chatty = logging.INFO if level == "DEBUG" else logging.WARNING
-    for name in ("sqlalchemy.engine", "httpx"):
+    # Alembic's plugin setup and APScheduler's job bookkeeping: only when debugging
+    for name in (
+        "sqlalchemy.engine",
+        "httpx",
+        "alembic.runtime.plugins",
+        "apscheduler",
+    ):
         logging.getLogger(name).setLevel(chatty)
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(name).setLevel(level)

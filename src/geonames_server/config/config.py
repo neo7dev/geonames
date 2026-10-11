@@ -9,6 +9,7 @@ from pydantic import Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import URL
 
+from geonames_server.log.console import DEFAULT_LOG_WIDTH, set_log_width
 from geonames_server.log.mylogger import get_logger, set_log_level
 
 log = get_logger()
@@ -94,6 +95,14 @@ class Settings(BaseSettings):
     log_level: str = Field(
         default="INFO",
         description="Logging level: DEBUG, INFO, WARNING, ERROR or CRITICAL (any case). DEBUG also logs SQL statements",
+    )
+
+    log_width: int = Field(
+        default=DEFAULT_LOG_WIDTH,
+        ge=40,
+        le=1000,
+        description="Columns the console logs are drawn at when not in a terminal "
+        "(in a container); a terminal keeps its own width",
     )
 
     max_results: int = Field(
@@ -411,6 +420,7 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 set_log_level(settings.log_level)
+set_log_width(settings.log_width)
 log.debug(
     "Settings initialised",
     extra={

@@ -55,6 +55,10 @@ class MyJSONFormatter(logging.Formatter):
         return json.dumps(message)
 
 
+# Extras Rich reads itself (markup, highlighter) or that only repeat the message
+_RICH_ATTRS = {"color_message", "markup", "highlighter", "keywords"}
+
+
 class RichExtraFormatter(logging.Formatter):
     def format(self, record):
         message = record.getMessage()
@@ -62,7 +66,7 @@ class RichExtraFormatter(logging.Formatter):
         extras = {
             key: val
             for key, val in record.__dict__.items()
-            if key not in LOG_RECORD_BUILTIN_ATTRS
+            if key not in LOG_RECORD_BUILTIN_ATTRS and key not in _RICH_ATTRS
         }
 
         if extras:

@@ -11,23 +11,13 @@ from rich.console import Console, Group
 from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.table import Table
-from rich.theme import Theme
 
 from geonames_server.config.config import settings
-
-my_theme = Theme(
-    {
-        "header_style": "bold magenta",
-    }
-)
+from geonames_server.log.console import console
 
 ROW_1_STYLE = "blue"
 ROW_2_STYLE = "white"
 ROW_3_STYLE = "green"
-
-
-# ✅ single global console
-console = Console(theme=my_theme)
 
 
 # ✅ expose getter

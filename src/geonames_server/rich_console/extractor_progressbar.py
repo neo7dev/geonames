@@ -6,6 +6,11 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
+from geonames_server.log.console import ProgressMilestones, console, in_terminal
+from geonames_server.log.mylogger import get_logger
+
+log = get_logger()
+
 
 class ExtractorProgressBar:
     """Progress bar for zip extraction using rich.Progress.
@@ -27,8 +32,16 @@ class ExtractorProgressBar:
             TransferSpeedColumn(),
             TimeElapsedColumn(),
             transient=False,
+            console=console,
+            # Without a terminal it is logged in steps instead (milestones).
+            disable=not in_terminal(),
         )
         self.task_id = None
+        self.milestones = (
+            None
+            if in_terminal()
+            else ProgressMilestones(log, self.description, self.total)
+        )
 
     def __enter__(self):
         self.progress.start()
@@ -40,6 +53,8 @@ class ExtractorProgressBar:
     def update(self, advance: int):
         if self.task_id is not None:
             self.progress.advance(self.task_id, advance)
+            if self.milestones:
+                self.milestones.advance(advance)
 
     def __exit__(self, exc_type, exc, tb):
         try:

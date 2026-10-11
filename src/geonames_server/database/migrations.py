@@ -134,7 +134,8 @@ def db_migrations(force: bool = False) -> None:
     If *force* is True, drop the geonames tables first so their migrations run
     from scratch (full rebuild). User data in the app schema is never dropped.
     """
-    log.info(
+    # The app logs the start and end of this step at INFO
+    log.debug(
         "Running database migrations",
         extra={"alembic_ini": str(_alembic_ini), "force": force},
     )
@@ -146,7 +147,7 @@ def db_migrations(force: bool = False) -> None:
             command.upgrade(_alembic_config(), "head")
             _upgrade_app_schema()
         _check_search_path()
-        log.info("Database migrations complete")
+        log.debug("Database migrations complete")
     except Exception as e:
         log.exception("Database migrations failed")
         log.error(

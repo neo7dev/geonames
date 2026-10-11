@@ -28,6 +28,14 @@
 
     "only_errors": {
       "()": "geonames_server.log.filters.OnlyErrorsFilter"
+    },
+
+    "access": {
+      "()": "geonames_server.log.filters.AccessLogFilter"
+    },
+
+    "alembic_noise": {
+      "()": "geonames_server.log.filters.AlembicNoiseFilter"
     }
 
   },
@@ -36,6 +44,7 @@
 
     "console": {
       "class": "rich.logging.RichHandler",
+      "console": "ext://geonames_server.log.console.console",
       "level": "DEBUG",
       "rich_tracebacks": true,
       "tracebacks_show_locals": true,
@@ -76,6 +85,22 @@
     },
     "uvicorn.access": {
       "level": "INFO",
+      "handlers": [],
+      "filters": ["access"],
+      "propagate": true
+    },
+    "alembic.runtime.plugins": {
+      "level": "WARNING",
+      "handlers": [],
+      "propagate": true
+    },
+    "alembic.runtime.migration": {
+      "handlers": [],
+      "filters": ["alembic_noise"],
+      "propagate": true
+    },
+    "apscheduler": {
+      "level": "WARNING",
       "handlers": [],
       "propagate": true
     }

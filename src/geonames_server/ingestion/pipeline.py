@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -137,10 +138,13 @@ def check_remote_metadata(datasets: list[DatasetInfo]) -> None:
             record.remote_last_modified = meta.last_modified
             session.commit()
 
-            log.info(
+            # Only news is INFO: a dataset that fell behind or needs a rebuild
+            stale = record.out_of_sync or record.needs_rebuild
+            log.log(
+                logging.INFO if stale else logging.DEBUG,
                 f"[{ds.name}] Remote metadata updated — "
                 f"etag={meta.etag}, last_modified={meta.last_modified}, "
-                f"out_of_sync={record.out_of_sync}, needs_rebuild={record.needs_rebuild}"
+                f"out_of_sync={record.out_of_sync}, needs_rebuild={record.needs_rebuild}",
             )
 
 

@@ -6,6 +6,11 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
+from geonames_server.log.console import ProgressMilestones, console, in_terminal
+from geonames_server.log.mylogger import get_logger
+
+log = get_logger()
+
 
 class DownloadProgressbar:
     """Small wrapper around `rich.progress.Progress` to manage a single task.
@@ -24,8 +29,12 @@ class DownloadProgressbar:
             DownloadColumn(),
             TransferSpeedColumn(),
             TimeRemainingColumn(),
+            console=console,
+            # Without a terminal it is logged in steps instead (milestones).
+            disable=not in_terminal(),
         )
         self._task_id = None
+        self._milestones = None
 
     def __enter__(self) -> "DownloadProgressbar":
         self._progress.__enter__()
@@ -38,6 +47,8 @@ class DownloadProgressbar:
         self._task_id = self._progress.add_task(description, total=total)
         if completed:
             self._progress.update(self._task_id, completed=completed)
+        if not in_terminal():
+            self._milestones = ProgressMilestones(log, description, total, completed)
         return self._task_id
 
     def update(self, advance: int = 0, completed: int | None = None) -> None:
@@ -45,5 +56,9 @@ class DownloadProgressbar:
             return
         if completed is not None:
             self._progress.update(self._task_id, completed=completed)
+            if self._milestones:
+                self._milestones.set(completed)
         elif advance:
             self._progress.update(self._task_id, advance=advance)
+            if self._milestones:
+                self._milestones.advance(advance)
