@@ -13,9 +13,6 @@ APP_NAME ?= $(shell grep -m 1 "name =" pyproject.toml | tr -s ' ' | cut -d '"' -
 # Help text comes from comments: `##@ Section` starts a section, and `## text` lines
 # directly above a target describe it (extra lines are shown indented below the first).
 
-## Run sync, run, test, lint and clean
-all: sync run test lint clean
-
 ##@ Help
 
 ## Show this help
@@ -144,7 +141,7 @@ format:
 format-check:
 	$(UV) run ruff format --check
 
-## Check uv.lock matches pyproject.toml (the image installs from uv.lock)
+## Check uv.lock matches pyproject.toml (requirements.txt is exported from it)
 lock-check:
 	$(UV) lock --check
 
@@ -164,9 +161,9 @@ requirements-check:
 	if diff -u $$tmp/current.body $$tmp/expected.body; then rm -rf $$tmp; \
 	else rm -rf $$tmp; echo "requirements.txt is out of date with uv.lock: run make requirements"; exit 1; fi
 
-## Run every check before deploying: lint, formatting, lockfile and all tests,
-## for the API and the web UI. Run it in the devcontainer, then `make image-check`
-## where Docker runs.
+## Run every check before deploying: lint, formatting, lockfile, requirements.txt,
+## docker-compose.yml, openapi.yaml and all tests, for the API and the web UI. Run it in
+## the dev container, then `make image-check`.
 predeploy: lint-check format-check lock-check requirements-check deploy-compose-check openapi-check tests-pg ui-lint ui-test ui-types-check
 	@echo "predeploy: all checks passed"
 
