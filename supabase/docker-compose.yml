@@ -1,8 +1,9 @@
-# Trimmed self-hosted Supabase shared by docker-compose.yml (deploy) and
-# .devcontainer/docker-compose.yml, both of which include this file.
+# Trimmed self-hosted Supabase for .devcontainer/docker-compose.yml, which includes this
+# file, and for the deployment's docker-compose.yml in the repo root, generated from it.
 # Based on supabase/supabase docker/docker-compose.yml (master, 2026-10), Kong gateway variant.
-# Only db, auth, meta, studio and kong run. Relative paths resolve from this directory;
-# variables come from the including file's .env.
+# Only db, auth, meta, studio and kong run. Variables come from the including file's .env;
+# everything but the secrets has a default. The root docker-compose.yml is generated from
+# this file (make deploy-compose), with the config files below inlined.
 # Studio + Auth API: http://localhost:8000 (basic auth: DASHBOARD_USERNAME / DASHBOARD_PASSWORD)
 
 services:
@@ -15,11 +16,14 @@ services:
     networks:
       - geonames
     # Not published to the host; .devcontainer/supabase.override.yml publishes 5432 in dev.
-    volumes:
+    configs:
       # Must be superuser to alter reserved role
-      - ./db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
+      - source: supabase_db_roles
+        target: /docker-entrypoint-initdb.d/init-scripts/99-roles.sql
       # Initialize the database settings with JWT_EXP
-      - ./db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
+      - source: supabase_db_jwt
+        target: /docker-entrypoint-initdb.d/init-scripts/99-jwt.sql
+    volumes:
       - supabase-db-data:/var/lib/postgresql/data
       # Persist pgsodium decryption key between restarts
       - supabase-db-config:/etc/postgresql-custom
@@ -30,13 +34,13 @@ services:
       retries: 10
     environment:
       POSTGRES_HOST: /var/run/postgresql
-      PGPORT: ${POSTGRES_PORT}
-      POSTGRES_PORT: ${POSTGRES_PORT}
+      PGPORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       PGPASSWORD: ${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}
-      PGDATABASE: ${POSTGRES_DB}
-      POSTGRES_DB: ${POSTGRES_DB}
-      JWT_EXP: ${JWT_EXPIRY}
+      PGDATABASE: ${POSTGRES_DB:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_min_messages=fatal"]
 
 # GoTrue: signup/login, email confirmation, OAuth
@@ -57,49 +61,49 @@ services:
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:8000/auth/v1}
 
       GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-postgres}
 
-      GOTRUE_SITE_URL: ${SITE_URL}
-      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
-      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP}
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:9500/ui/}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-}
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-false}
       GOTRUE_PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-8}
 
       GOTRUE_JWT_ADMIN_ROLES: service_role
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_JWT_EXP: ${JWT_EXPIRY}
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?run make supabase-keys and set it in .env}
-      GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL}
+      GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL:-http://localhost:8000/auth/v1}
 
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP:-true}
       GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
-      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM}
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM:-false}
       GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
 
-      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
-      GOTRUE_SMTP_HOST: ${SMTP_HOST}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-}
       # Blank would stop GoTrue from starting; no SMTP host means no mail is sent anyway
       GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
-      GOTRUE_SMTP_USER: ${SMTP_USER}
-      GOTRUE_SMTP_PASS: ${SMTP_PASS}
-      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
-      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE}
-      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION}
-      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY}
-      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-Geonames Server}
+      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE:-/auth/v1/verify}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION:-/auth/v1/verify}
+      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY:-/auth/v1/verify}
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE:-/auth/v1/verify}
 
-      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED}
-      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET}
-      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${API_EXTERNAL_URL}/callback
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET:-}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${API_EXTERNAL_URL:-http://localhost:8000/auth/v1}/callback
 
-      GOTRUE_EXTERNAL_GITHUB_ENABLED: ${GITHUB_ENABLED}
-      GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
-      GOTRUE_EXTERNAL_GITHUB_SECRET: ${GITHUB_SECRET}
-      GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${API_EXTERNAL_URL}/callback
+      GOTRUE_EXTERNAL_GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
+      GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GITHUB_SECRET: ${GITHUB_SECRET:-}
+      GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${API_EXTERNAL_URL:-http://localhost:8000/auth/v1}/callback
 
 # Postgres metadata API used by Studio (table editor, SQL editor)
   meta:
@@ -113,9 +117,9 @@ services:
         condition: service_healthy
     environment:
       PG_META_PORT: 8080
-      PG_META_DB_HOST: ${POSTGRES_HOST}
-      PG_META_DB_PORT: ${POSTGRES_PORT}
-      PG_META_DB_NAME: ${POSTGRES_DB}
+      PG_META_DB_HOST: ${POSTGRES_HOST:-db}
+      PG_META_DB_PORT: ${POSTGRES_PORT:-5432}
+      PG_META_DB_NAME: ${POSTGRES_DB:-postgres}
       PG_META_DB_USER: postgres
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}
       CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?run make supabase-keys and set it in .env}
@@ -140,18 +144,18 @@ services:
       HOSTNAME: "0.0.0.0"
 
       STUDIO_PG_META_URL: http://meta:8080
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_HOST: ${POSTGRES_HOST:-db}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make supabase-keys and set it in .env}
       POSTGRES_USER_READ_WRITE: postgres
       PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?run make supabase-keys and set it in .env}
 
-      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION}
-      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION:-Geonames}
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT:-geonames-server}
 
       SUPABASE_URL: http://kong:8000
-      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:8000}
       SUPABASE_ANON_KEY: ${ANON_KEY:?run make supabase-keys and set it in .env}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?run make supabase-keys and set it in .env}
       AUTH_JWT_SECRET: ${JWT_SECRET:?run make supabase-keys and set it in .env}
@@ -181,9 +185,11 @@ services:
         condition: service_healthy
     ports:
       - "${KONG_HTTP_PORT:-8000}:8000"
-    volumes:
-      - ./kong.yml:/home/kong/temp.yml:ro,z
-      - ./kong-entrypoint.sh:/home/kong/kong-entrypoint.sh:ro,z
+    configs:
+      - source: supabase_kong_config
+        target: /home/kong/temp.yml
+      - source: supabase_kong_entrypoint
+        target: /home/kong/kong-entrypoint.sh
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
@@ -199,7 +205,7 @@ services:
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?run make supabase-keys and set it in .env}
       SUPABASE_PUBLISHABLE_KEY: ""
       SUPABASE_SECRET_KEY: ""
-      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:-supabase}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?run make supabase-keys and set it in .env}
     entrypoint: ["/bin/sh", "/home/kong/kong-entrypoint.sh"]
 
@@ -210,3 +216,15 @@ volumes:
   supabase-db-data:
   supabase-db-config:
   supabase-studio-snippets:
+
+# Mounted read-only into the containers. The root docker-compose.yml carries
+# their contents inline instead, so it works on its own.
+configs:
+  supabase_db_roles:
+    file: ./db/roles.sql
+  supabase_db_jwt:
+    file: ./db/jwt.sql
+  supabase_kong_config:
+    file: ./kong.yml
+  supabase_kong_entrypoint:
+    file: ./kong-entrypoint.sh

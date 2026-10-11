@@ -45,7 +45,7 @@ switch2prod:
 
 ## Print fresh Supabase secrets (passwords, JWT secret, anon/service keys) for .env
 supabase-keys:
-	@$(PYTHON) supabase/generate-keys.py
+	@PYTHONPATH=src $(PYTHON) -m geonames_server.scripts.supabase_keys
 
 ## Copy .env.dev to .env
 switch2dev:
@@ -157,6 +157,14 @@ format-check:
 lock-check:
 	$(UV) lock --check
 
+## Write the deployment's single-file docker-compose.yml from deploy/ and supabase/
+deploy-compose:
+	@PYTHONPATH=src $(PYTHON) -m geonames_server.scripts.deploy_compose
+
+## Check docker-compose.yml matches deploy/ and supabase/
+deploy-compose-check:
+	@PYTHONPATH=src $(PYTHON) -m geonames_server.scripts.deploy_compose --check
+
 ## Check requirements.txt (what the Docker image installs) matches uv.lock
 requirements-check:
 	@tmp=$$(mktemp -d); \
@@ -168,7 +176,7 @@ requirements-check:
 ## Run every check before deploying: lint, formatting, lockfile and all tests,
 ## for the API and the web UI. Run it in the devcontainer, then `make image-check`
 ## where Docker runs.
-predeploy: lint-check format-check lock-check requirements-check openapi-check tests-pg ui-lint ui-test ui-types-check
+predeploy: lint-check format-check lock-check requirements-check deploy-compose-check openapi-check tests-pg ui-lint ui-test ui-types-check
 	@echo "predeploy: all checks passed"
 
 ## Remove caches and build artifacts
@@ -476,4 +484,4 @@ git-auth:
 	   $(OK) "git can push to origin"; \
 	 fi
 
-.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check requirements-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version gh-auth git-auth
+.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check requirements-check deploy-compose deploy-compose-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version gh-auth git-auth

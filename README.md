@@ -296,31 +296,37 @@ The daily update pipeline:
 - Docker Engine (or Docker Desktop)
 - Docker Compose v2 (`docker compose`)
 
-### 1) Configure Environment
+### 1) Get the Compose File
 
-Create `.env` from example:
-
-```bash
-cp .env.example .env
-```
-
-Generate the Supabase secrets and fill in the empty secret values in `.env` with the output. Run it once: the anon and service keys are signed with that run's `JWT_SECRET`. `docker compose` refuses to start while any secret is empty.
+`docker-compose.yml` is the whole deployment in one file: the app, Redis and Supabase, with Supabase's config files inline. Download it into an empty directory; nothing else from this repository is needed.
 
 ```bash
-make supabase-keys
+mkdir geonames && cd geonames
+curl -fsSLO https://raw.githubusercontent.com/neo7dev/geonames/main/docker-compose.yml
 ```
 
-Also set:
+### 2) Configure Environment
+
+Generate the secrets into `.env`, from the image itself. Run it once: the anon and service keys are signed with that run's `JWT_SECRET`. `docker compose` refuses to start while any secret is missing. (In a checkout, `make supabase-keys` prints the same.)
+
+```bash
+docker run --rm --entrypoint python ghcr.io/neo7dev/geonames-server \
+  -m geonames_server.scripts.supabase_keys > .env
+```
+
+Then add to `.env`:
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD`: the first start creates this admin account, so you can log in at `/ui` and manage users. Ignored once an admin exists; remove the password afterwards.
-- The public URLs (`SUPABASE_PUBLIC_URL`, `API_EXTERNAL_URL`, `SITE_URL`).
+- The public URLs, unless users reach the server on localhost: `SUPABASE_PUBLIC_URL` (Kong), `API_EXTERNAL_URL` (`SUPABASE_PUBLIC_URL` + `/auth/v1`) and `SITE_URL` (the UI's URL, ending in `/ui/`).
 - SMTP settings, optional. With `SMTP_HOST` empty no email is sent and everything else works, but not signup confirmation, "Forgot password?" or changing an email address: Supabase Auth answers as if it had sent the email. So without SMTP set `DISABLE_SIGNUP=true` (the UI then hides "Sign up") and create accounts on the Administration page; those are confirmed at once, and users can change their password on their profile page. The server checks SMTP at startup and warns when it is not configured, or, with a different warning, when it is filled in but the server refuses it (then those emails fail with an error). The web UI gets the result: when email cannot be sent, signup (unless `ENABLE_EMAIL_AUTOCONFIRM`), "Forgot password?", resending a confirmation and changing an email address stop before asking Supabase Auth, show a toast saying SMTP is not configured or not working, write it to the browser console, and report it to the server, which logs a warning (each kind at most once a minute). An email that fails to send later gets the same treatment.
 - `APP_PORT` (default `9500`) and `KONG_HTTP_PORT` (default `8000`) if those host ports are taken.
 
-TLS is not part of the stack: put your own reverse proxy (Caddy, nginx, Traefik) in front of the app port and Kong's `/auth/v1`, and use the `https://` addresses in the public URLs. Keep `POSTGRES_USER=postgres`, `POSTGRES_HOST=db` and `POSTGRES_DB=postgres`: Supabase expects that database name.
+Everything else has a default in `docker-compose.yml` and can be overridden in `.env`; [`.env.example`](.env.example) lists every setting (datasets, log level, signups, OAuth, ...).
 
-### 2) Start
+TLS is not part of the stack: put your own reverse proxy (Caddy, nginx, Traefik) in front of the app port and Kong's `/auth/v1`, and use the `https://` addresses in the public URLs. Keep `POSTGRES_USER=postgres`, `POSTGRES_HOST=db` and `POSTGRES_DB=postgres` (the defaults): Supabase expects that database name.
 
-The stack needs only `docker-compose.yml`, the `supabase/` directory and `.env`; the app runs the image `GEONAMES_IMAGE` (default `ghcr.io/neo7dev/geonames-server:latest`). To run the code in this checkout instead, build that image locally first with `make build-image`.
+### 3) Start
+
+The app runs the image `GEONAMES_IMAGE` (default `ghcr.io/neo7dev/geonames-server:latest`). To run the code in a checkout instead, build that image locally first with `make build-image`.
 
 ```bash
 docker compose up -d
@@ -337,9 +343,9 @@ This starts:
 
 **Run one app instance only.** Keep a single `app` container with the image's single uvicorn worker: no `--workers`, no `docker compose up --scale app=N`, no second replica against the same database. The daily-update scheduler runs inside the process, so a second instance would run every sync twice. Rate limiting also keeps its API key cache and its fallback counters for Redis outages in process memory, so a second instance would let a key revoked on `/portal` keep working for up to `AUTH_CACHE_SECONDS` (60 s) longer and double the limits during a Redis outage.
 
-Supabase config (Kong routes, db init scripts) lives in `supabase/`. It is a trimmed copy of the upstream self-hosted stack; PostgREST, Realtime, Storage, Edge Functions and Analytics are not deployed.
+Supabase is a trimmed copy of the upstream self-hosted stack; PostgREST, Realtime, Storage, Edge Functions and Analytics are not deployed. Its source lives in `supabase/` (services, Kong routes, db init scripts), which the devcontainer uses directly. `docker-compose.yml` is generated from it and `deploy/docker-compose.template.yml` by `make deploy-compose`: edit those, never the generated file (`make predeploy` fails while it is out of date).
 
-### 3) Verify Service Health
+### 4) Verify Service Health
 
 The API answers as soon as migrations finish; datasets download and load in the background. Check progress with:
 
@@ -361,13 +367,13 @@ Quick API check:
 curl -H "X-API-Key: $API_KEY" "http://localhost:9500/allcountries/?limit=5"
 ```
 
-### 4) Follow the Logs
+### 5) Follow the Logs
 
 ```bash
 docker compose logs -f app
 ```
 
-### 5) Stop and Clean Up
+### 6) Stop and Clean Up
 
 ```bash
 docker compose down
@@ -438,7 +444,7 @@ Please keep proper attribution to GeoNames in downstream uses of this data and r
 
 Ruff is a dev dependency (`uv sync` installs it), with its rules in `pyproject.toml`. `make lint` / `make format` fix what they can; `make lint-check` / `make format-check` only report.
 
-Before deploying, run `make predeploy` in the devcontainer. It runs the lint and format checks, `uv lock --check` (the image installs from `uv.lock`), `make openapi-check` (`openapi.yaml` matches the app), the whole test suite, including the Postgres tests (`make tests-pg`, against the throwaway `geonames_test` database; see `.devcontainer/README.md`), and the web UI's lint, type check, tests and type freshness (`make ui-lint ui-test ui-types-check`). Then run `make image-check`, in the devcontainer or on the host (the devcontainer's Docker CLI uses the host's Docker, so the image lands there either way): it builds the image, tags it with the version and `latest`, and checks that the app imports and reports that version, that each migration chain has exactly one head, and that the web UI is built in. `make push-image` publishes it.
+Before deploying, run `make predeploy` in the devcontainer. It runs the lint and format checks, `uv lock --check`, `make requirements-check` (the image installs `requirements.txt` with pip, so it must match `uv.lock`; `make requirements` rewrites it), `make deploy-compose-check` (the single-file `docker-compose.yml` matches `deploy/` and `supabase/`), `make openapi-check` (`openapi.yaml` matches the app), the whole test suite, including the Postgres tests (`make tests-pg`, against the throwaway `geonames_test` database; see `.devcontainer/README.md`), and the web UI's lint, type check, tests and type freshness (`make ui-lint ui-test ui-types-check`). Then run `make image-check`, in the devcontainer or on the host (the devcontainer's Docker CLI uses the host's Docker, so the image lands there either way): it builds the image, tags it with the version and `latest`, and checks that the app imports and reports that version, that each migration chain has exactly one head, and that the web UI is built in. `make push-image` publishes it.
 
 The version is set in one place, `version` in `pyproject.toml`. It is the image's tag (and its `org.opencontainers.image.version` label), and the app reads it from the same file for `/health` (`version`), `/docs` and `openapi.yaml`. To release, bump it there and run `make openapi` (the spec carries it).
 

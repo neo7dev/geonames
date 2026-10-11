@@ -1,7 +1,13 @@
 """Print fresh secrets for a Supabase deployment, ready to paste into .env.
 
 ANON_KEY and SERVICE_ROLE_KEY are HS256 JWTs signed with JWT_SECRET, so all three
-must come from the same run. Standard library only.
+must come from the same run. Standard library only, so it runs from the image
+without a checkout:
+
+    docker run --rm --entrypoint python ghcr.io/neo7dev/geonames-server \
+        -m geonames_server.scripts.supabase_keys
+
+or `make supabase-keys` in the repo.
 """
 
 import base64

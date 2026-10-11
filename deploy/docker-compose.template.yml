@@ -1,0 +1,93 @@
+# Template for the root docker-compose.yml: `make deploy-compose` adds the Supabase services,
+# volumes and config files from supabase/ (the @supabase-* lines). Edit this file or supabase/,
+# never the generated docker-compose.yml.
+#
+# geonames-server deployment: the app, Redis and a trimmed self-hosted Supabase (db, auth,
+# meta, studio, kong). This one file is all you need, next to a .env:
+#
+#   1. Secrets (run once; ANON_KEY and SERVICE_ROLE_KEY are signed with that run's JWT_SECRET):
+#        docker run --rm --entrypoint python ghcr.io/neo7dev/geonames-server \
+#          -m geonames_server.scripts.supabase_keys > .env
+#   2. Add to .env: ADMIN_EMAIL and ADMIN_PASSWORD (the first admin account), and the public
+#      URLs if users reach the server anywhere but localhost: SUPABASE_PUBLIC_URL,
+#      API_EXTERNAL_URL (= SUPABASE_PUBLIC_URL + /auth/v1) and SITE_URL (= the UI's URL + /ui/).
+#   3. docker compose up -d
+#
+# Every other setting has a default here and can be overridden in .env; .env.example in the
+# repository lists them all (SMTP, ENABLED_DATASETS, LOG_LEVEL, signups, OAuth, ...).
+#
+#   API + web UI:   http://localhost:${APP_PORT:-9500} (health: /health, UI: /ui)
+#   Studio + Auth:  http://localhost:${KONG_HTTP_PORT:-8000} (Studio: basic auth DASHBOARD_USERNAME / DASHBOARD_PASSWORD)
+#
+# TLS is up to you: put your own reverse proxy in front of both ports.
+
+services:
+  app:
+    # make build-image tags local builds with this name, so they run without a pull.
+    image: ${GEONAMES_IMAGE:-ghcr.io/neo7dev/geonames-server:latest}
+    hostname: geonames-server
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      db:
+        condition: service_healthy
+      # GoTrue migrates auth.users before the app adds its signup trigger
+      auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - geonames
+    ports:
+      - "${APP_PORT:-9500}:9500"
+    # Any app setting can go in .env (see .env.example).
+    env_file:
+      - .env
+    # Settings whose app default does not fit this stack. Values in .env win.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_HOST: ${POSTGRES_HOST:-db}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:8000}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # required for colorized output in logs, DO NOT CHANGE
+      FORCE_COLOR: 1
+      TERM: xterm-256color
+    volumes:
+      - app-data:/app/data
+      - app-logs:/app/logs
+
+# Rate limiting, quotas and caching. Append-only file so counters survive restarts.
+  redis:
+    image: redis:7
+    hostname: redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - geonames
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# @supabase-services
+
+networks:
+  geonames:
+
+volumes:
+  redis-data:
+  app-data:
+  app-logs:
+# @supabase-volumes
+
+# Supabase's config files, inline so this file works on its own.
+configs:
+# @supabase-configs
