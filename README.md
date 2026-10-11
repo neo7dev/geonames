@@ -204,13 +204,13 @@ It currently uses ~4.5 GB of RAM and ~4-6GB of storage
 
 ## Roadmap
 
-[] Remove the unnecessary `make switch2dev` and `make switch2prod` as devcontainer got its own .env. .env changed after building the dev container doesnt ahve any effect on the container if changed after. it either needs to re-open or rebuild it. Devcontainer always uses dev env config.
-[] Use redis for caching requests
-[] Log pretty tables for requests and response and maybe other types of data as well? (Maybe)
-[] Stress test to figure out the throughput
-[] Add a section about creating indexes through supabase
-[] Add local ci/cd using `act` and github hooks to run it before the push
-[] Publish arm64 and amd64 images seperately (Maybe)
+- [ ] Remove the unnecessary `make switch2dev` and `make switch2prod` as devcontainer got its own .env. .env changed after building the dev container doesnt ahve any effect on the container if changed after. it either needs to re-open or rebuild it. Devcontainer always uses dev env config.
+- [ ] Use redis for caching requests
+- [ ] Log pretty tables for requests and response and maybe other types of data as well? (Maybe)
+- [ ] Stress test to figure out the throughput
+- [ ] Add a section about creating indexes through supabase
+- [ ] Add local ci/cd using `act` and github hooks to run it before the push
+- [ ] Publish arm64 and amd64 images seperately (Maybe)
 
 ## Attribution
 
