@@ -296,6 +296,28 @@ The daily update pipeline:
 - Docker Engine (or Docker Desktop)
 - Docker Compose v2 (`docker compose`)
 
+### In short
+
+```bash
+mkdir geonames && cd geonames
+
+# 1. Get the compose file
+curl -fsSLO https://raw.githubusercontent.com/neo7dev/geonames/main/docker-compose.yml
+
+# 2. Generate the passwords into .env
+docker run --rm --entrypoint python ghcr.io/neo7dev/geonames-server \
+  -m geonames_server.scripts.supabase_keys > .env
+
+# 3. Add the first admin login to .env
+echo "ADMIN_EMAIL = you@example.com" >> .env
+echo "ADMIN_PASSWORD = a-strong-password" >> .env
+
+# 4. Start everything
+docker compose up -d
+```
+
+Then open http://localhost:9500/ui and log in with that admin account. On a server that users reach by another address, also set the public URLs in `.env` (step 2 below). The steps below explain each part.
+
 ### 1) Get the Compose File
 
 `docker-compose.yml` is the whole deployment in one file: the app, Redis and Supabase, with Supabase's config files inline. Download it into an empty directory; nothing else from this repository is needed.
