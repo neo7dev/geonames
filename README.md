@@ -179,7 +179,10 @@ Set in `.env`; everything but the secrets has a default. [`.env.example`](.env.e
 | `GEONAMES_URL` | geonames.org dump URL | Where datasets are downloaded from (a mirror works) |
 | `MAX_RESULTS` | `1000` | Largest page size |
 | `FORCE_REBUILD` | `false` | Drop and reload all datasets on the next start (user data is kept) |
-| `LOG_LEVEL` | `INFO` | `DEBUG` also logs SQL and HTTP requests |
+| `LOG_LEVEL` | `INFO` | `DEBUG` also logs SQL, HTTP requests and requests for the web UI's files |
+| `LOG_WIDTH` | `160` | Columns the app's logs are drawn at (a container has no terminal to follow) |
+| `AUTH_LOG_LEVEL`, `KONG_LOG_LEVEL`, `REDIS_LOG_LEVEL` | `warn`, `warn`, `warning` | The other services' logs; `info` (Auth) logs every request, signup and login |
+| `KONG_ACCESS_LOG` | `off` | `/dev/stdout combined` logs every request through Kong |
 | `TZ` | `Etc/UTC` | Timezone of the logs (e.g. `Europe/London`); schedules and limits stay in UTC |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | | First admin, created while no admin exists |
 | `DISABLE_SIGNUP` | `false` | Only admins create accounts |

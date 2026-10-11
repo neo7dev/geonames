@@ -27,8 +27,8 @@ services:
     image: ${GEONAMES_IMAGE:-ghcr.io/neo7dev/geonames-server:latest}
     hostname: geonames-server
     restart: unless-stopped
-    tty: true
-    stdin_open: true
+    # No tty: Docker's would be 80 columns and not the viewer's terminal. Logs are
+    # drawn at LOG_WIDTH instead, in colour through FORCE_COLOR below.
     depends_on:
       db:
         condition: service_healthy
@@ -69,7 +69,7 @@ services:
     image: redis:7
     hostname: redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--loglevel", "${REDIS_LOG_LEVEL:-warning}"]
     networks:
       - geonames
     volumes:

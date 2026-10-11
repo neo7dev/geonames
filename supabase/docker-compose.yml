@@ -59,6 +59,8 @@ services:
       db:
         condition: service_healthy
     environment:
+      # warn: no line per request, signup or login (the app's Activity log has those)
+      GOTRUE_LOG_LEVEL: ${AUTH_LOG_LEVEL:-warn}
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
       API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:8000/auth/v1}
@@ -142,6 +144,7 @@ services:
         condition: service_started
     environment:
       HOSTNAME: "0.0.0.0"
+      NEXT_TELEMETRY_DISABLED: 1
 
       STUDIO_PG_META_URL: http://meta:8080
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -191,6 +194,10 @@ services:
       - source: supabase_kong_entrypoint
         target: /home/kong/kong-entrypoint.sh
     environment:
+      # No line per request (the app logs its own) and no startup notices
+      KONG_PROXY_ACCESS_LOG: ${KONG_ACCESS_LOG:-off}
+      KONG_ADMIN_ACCESS_LOG: "off"
+      KONG_LOG_LEVEL: ${KONG_LOG_LEVEL:-warn}
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
       KONG_ROUTER_FLAVOR: expressions
@@ -200,7 +207,6 @@ services:
       KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction,post-function
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
-      KONG_PROXY_ACCESS_LOG: /dev/stdout combined
       SUPABASE_ANON_KEY: ${ANON_KEY:?run make supabase-keys and set it in .env}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?run make supabase-keys and set it in .env}
       SUPABASE_PUBLISHABLE_KEY: ""

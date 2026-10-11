@@ -12,6 +12,20 @@ def _compose() -> dict:
     return yaml.safe_load(build())
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Refuses a key given twice in one mapping, as Docker Compose does."""
+
+    def construct_mapping(self, node, deep=False):
+        keys = [self.construct_object(key, deep=deep) for key, _ in node.value]
+        duplicates = {key for key in keys if keys.count(key) > 1}
+        assert not duplicates, f"line {node.start_mark.line + 1}: {duplicates} twice"
+        return super().construct_mapping(node, deep=deep)
+
+
+def test_no_key_is_given_twice():
+    yaml.load(build(), Loader=_UniqueKeyLoader)
+
+
 def test_holds_every_service_and_volume():
     compose = _compose()
     assert set(compose["services"]) == SERVICES
