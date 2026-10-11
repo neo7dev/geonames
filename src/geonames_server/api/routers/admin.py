@@ -251,9 +251,6 @@ async def create_user(
         raise _gotrue_failed(e) from None
 
     try:
-        await claim_creation(
-            session, user_id, principal.user_id, principal.email, "admin"
-        )
         await _act_as_admin(session, principal)
         # The signup trigger created the profile with the default role.
         if body.role is not None:
@@ -265,6 +262,10 @@ async def create_user(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="The user was created but has no profile; is the signup trigger installed?",
                 )
+        await claim_creation(
+            session, user_id, principal.user_id, principal.email, "admin", body.role
+        )
+        await _act_as_admin(session, principal)
         created = await _user(session, user_id)
         await session.commit()
     except Exception:

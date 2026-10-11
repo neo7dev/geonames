@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from geonames_server.api import gotrue
 from geonames_server.api.first_admin import FirstAdmin, ensure_first_admin
 from geonames_server.config.config import Settings, settings
-from geonames_server.database.models.accounts import Profile
+from geonames_server.database.models.accounts import AccountEvent, Profile
 
 PASSWORD = "first-admin-password"
 
@@ -95,6 +95,14 @@ async def test_creates_the_admin(
 
     create_user.assert_awaited_once_with(email, PASSWORD)
     assert await _role_of(async_session, email) == "admin"
+    [event] = await async_session.scalars(
+        select(AccountEvent).where(AccountEvent.user_email == email)
+    )
+    assert (event.event, event.details, event.source) == (
+        "created",
+        {"role": "admin"},
+        "system",
+    )
     # The next start finds the admin and leaves it alone.
     assert await ensure_first_admin(async_session) == FirstAdmin.exists
     create_user.assert_awaited_once()

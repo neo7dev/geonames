@@ -229,9 +229,9 @@ async def test_an_admin_created_account_names_its_creator(
         )
 
     assert resp.status_code == 201
-    rows = await events(uuid.UUID(resp.json()["id"]))
-    assert _kinds(rows) == ["created", "upgraded"]
-    assert {(row.source, row.actor_id) for row in rows} == {("admin", admin[0])}
+    [row] = await events(uuid.UUID(resp.json()["id"]))
+    assert (row.event, row.details) == ("created", {"role": "dev"})
+    assert (row.source, row.actor_id) == ("admin", admin[0])
 
 
 @pytest.mark.asyncio

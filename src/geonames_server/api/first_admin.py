@@ -98,8 +98,6 @@ async def ensure_first_admin(session: AsyncSession) -> FirstAdmin:
             return FirstAdmin.failed
         outcome = FirstAdmin.created
 
-    if outcome is FirstAdmin.created:
-        await claim_creation(session, user_id, None, None, "system")
     # The signup trigger created the profile with the default role.
     await tag_actor(session, None, "system")
     result = await session.execute(
@@ -113,6 +111,8 @@ async def ensure_first_admin(session: AsyncSession) -> FirstAdmin:
             f"The admin account {email} has no profile; is the signup trigger installed?"
         )
         return FirstAdmin.failed
+    if outcome is FirstAdmin.created:
+        await claim_creation(session, user_id, None, None, "system", role)
     await session.commit()
 
     if outcome is FirstAdmin.created:

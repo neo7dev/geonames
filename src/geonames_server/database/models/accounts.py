@@ -179,8 +179,9 @@ class UsageFlush(AppBase):
 class AccountEvent(AppBase):
     """Something that happened to an account, written by a trigger on profiles.
 
-    Read-only for the app: the trigger (migration c4d8e2f6a9b1) is the only
-    writer. No foreign key, so the history outlives a removed account.
+    Written by the trigger (migration c4d8e2f6a9b1); the app only relabels
+    the events of accounts it creates or removes (account_events.py). No
+    foreign key, so the history outlives a removed account.
     """
 
     __tablename__ = "account_events"
