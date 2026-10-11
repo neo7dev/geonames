@@ -270,6 +270,26 @@ curl -H "X-API-Key: $KEY" "http://localhost:9500/cities15000/?limit=5"
 
 `.githooks/pre-push` runs `make predeploy` before every `git push` and stops the push if a check fails; the container turns it on at start (`git config core.hooksPath .githooks`). Push from the dev container: the repository is shared with the host, and the hook refuses there, since the checks need uv and the services. Skip it once with `git push --no-verify`.
 
+Run the same checks yourself first, fixing what can be fixed for you, then commit what changed:
+
+```bash
+make format      # ruff format: Python files, and the Python blocks in Markdown
+make lint        # ruff check --fix
+make predeploy   # what the hook runs; it passes, the push goes through
+```
+
+When a check in `make predeploy` fails, this regenerates what it found out of date:
+
+| Failing check | Fix |
+|---|---|
+| `lock-check` | `make lock` |
+| `requirements-check` | `make requirements` |
+| `deploy-compose-check` | `make deploy-compose` |
+| `openapi-check` | `make openapi` |
+| `ui-types-check` | `make ui-types` |
+
+A failing test needs a code fix. The Postgres and Redis tests need the dev stack running. In VS Code, a refused push only says "failed to push some refs": View → Output → Git shows which check stopped it.
+
 ## Release
 
 1. Bump `version` in `pyproject.toml`: the app version and the image tag. Then `make openapi` (the spec carries it).
