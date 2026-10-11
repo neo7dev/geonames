@@ -171,6 +171,42 @@ async def test_changes_from_studio_or_auth_are_external(
 
 
 @pytest.mark.asyncio
+async def test_lifting_a_ban_that_ran_out_is_logged(async_session, login, events):
+    user_id, _ = await login()
+    await async_session.execute(
+        text(
+            "UPDATE auth.users SET banned_until = now() + interval '1 day' WHERE id = :id"
+        ),
+        {"id": user_id},
+    )
+    # The ban runs out: time passes, no row changes.
+    await async_session.execute(
+        text("ALTER TABLE app.profiles DISABLE TRIGGER app_record_account_event")
+    )
+    await async_session.execute(
+        text(
+            "UPDATE app.profiles SET banned_until = now() - interval '1 hour' WHERE id = :id"
+        ),
+        {"id": user_id},
+    )
+    await async_session.execute(
+        text("ALTER TABLE app.profiles ENABLE TRIGGER app_record_account_event")
+    )
+    # A rename says nothing about the ban; Supabase Auth clearing it does.
+    await async_session.execute(
+        text("UPDATE app.profiles SET display_name = 'Bo' WHERE id = :id"),
+        {"id": user_id},
+    )
+    await async_session.execute(
+        text("UPDATE auth.users SET banned_until = NULL WHERE id = :id"),
+        {"id": user_id},
+    )
+
+    rows = await events(user_id)
+    assert _kinds(rows)[1:] == ["suspended", "name_changed", "unsuspended"]
+
+
+@pytest.mark.asyncio
 async def test_an_admin_created_account_names_its_creator(
     auth_client, admin, async_session, events, domain
 ):

@@ -252,7 +252,10 @@ function describe(event: AccountEvent): string {
     case 'email_changed':
       return `${text(d.from)} → ${text(d.to)}`
     case 'suspended':
-      return d.banned_until ? 'banned or deleted in Supabase Auth' : 'deleted in Supabase Auth'
+      // A ban runs out on its own; the log only shows it lifted once Supabase Auth clears it.
+      return typeof d.banned_until === 'string'
+        ? `banned in Supabase Auth until ${formatDateTime(d.banned_until)}`
+        : 'deleted in Supabase Auth'
     default:
       return ''
   }

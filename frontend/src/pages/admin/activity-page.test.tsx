@@ -89,7 +89,7 @@ describe('activity', () => {
     expect(within(upgrade).getByText('You')).toBeInTheDocument()
     expect(downgrade).toHaveTextContent('Downgraded dev → free (pro → basic)')
     expect(downgrade).toHaveTextContent('other-admin@example.com')
-    expect(suspension).toHaveTextContent('Suspended banned or deleted in Supabase Auth')
+    expect(suspension).toHaveTextContent('Suspended banned in Supabase Auth until')
     expect(suspension).toHaveTextContent('Supabase Auth or Studio')
     expect(signup).toHaveTextContent('Signed up as free')
     expect(signup).toHaveTextContent('Themselves')

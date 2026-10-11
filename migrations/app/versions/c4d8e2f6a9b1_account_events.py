@@ -87,6 +87,7 @@ DECLARE
     new_rank numeric[];
     was_suspended boolean;
     is_suspended boolean;
+    logged_suspended boolean;
 BEGIN
     IF TG_OP = 'INSERT' THEN
         -- The user's own signup; the API relabels accounts it created.
@@ -151,17 +152,30 @@ BEGIN
             '{}'::jsonb, actor, actor_source
         );
     END IF;
-    -- Banned or soft-deleted in Supabase Auth
-    was_suspended := OLD.deleted_at IS NOT NULL
-        OR coalesce(OLD.banned_until > now(), false);
-    is_suspended := NEW.deleted_at IS NOT NULL
-        OR coalesce(NEW.banned_until > now(), false);
-    IF is_suspended IS DISTINCT FROM was_suspended THEN
-        PERFORM app.add_account_event(
-            NEW, CASE WHEN is_suspended THEN 'suspended' ELSE 'unsuspended' END,
-            jsonb_build_object('banned_until', NEW.banned_until),
-            actor, actor_source
-        );
+    -- Banned or soft-deleted in Supabase Auth. A ban runs out with no update,
+    -- so lifting one compares with the log, not with OLD: a ban that ran out
+    -- is still logged as suspended until Supabase Auth clears it.
+    IF NEW.banned_until IS DISTINCT FROM OLD.banned_until
+        OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at
+    THEN
+        was_suspended := OLD.deleted_at IS NOT NULL
+            OR coalesce(OLD.banned_until > now(), false);
+        is_suspended := NEW.deleted_at IS NOT NULL
+            OR coalesce(NEW.banned_until > now(), false);
+        SELECT e.event = 'suspended' INTO logged_suspended
+        FROM app.account_events e
+        WHERE e.user_id = NEW.id AND e.event IN ('suspended', 'unsuspended')
+        ORDER BY e.id DESC LIMIT 1;
+        IF is_suspended AND NOT was_suspended THEN
+            PERFORM app.add_account_event(
+                NEW, 'suspended', jsonb_build_object('banned_until', NEW.banned_until),
+                actor, actor_source
+            );
+        ELSIF NOT is_suspended AND coalesce(logged_suspended, false) THEN
+            PERFORM app.add_account_event(
+                NEW, 'unsuspended', '{}'::jsonb, actor, actor_source
+            );
+        END IF;
     END IF;
     RETURN NEW;
 END
