@@ -268,6 +268,7 @@ The image installs `requirements.txt` with pip: runtime packages only, no uv, te
 ## Container setup notes
 
 - **GitHub:** the container pushes as `neo7dev` with `~/.ssh/neo7_github` (or `GEONAMES_SSH_KEY`), mounted read-only; the host's ssh-agent signs. `gh` gets `GH_TOKEN` from `GEONAMES_GH_TOKEN`. After changing either, fully quit and relaunch VS Code.
+- **Timezone:** the app container gets `TZ` from the host's `HOST_TZ` (exported for VS Code by `~/.zsh/host/*.zsh`), so log times match your clock. Unset: UTC. A change needs a container rebuild.
 - **Docker:** the `docker-outside-of-docker` feature gives the container the host's Docker socket, and with it full control of the host's Docker.
 - **OAuth (optional):** create a GitHub or Google OAuth app with callback `http://localhost:8000/auth/v1/callback`, put its id and secret in `.devcontainer/.env`, set `GITHUB_ENABLED` / `GOOGLE_ENABLED=true`, recreate `auth`.
 - **Resetting Supabase:** its init scripts only run on an empty data directory. Remove the `supabase-db-data` and `supabase-db-config` volumes to start over.

@@ -179,6 +179,7 @@ Set in `.env`; everything but the secrets has a default. [`.env.example`](.env.e
 | `MAX_RESULTS` | `1000` | Largest page size |
 | `FORCE_REBUILD` | `false` | Drop and reload all datasets on the next start (user data is kept) |
 | `LOG_LEVEL` | `INFO` | `DEBUG` also logs SQL and HTTP requests |
+| `TZ` | `Etc/UTC` | Timezone of the logs (e.g. `Europe/London`); schedules and limits stay in UTC |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | | First admin, created while no admin exists |
 | `DISABLE_SIGNUP` | `false` | Only admins create accounts |
 | `ENABLE_EMAIL_AUTOCONFIRM` | `false` | Signups need no email confirmation |

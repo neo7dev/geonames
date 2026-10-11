@@ -51,6 +51,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:8000}
+      # Timezone of the logs (an IANA name such as Europe/London). Schedules and
+      # rate-limit windows are in UTC whatever this says.
+      TZ: ${TZ:-Etc/UTC}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
       # required for colorized output in logs, DO NOT CHANGE

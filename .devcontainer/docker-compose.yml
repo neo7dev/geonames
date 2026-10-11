@@ -30,6 +30,10 @@ services:
       # bind mount's root as owned by root (docker/for-mac#6298), and git then
       # refuses with "detected dubious ownership". Environment, not a lifecycle
       # command, so it is set before VS Code's Git extension first looks.
+      # The host's timezone, so log and file timestamps match its clock. HOST_TZ is
+      # exported for VS Code by ~/.zsh/host/*.zsh (shared with the other dev
+      # containers). TZ is read at process start: a change needs a rebuild.
+      - TZ=${HOST_TZ:-Etc/UTC}
       - GIT_CONFIG_COUNT=1
       - GIT_CONFIG_KEY_0=safe.directory
       - GIT_CONFIG_VALUE_0=/workspace
