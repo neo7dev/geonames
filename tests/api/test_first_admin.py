@@ -100,15 +100,54 @@ async def test_creates_the_admin(
     create_user.assert_awaited_once()
 
 
+async def _register(
+    async_session, make_user, email: str, password: str, confirmed: bool = True
+) -> None:
+    """An existing account with this email, password and confirmation."""
+    user_id = await make_user("free", email)
+    await async_session.execute(
+        text(
+            "UPDATE auth.users SET encrypted_password = "
+            "extensions.crypt(:password, extensions.gen_salt('bf')), "
+            "email_confirmed_at = CASE WHEN :confirmed THEN now() END WHERE id = :id"
+        ),
+        {"password": password, "confirmed": confirmed, "id": user_id},
+    )
+
+
 @pytest.mark.asyncio
-async def test_promotes_an_existing_user(
+async def test_promotes_an_existing_user_with_the_admin_password(
     async_session, no_admins, make_user, configured, email, create_user
 ):
-    await make_user("free", email.upper())
+    await _register(async_session, make_user, email.upper(), PASSWORD)
 
     assert await ensure_first_admin(async_session) == FirstAdmin.promoted
     create_user.assert_not_called()
     assert await _role_of(async_session, email.upper()) == "admin"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("password", "confirmed"),
+    [("someone-elses-password", True), (PASSWORD, False)],
+    ids=["other password", "unconfirmed"],
+)
+async def test_does_not_promote_someone_elses_account(
+    async_session,
+    no_admins,
+    make_user,
+    configured,
+    email,
+    create_user,
+    password,
+    confirmed,
+):
+    """Anyone may have signed up with the address before the operator set it."""
+    await _register(async_session, make_user, email, password, confirmed)
+
+    assert await ensure_first_admin(async_session) == FirstAdmin.failed
+    create_user.assert_not_called()
+    assert await _role_of(async_session, email) == "free"
 
 
 @pytest.mark.asyncio

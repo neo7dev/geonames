@@ -5,6 +5,10 @@ roles on the Administration page. So on startup, while no profile has an admin
 role, the server creates a confirmed user with these credentials through
 Supabase Auth's admin API and gives it the admin role. Once any admin exists
 the settings are ignored, and can be removed from .env.
+
+If the email is already registered, that account is made admin only when its
+email is confirmed and its password is ADMIN_PASSWORD: anyone may have signed
+up with the address before the operator set it.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ class FirstAdmin(StrEnum):
     not_configured = "not_configured"
     # A new user was created and made admin
     created = "created"
-    # The email was already registered: that user was made admin
+    # The email was already registered, with ADMIN_PASSWORD: made admin
     promoted = "promoted"
     # Supabase Auth refused or was unreachable; tried again on the next start
     failed = "failed"
@@ -62,10 +66,27 @@ async def ensure_first_admin(session: AsyncSession) -> FirstAdmin:
         log.error("No role has is_admin set, so no admin account can be created")
         return FirstAdmin.failed
 
-    user_id = await session.scalar(
-        text("SELECT id FROM auth.users WHERE lower(email) = lower(:email)"),
-        {"email": email},
-    )
+    existing = (
+        await session.execute(
+            text(
+                "SELECT id, email_confirmed_at IS NOT NULL AS confirmed, "
+                "encrypted_password IS NOT NULL AND encrypted_password <> '' "
+                "AND extensions.crypt(:password, encrypted_password) "
+                "= encrypted_password AS password_matches "
+                "FROM auth.users WHERE lower(email) = lower(:email)"
+            ),
+            {"email": email, "password": password.get_secret_value()},
+        )
+    ).one_or_none()
+    if existing is not None and not (existing.confirmed and existing.password_matches):
+        log.error(
+            f"{email} is already registered, but its email is not confirmed or its "
+            "password is not ADMIN_PASSWORD, so it was not made admin. Set "
+            "ADMIN_PASSWORD to that account's password, or ADMIN_EMAIL to another "
+            "address, and restart"
+        )
+        return FirstAdmin.failed
+    user_id = existing.id if existing is not None else None
     outcome = FirstAdmin.promoted
     if user_id is None:
         # Do not keep a transaction open across the call to Supabase Auth.
@@ -97,6 +118,5 @@ async def ensure_first_admin(session: AsyncSession) -> FirstAdmin:
     if outcome is FirstAdmin.created:
         log.warning(f"Created the admin account {email}; sign in at /ui with it")
     else:
-        # The password stays the one the user set.
         log.warning(f"{email} was already registered and is now an admin")
     return outcome
