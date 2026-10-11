@@ -2,7 +2,7 @@ import { History, Search, X } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 
-import { PAGE_SIZE, useAccountEvents } from '@/api/admin'
+import { useAccountEvents } from '@/api/admin'
 import type { AccountEvent, AccountEventKind } from '@/api/client'
 import { useMe } from '@/api/queries'
 import { ErrorAlert } from '@/components/form'
@@ -11,10 +11,12 @@ import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatDateTime, formatNumber, formatRelative } from '@/lib/format'
+import { formatDateTime, formatRelative } from '@/lib/format'
 import { useDebounced } from '@/lib/use-debounced'
+import { usePagedSearch } from '@/lib/use-paged-search'
 import { cn } from '@/lib/utils'
 import { AdminTabs } from '@/pages/admin/admin-tabs'
+import { Pager } from '@/pages/admin/pager'
 import { NotFound } from '@/pages/not-found'
 
 const SEARCH_DELAY_MS = 300
@@ -55,9 +57,7 @@ function Activity({ myId }: { myId: string }) {
   const events = GROUPS.find((g) => g.value === group)?.events ?? []
 
   const searchKey = `${q.trim()}|${group}|${userId}`
-  const [page, setPage] = useState({ searchKey, offset: 0 })
-  const offset = page.searchKey === searchKey ? page.offset : 0
-  const setOffset = (next: number) => setPage({ searchKey, offset: next })
+  const [offset, setOffset] = usePagedSearch(searchKey)
   const log = useAccountEvents({ q, userId, events, offset })
 
   const total = log.data?.total ?? 0
@@ -160,29 +160,7 @@ function Activity({ myId }: { myId: string }) {
               </TableBody>
             </Table>
           </div>
-          <div className="mt-3 flex items-center justify-between gap-2 text-sm text-muted-foreground">
-            <p>
-              {formatNumber(offset + 1)}–{formatNumber(offset + shown.length)} of {formatNumber(total)}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <Pager offset={offset} shown={shown.length} total={total} onOffset={setOffset} />
         </>
       )}
     </>

@@ -14,11 +14,13 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
 import { useDebounced } from '@/lib/use-debounced'
+import { usePagedSearch } from '@/lib/use-paged-search'
 import { cn } from '@/lib/utils'
 import { AdminTabs } from '@/pages/admin/admin-tabs'
 import { CreateUserDialog } from '@/pages/admin/create-user-dialog'
 import { DeleteUserDialog } from '@/pages/admin/delete-user-dialog'
 import { EditUserDialog } from '@/pages/admin/edit-user-dialog'
+import { Pager } from '@/pages/admin/pager'
 import { NotFound } from '@/pages/not-found'
 
 const SEARCH_DELAY_MS = 300
@@ -37,9 +39,7 @@ function Administration({ myId }: { myId: string }) {
   const q = useDebounced(search, SEARCH_DELAY_MS)
   // A new search starts from the first page.
   const searchKey = `${q.trim()}|${status}`
-  const [page, setPage] = useState({ searchKey, offset: 0 })
-  const offset = page.searchKey === searchKey ? page.offset : 0
-  const setOffset = (next: number) => setPage({ searchKey, offset: next })
+  const [offset, setOffset] = usePagedSearch(searchKey)
   const users = useAdminUsers({ q, status, offset })
   const restore = useUpdateUser()
   const navigate = useNavigate()
@@ -212,29 +212,7 @@ function Administration({ myId }: { myId: string }) {
               </TableBody>
             </Table>
           </div>
-          <div className="mt-3 flex items-center justify-between gap-2 text-sm text-muted-foreground">
-            <p>
-              {formatNumber(offset + 1)}–{formatNumber(offset + shown.length)} of {formatNumber(total)}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <Pager offset={offset} shown={shown.length} total={total} onOffset={setOffset} />
         </>
       )}
 
