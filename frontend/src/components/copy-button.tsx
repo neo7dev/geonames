@@ -18,21 +18,48 @@ export function CopyButton({
     return () => clearTimeout(timer)
   }, [copied])
 
-  const copy = async () => {
+  const copy = async (button: HTMLButtonElement) => {
+    let ok: boolean
     try {
+      // Missing on plain http other than localhost; the browser may also refuse it.
       await navigator.clipboard.writeText(value)
-      setFailed(false)
-      setCopied(true)
+      ok = true
     } catch {
-      // No clipboard access (plain http on another host): the value stays selectable.
-      setFailed(true)
+      ok = copyWithSelection(value, button)
     }
+    setFailed(!ok)
+    setCopied(ok)
   }
 
   return (
-    <Button variant="outline" onClick={copy} {...props}>
+    <Button variant="outline" onClick={(e) => void copy(e.currentTarget)} {...props}>
       {copied ? <Check className="text-primary" aria-hidden="true" /> : <Copy aria-hidden="true" />}
       {copied ? 'Copied' : failed ? 'Copy failed: select and copy' : label}
     </Button>
   )
+}
+
+/**
+ * The older way: select `value` in a hidden textarea and copy the selection.
+ * The textarea goes next to the button, so a dialog's focus trap lets it be selected.
+ */
+function copyWithSelection(value: string, button: HTMLButtonElement): boolean {
+  const area = document.createElement('textarea')
+  area.value = value
+  area.readOnly = true
+  area.setAttribute('aria-hidden', 'true')
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  area.style.pointerEvents = 'none'
+  ;(button.parentElement ?? document.body).appendChild(area)
+  area.focus()
+  area.select()
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    area.remove()
+    button.focus()
+  }
 }

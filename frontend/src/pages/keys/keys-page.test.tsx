@@ -102,6 +102,36 @@ describe('create', () => {
     expect(document.body).not.toHaveTextContent(SECRET)
   })
 
+  it('copies without the Clipboard API, as on plain http', async () => {
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    const execCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    const copied: string[] = []
+    Object.defineProperty(document, 'execCommand', {
+      value: vi.fn(() => {
+        copied.push((document.activeElement as HTMLTextAreaElement).value)
+        return true
+      }),
+      configurable: true,
+    })
+    onTestFinished(() => {
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+      else delete (navigator as { clipboard?: unknown }).clipboard
+      if (execCommand) Object.defineProperty(document, 'execCommand', execCommand)
+      else delete (document as { execCommand?: unknown }).execCommand
+    })
+    portal()
+    renderApp('/keys')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Create API key' }))
+    await userEvent.type(screen.getByLabelText('Name'), 'ci')
+    await userEvent.click(screen.getByRole('button', { name: 'Create key' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy' }))
+
+    expect(copied).toEqual([SECRET])
+    expect(screen.getByRole('button', { name: 'Copied' })).toHaveFocus()
+  })
+
   it('sends the trimmed name', async () => {
     const fetch = portal()
     renderApp('/keys')
