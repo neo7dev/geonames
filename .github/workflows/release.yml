@@ -55,6 +55,8 @@ jobs:
       packages: write # the image
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      # As in the dev container: the project is not installed, it runs from src/
+      PYTHONPATH: ${{ github.workspace }}/src
     steps:
       - uses: actions/checkout@v5
 
