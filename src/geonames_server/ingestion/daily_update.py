@@ -380,11 +380,13 @@ def _log_modifications(
         rows = cur.fetchall()
 
     added = 0
+    shown = 0  # rows worth a sample line: new, or changed beyond _ALWAYS_CHANGED
     by_column: dict[str, int] = {}
     samples: list[str] = []
     for geonameid, row_name, is_new, *pairs in rows:
         if is_new:
             added += 1
+            shown += 1
             if len(samples) < DEBUG_SAMPLE_ROWS:
                 samples.append(f"{geonameid} {row_name!r}: new")
             continue
@@ -393,7 +395,10 @@ def _log_modifications(
             if old != new and column not in _ALWAYS_CHANGED:
                 by_column[column] = by_column.get(column, 0) + 1
                 changes.append(f"{column} {old!r} → {new!r}")
-        if changes and len(samples) < DEBUG_SAMPLE_ROWS:
+        if not changes:
+            continue
+        shown += 1
+        if len(samples) < DEBUG_SAMPLE_ROWS:
             samples.append(f"{geonameid} {row_name!r}: {', '.join(changes)}")
 
     counts = ", ".join(
@@ -406,8 +411,8 @@ def _log_modifications(
     )
     for sample in samples:
         log.debug(f"[{name}] {day}:   {sample}")
-    if len(rows) > len(samples):
-        log.debug(f"[{name}] {day}:   ... and {len(rows) - len(samples):,} more")
+    if shown > len(samples):
+        log.debug(f"[{name}] {day}:   ... and {shown - len(samples):,} more")
 
 
 def _log_deletions(conn_params: dict, name: str, target_table: str, day: date) -> None:
