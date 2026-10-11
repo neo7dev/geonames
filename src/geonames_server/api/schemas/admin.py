@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 
@@ -84,3 +84,58 @@ class UpdateUserRequest(BaseModel):
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
+
+
+class AccountEventKind(StrEnum):
+    signed_up = "signed_up"
+    # By an admin on the Administration page, or the first admin at startup
+    created = "created"
+    # Role changed to a higher, lower or the same tier
+    upgraded = "upgraded"
+    downgraded = "downgraded"
+    role_changed = "role_changed"
+    name_changed = "name_changed"
+    email_changed = "email_changed"
+    deactivated = "deactivated"
+    reactivated = "reactivated"
+    deleted = "deleted"
+    restored = "restored"
+    # Banned or soft-deleted in Supabase Auth, and back
+    suspended = "suspended"
+    unsuspended = "unsuspended"
+    # Removed for good
+    removed = "removed"
+
+
+class EventSource(StrEnum):
+    # The account's own user
+    user = "user"
+    admin = "admin"
+    # The server itself (the first admin)
+    system = "system"
+    # Supabase Auth or Studio
+    external = "external"
+
+
+class AccountEvent(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    user_id: uuid.UUID
+    # As it was when it happened; the account may since be removed
+    user_email: str | None
+    event: AccountEventKind
+    # Before and after: from_role / to_role / from_tier / to_tier for plan
+    # changes, from / to for name and email changes, role for new accounts
+    details: dict[str, Any]
+    actor_id: uuid.UUID | None
+    actor_email: str | None
+    source: EventSource
+
+
+class AccountEventList(BaseModel):
+    # Newest first
+    events: list[AccountEvent]
+    # Events matching the filters, across all pages
+    total: int

@@ -11,6 +11,9 @@ export type AdminUser = Schemas['AdminUser']
 export type AdminUserList = Schemas['AdminUserList']
 export type RoleOption = Schemas['RoleOption']
 export type UserStatus = Schemas['UserStatus']
+export type AccountEvent = Schemas['AccountEvent']
+export type AccountEventKind = Schemas['AccountEventKind']
+export type AccountEventList = Schemas['AccountEventList']
 
 /** Fired when the API refuses the account (403): banned, deleted or without a profile. */
 export const SUSPENDED_EVENT = 'geonames:suspended'

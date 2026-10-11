@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import os
 import threading
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import psycopg2
@@ -36,6 +37,7 @@ APP_TABLES = {
     "api_keys",
     "api_key_usage",
     "usage_flushes",
+    "account_events",
     "alembic_version",
 }
 API_ROLES = ("anon", "authenticated", "service_role")
@@ -150,6 +152,7 @@ def test_admin_role_may_read_accounts_and_change_name_role_and_flags():
         APP_SCHEMA,
     )
     assert tables == [
+        ("account_events", "SELECT"),
         ("api_keys", "SELECT"),
         ("profiles", "SELECT"),
         ("roles", "SELECT"),
@@ -393,3 +396,28 @@ def test_downgrade_restores_only_the_max_tiers_per_minute_cap():
     assert _query(
         "SELECT name, per_minute FROM app.tiers WHERE name IN ('max', 'enterprise') ORDER BY name"
     ) == [("enterprise", 50), ("max", 600)]
+
+
+def test_existing_accounts_get_their_signup_logged():
+    cfg = _config()
+    command.upgrade(cfg, "8e2f4a6c1b93")
+    _query(
+        "INSERT INTO app.profiles (id, email, created_at) "
+        "VALUES ('00000000-0000-0000-0000-00000000000a', 'old@example.com', "
+        "'2026-01-02 03:04:05+00')"
+    )
+
+    command.upgrade(cfg, "head")
+
+    assert _query(
+        "SELECT user_email, event, source, details ->> 'backfilled', created_at "
+        "FROM app.account_events"
+    ) == [
+        (
+            "old@example.com",
+            "signed_up",
+            "external",
+            "true",
+            datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc),
+        )
+    ]

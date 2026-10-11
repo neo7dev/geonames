@@ -15,9 +15,19 @@ from sqlalchemy import and_, false, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api import gotrue
+from geonames_server.api.account_events import (
+    claim_creation,
+    claim_removal,
+    tag_actor,
+)
 from geonames_server.api.auth import Principal, forget_user, require_user
 from geonames_server.api.dependencies import get_session
 from geonames_server.api.schemas.admin import (
+    AccountEvent as AccountEventOut,
+)
+from geonames_server.api.schemas.admin import (
+    AccountEventKind,
+    AccountEventList,
     AdminUser,
     AdminUserList,
     CreateUserRequest,
@@ -26,7 +36,12 @@ from geonames_server.api.schemas.admin import (
     UserStatus,
 )
 from geonames_server.config.config import settings
-from geonames_server.database.models.accounts import ApiKey, Profile, Role
+from geonames_server.database.models.accounts import (
+    AccountEvent,
+    ApiKey,
+    Profile,
+    Role,
+)
 
 router = APIRouter(tags=["Administration"])
 
@@ -46,7 +61,7 @@ async def require_portal_admin(
 
 
 async def admin_session(
-    _: Principal = Depends(require_portal_admin),
+    principal: Principal = Depends(require_portal_admin),
     session: AsyncSession = Depends(get_session),
 ) -> AsyncSession:
     """The request's session, as geonames_admin until the transaction ends.
@@ -54,12 +69,14 @@ async def admin_session(
     Endpoints build their response before committing: after the commit the
     session is back to the server's own database user.
     """
-    await _act_as_admin(session)
+    await _act_as_admin(session, principal)
     return session
 
 
-async def _act_as_admin(session: AsyncSession) -> None:
+async def _act_as_admin(session: AsyncSession, principal: Principal) -> None:
     await session.execute(text(f"SET LOCAL ROLE {ADMIN_DB_ROLE}"))
+    # Changes in this transaction are logged as this admin's.
+    await tag_actor(session, principal.user_id, "admin")
 
 
 def _active_keys():
@@ -206,7 +223,9 @@ async def get_user(user_id: uuid.UUID, session: AsyncSession = Depends(admin_ses
 
 @router.post("/users", response_model=AdminUser, status_code=status.HTTP_201_CREATED)
 async def create_user(
-    body: CreateUserRequest, session: AsyncSession = Depends(admin_session)
+    body: CreateUserRequest,
+    principal: Principal = Depends(require_portal_admin),
+    session: AsyncSession = Depends(admin_session),
 ):
     """Create a confirmed user, who can sign in with the password at once."""
     if len(body.password) < settings.password_min_length:
@@ -221,13 +240,18 @@ async def create_user(
     await session.commit()
     try:
         user_id = await gotrue.create_user(
-            body.email, body.password, display_name=body.display_name or None
+            body.email,
+            body.password,
+            display_name=body.display_name or None,
         )
     except gotrue.GoTrueError as e:
         raise _gotrue_failed(e) from None
 
     try:
-        await _act_as_admin(session)
+        await claim_creation(
+            session, user_id, principal.user_id, principal.email, "admin"
+        )
+        await _act_as_admin(session, principal)
         # The signup trigger created the profile with the default role.
         if body.role is not None:
             result = await session.execute(
@@ -326,3 +350,52 @@ async def delete_user(
     except gotrue.GoTrueError as e:
         raise _gotrue_failed(e) from None
     forget_user(user_id)
+    await claim_removal(session, user_id, principal.user_id, principal.email)
+    await session.commit()
+
+
+@router.get("/events", response_model=AccountEventList)
+async def list_events(
+    user_id: Annotated[
+        uuid.UUID | None, Query(description="Only this account's events")
+    ] = None,
+    event: Annotated[
+        list[AccountEventKind] | None,
+        Query(description="Only these kinds of event; repeat for several"),
+    ] = None,
+    q: Annotated[
+        str | None,
+        Query(max_length=254, description="Part of the account's or actor's email"),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    session: AsyncSession = Depends(admin_session),
+):
+    """What happened to accounts, newest first: signups, accounts created, plan
+    upgrades and downgrades, name and email changes, deactivation, deletion,
+    restoring, suspension and removal, and who did it."""
+    filters = []
+    if user_id is not None:
+        filters.append(AccountEvent.user_id == user_id)
+    if event:
+        filters.append(AccountEvent.event.in_([e.value for e in event]))
+    if q and q.strip():
+        pattern = f"%{_escape_like(q.strip())}%"
+        filters.append(
+            or_(
+                AccountEvent.user_email.ilike(pattern, escape="\\"),
+                AccountEvent.actor_email.ilike(pattern, escape="\\"),
+            )
+        )
+
+    total = await session.scalar(select(func.count(AccountEvent.id)).where(*filters))
+    rows = await session.scalars(
+        select(AccountEvent)
+        .where(*filters)
+        .order_by(AccountEvent.created_at.desc(), AccountEvent.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return AccountEventList(
+        events=[AccountEventOut.model_validate(row) for row in rows], total=total
+    )

@@ -688,10 +688,71 @@ export interface paths {
         patch: operations["update_user_portal_admin_users__user_id__patch"];
         trace?: never;
     };
+    "/portal/admin/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Events
+         * @description What happened to accounts, newest first: signups, accounts created, plan
+         *     upgrades and downgrades, name and email changes, deactivation, deletion,
+         *     restoring, suspension and removal, and who did it.
+         */
+        get: operations["list_events_portal_admin_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountEvent */
+        AccountEvent: {
+            /** Id */
+            id: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** User Email */
+            user_email: string | null;
+            event: components["schemas"]["AccountEventKind"];
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            };
+            /** Actor Id */
+            actor_id: string | null;
+            /** Actor Email */
+            actor_email: string | null;
+            source: components["schemas"]["EventSource"];
+        };
+        /**
+         * AccountEventKind
+         * @enum {string}
+         */
+        AccountEventKind: "signed_up" | "created" | "upgraded" | "downgraded" | "role_changed" | "name_changed" | "email_changed" | "deactivated" | "reactivated" | "deleted" | "restored" | "suspended" | "unsuspended" | "removed";
+        /** AccountEventList */
+        AccountEventList: {
+            /** Events */
+            events: components["schemas"]["AccountEvent"][];
+            /** Total */
+            total: number;
+        };
         /** AdminUser */
         AdminUser: {
             /**
@@ -874,6 +935,11 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /**
+         * EventSource
+         * @enum {string}
+         */
+        EventSource: "user" | "admin" | "system" | "external";
         /** GeoNameResponse */
         GeoNameResponse: {
             /** Geonameid */
@@ -2760,6 +2826,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_events_portal_admin_events_get: {
+        parameters: {
+            query?: {
+                /** @description Only this account's events */
+                user_id?: string | null;
+                /** @description Only these kinds of event; repeat for several */
+                event?: components["schemas"]["AccountEventKind"][] | null;
+                /** @description Part of the account's or actor's email */
+                q?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountEventList"];
                 };
             };
             /** @description Validation Error */

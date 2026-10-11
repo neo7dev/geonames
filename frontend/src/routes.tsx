@@ -6,6 +6,7 @@ import { AppShell } from '@/components/app-shell'
 import { AttributionFooter } from '@/components/attribution-footer'
 import { AuthLayout } from '@/components/auth-layout'
 import { Toaster } from '@/components/ui/sonner'
+import { ActivityPage } from '@/pages/admin/activity-page'
 import { AdminPage } from '@/pages/admin/admin-page'
 import { AuthCallbackPage } from '@/pages/auth-callback'
 import { KeysPage } from '@/pages/keys/keys-page'
@@ -69,6 +70,7 @@ export const routes: RouteObject[] = [
                   },
                   { path: 'profile', element: <ProfilePage /> },
                   { path: 'admin', element: <AdminPage /> },
+                  { path: 'admin/activity', element: <ActivityPage /> },
                   { path: '*', element: <NotFound /> },
                 ],
               },

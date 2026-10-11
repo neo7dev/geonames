@@ -153,6 +153,15 @@ sequenceDiagram
 - **No `REDIS_URL`:** nothing is limited or counted; preflight warns.
 - **Key cache:** a key's user, role and tier are cached for `AUTH_CACHE_SECONDS` (60), so Studio edits apply within a minute; revoking through `/portal` drops the key at once. One app instance only: a second would have its own cache and memory counters.
 
+### Account log
+
+`app.account_events` records what happens to accounts, for the Administration page's Activity tab (`GET /portal/admin/events`, admins only).
+
+- **Written by a trigger** on `app.profiles`, so changes from the API, Studio, Supabase Auth or seeding are all caught: `signed_up`, `upgraded` / `downgraded` / `role_changed` (tiers compared by their limits), `name_changed`, `email_changed`, `deactivated` / `reactivated`, `deleted` / `restored`, `suspended` / `unsuspended` (banned or deleted in Supabase Auth), `removed`.
+- **Who:** the API tags its transactions (`account_events.tag_actor`: `app.actor_id`, `app.actor_source` = user, admin or system); untagged changes are `external` (Studio or Supabase Auth).
+- **Relabelled by the API:** Supabase Auth creates and deletes users in its own transactions, so the API turns the trigger's `signed_up` into `created` for accounts it made (`claim_creation`) and credits the admin with a `removed` (`claim_removal`).
+- **Kept forever**, with the user's email at the time and no foreign key, so it outlives removed accounts. `geonames_admin` may only read it.
+
 ### Libraries
 
 | Library | Used for |

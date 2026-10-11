@@ -1,5 +1,6 @@
-import { Pencil, Plus, RotateCcw, Search, Trash2, Users } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { History, Pencil, Plus, RotateCcw, Search, Trash2, Users } from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 
 import { PAGE_SIZE, useAdminUsers, useUpdateUser } from '@/api/admin'
@@ -12,7 +13,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format'
+import { useDebounced } from '@/lib/use-debounced'
 import { cn } from '@/lib/utils'
+import { AdminTabs } from '@/pages/admin/admin-tabs'
 import { CreateUserDialog } from '@/pages/admin/create-user-dialog'
 import { DeleteUserDialog } from '@/pages/admin/delete-user-dialog'
 import { EditUserDialog } from '@/pages/admin/edit-user-dialog'
@@ -28,15 +31,6 @@ export function AdminPage() {
   return <Administration myId={me.data.id} />
 }
 
-function useDebounced<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delay)
-    return () => clearTimeout(timer)
-  }, [value, delay])
-  return debounced
-}
-
 function Administration({ myId }: { myId: string }) {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<UserStatus | null>(null)
@@ -48,6 +42,7 @@ function Administration({ myId }: { myId: string }) {
   const setOffset = (next: number) => setPage({ searchKey, offset: next })
   const users = useAdminUsers({ q, status, offset })
   const restore = useUpdateUser()
+  const navigate = useNavigate()
 
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<AdminUser | null>(null)
@@ -74,6 +69,7 @@ function Administration({ myId }: { myId: string }) {
           </Button>
         }
       />
+      <AdminTabs />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <div className="relative min-w-60 flex-1">
@@ -125,7 +121,7 @@ function Administration({ myId }: { myId: string }) {
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Keys</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead className="w-24">
+                  <TableHead className="w-32">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -157,6 +153,18 @@ function Administration({ myId }: { myId: string }) {
                       <TableCell className="text-right tabular-nums">{formatNumber(user.active_keys)}</TableCell>
                       <TableCell title={formatDateTime(user.created_at)}>{formatDate(user.created_at)}</TableCell>
                       <TableCell className="pr-2 text-right whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground"
+                          aria-label={`History of ${label}`}
+                          title="History"
+                          onClick={() =>
+                            navigate(`/admin/activity?${new URLSearchParams({ user: user.id, email: label })}`)
+                          }
+                        >
+                          <History />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon-sm"

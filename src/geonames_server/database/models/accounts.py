@@ -15,6 +15,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     Integer,
     Text,
@@ -22,6 +23,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from geonames_server.database.models.app_base import APP_SCHEMA, AppBase
@@ -172,3 +174,38 @@ class UsageFlush(AppBase):
     flushed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class AccountEvent(AppBase):
+    """Something that happened to an account, written by a trigger on profiles.
+
+    Read-only for the app: the trigger (migration c4d8e2f6a9b1) is the only
+    writer. No foreign key, so the history outlives a removed account.
+    """
+
+    __tablename__ = "account_events"
+    __table_args__ = (
+        Index("account_events_created_at_idx", "created_at"),
+        Index("account_events_user_id_idx", "user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    # As it was when the event happened
+    user_email: Mapped[str | None] = mapped_column(Text)
+    # signed_up, created, upgraded, downgraded, role_changed, name_changed,
+    # email_changed, deactivated, reactivated, deleted, restored, suspended,
+    # unsuspended, removed
+    event: Mapped[str] = mapped_column(Text, nullable=False)
+    # Before and after values, e.g. from_role / to_role / from_tier / to_tier
+    details: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    # Who did it: NULL for the system or an untagged change (Studio, Supabase Auth)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    actor_email: Mapped[str | None] = mapped_column(Text)
+    # user (their own doing), admin, system, external (Supabase Auth or Studio)
+    source: Mapped[str] = mapped_column(Text, nullable=False)

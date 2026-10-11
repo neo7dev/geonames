@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 - **Data:** on first start the server downloads each enabled dataset from geonames.org, loads it into Postgres and serves it. Every day it applies GeoNames' modifications and deletions; a dataset that falls too far behind is rebuilt from a fresh dump.
-- **Accounts:** users sign up in the web UI (Supabase Auth), create API keys, and see their usage. Admins manage users on the Administration page.
+- **Accounts:** users sign up in the web UI (Supabase Auth), create API keys, and see their usage. Admins manage users on the Administration page, and its **Activity** tab logs every account change: signups, accounts created, upgrades and downgrades, name and email changes, deactivation, deletion, restoring, suspension and removal, with who did it and when.
 - **Limits:** each user's role maps to a tier with per-minute, per-hour and per-month limits, counted in Redis.
 
 ### Datasets
@@ -145,6 +145,7 @@ What the web UI uses; they take the login token (`Authorization: Bearer ...`), n
 | `DELETE /portal/keys/{id}` | Revoke a key; it stops working at once |
 | `GET /portal/usage?days=30` | Current minute, hour and month against the limits (live), requests per UTC day (1-90 days), and this month's requests per key |
 | `/portal/admin/users`, `/portal/admin/roles` | Administration page (admins): list, create, edit, deactivate, delete and restore users |
+| `GET /portal/admin/events` | Account log (admins): what happened to accounts and who did it, newest first; filter by `user_id`, `event`, `q` (email) |
 
 ### OpenAPI spec
 

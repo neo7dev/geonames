@@ -1,6 +1,14 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { api, type AdminUser, type AdminUserList, type RoleOption, type UserStatus } from '@/api/client'
+import {
+  api,
+  type AccountEventKind,
+  type AccountEventList,
+  type AdminUser,
+  type AdminUserList,
+  type RoleOption,
+  type UserStatus,
+} from '@/api/client'
 
 export const PAGE_SIZE = 50
 
@@ -21,13 +29,33 @@ export function useAdminUsers({ q, status, offset }: UserSearch) {
   })
 }
 
+export type EventSearch = { q: string; userId: string | null; events: AccountEventKind[]; offset: number }
+
+/** The account log, newest first. Admins only. */
+export function useAccountEvents({ q, userId, events, offset }: EventSearch) {
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
+  if (q.trim()) params.set('q', q.trim())
+  if (userId) params.set('user_id', userId)
+  for (const event of events) params.append('event', event)
+  return useQuery({
+    queryKey: ['admin', 'events', q.trim(), userId, events.join(','), offset],
+    queryFn: () => api<AccountEventList>(`/portal/admin/events?${params}`),
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function useRoles() {
   return useQuery({ queryKey: ['admin', 'roles'], queryFn: () => api<RoleOption[]>('/portal/admin/roles') })
 }
 
 function useRefreshUsers() {
   const queryClient = useQueryClient()
-  return () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+  // Every change to a user also adds to the account log.
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+      queryClient.invalidateQueries({ queryKey: ['admin', 'events'] }),
+    ])
 }
 
 export function useCreateUser() {

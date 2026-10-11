@@ -12,6 +12,7 @@ from sqlalchemy import Date, cast, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api import rate_limit
+from geonames_server.api.account_events import tag_actor
 from geonames_server.api.auth import (
     Principal,
     forget_api_key,
@@ -95,6 +96,7 @@ async def update_me(
 ):
     """Change your display name. Email and password are changed in Supabase Auth."""
     if "display_name" in body.model_fields_set:
+        await tag_actor(session, principal.user_id, "user")
         await session.execute(
             update(Profile)
             .where(Profile.id == principal.user_id)

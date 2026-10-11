@@ -2878,8 +2878,169 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /portal/admin/events:
+    get:
+      tags:
+      - Administration
+      summary: List Events
+      description: 'What happened to accounts, newest first: signups, accounts created,
+        plan
+
+        upgrades and downgrades, name and email changes, deactivation, deletion,
+
+        restoring, suspension and removal, and who did it.'
+      operationId: list_events_portal_admin_events_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: user_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: Only this account's events
+          title: User Id
+        description: Only this account's events
+      - name: event
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              $ref: '#/components/schemas/AccountEventKind'
+          - type: 'null'
+          description: Only these kinds of event; repeat for several
+          title: Event
+        description: Only these kinds of event; repeat for several
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 254
+          - type: 'null'
+          description: Part of the account's or actor's email
+          title: Q
+        description: Part of the account's or actor's email
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountEventList'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    AccountEvent:
+      properties:
+        id:
+          type: integer
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        user_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Email
+        event:
+          $ref: '#/components/schemas/AccountEventKind'
+        details:
+          additionalProperties: true
+          type: object
+          title: Details
+        actor_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Actor Id
+        actor_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actor Email
+        source:
+          $ref: '#/components/schemas/EventSource'
+      type: object
+      required:
+      - id
+      - created_at
+      - user_id
+      - user_email
+      - event
+      - details
+      - actor_id
+      - actor_email
+      - source
+      title: AccountEvent
+    AccountEventKind:
+      type: string
+      enum:
+      - signed_up
+      - created
+      - upgraded
+      - downgraded
+      - role_changed
+      - name_changed
+      - email_changed
+      - deactivated
+      - reactivated
+      - deleted
+      - restored
+      - suspended
+      - unsuspended
+      - removed
+      title: AccountEventKind
+    AccountEventList:
+      properties:
+        events:
+          items:
+            $ref: '#/components/schemas/AccountEvent'
+          type: array
+          title: Events
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - events
+      - total
+      title: AccountEventList
     AdminUser:
       properties:
         id:
@@ -3243,6 +3404,14 @@ components:
       - deletion_date
       - geonameid
       title: DeletionResponse
+    EventSource:
+      type: string
+      enum:
+      - user
+      - admin
+      - system
+      - external
+      title: EventSource
     GeoNameResponse:
       properties:
         geonameid:

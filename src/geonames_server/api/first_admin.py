@@ -15,6 +15,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api import gotrue
+from geonames_server.api.account_events import claim_creation, tag_actor
 from geonames_server.config.config import settings
 from geonames_server.database.models.accounts import Profile, Role
 from geonames_server.log.mylogger import get_logger
@@ -76,7 +77,10 @@ async def ensure_first_admin(session: AsyncSession) -> FirstAdmin:
             return FirstAdmin.failed
         outcome = FirstAdmin.created
 
+    if outcome is FirstAdmin.created:
+        await claim_creation(session, user_id, None, None, "system")
     # The signup trigger created the profile with the default role.
+    await tag_actor(session, None, "system")
     result = await session.execute(
         update(Profile)
         .where(Profile.id == user_id)
