@@ -18,14 +18,23 @@ Source = Literal["user", "admin", "system"]
 
 
 async def tag_actor(
-    session: AsyncSession, actor_id: uuid.UUID | None, source: Source
+    session: AsyncSession,
+    actor_id: uuid.UUID | None,
+    source: Source,
+    db_role: str | None = None,
 ) -> None:
+    """Tag the transaction; with *db_role*, also SET LOCAL ROLE, in the same query."""
+    set_role = ", set_config('role', :db_role, true)" if db_role else ""
     await session.execute(
         text(
             "SELECT set_config('app.actor_id', :actor, true), "
-            "set_config('app.actor_source', :source, true)"
+            f"set_config('app.actor_source', :source, true){set_role}"
         ),
-        {"actor": str(actor_id) if actor_id else "", "source": source},
+        {
+            "actor": str(actor_id) if actor_id else "",
+            "source": source,
+            "db_role": db_role,
+        },
     )
 
 

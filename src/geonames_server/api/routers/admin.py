@@ -11,7 +11,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, false, func, or_, select, text, update
+from sqlalchemy import and_, false, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geonames_server.api import gotrue
@@ -77,9 +77,8 @@ async def admin_session(
 
 
 async def _act_as_admin(session: AsyncSession, principal: Principal) -> None:
-    await session.execute(text(f"SET LOCAL ROLE {ADMIN_DB_ROLE}"))
     # Changes in this transaction are logged as this admin's.
-    await tag_actor(session, principal.user_id, "admin")
+    await tag_actor(session, principal.user_id, "admin", db_role=ADMIN_DB_ROLE)
 
 
 def _active_keys():
