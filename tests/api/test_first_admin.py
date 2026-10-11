@@ -168,6 +168,16 @@ async def test_supabase_auth_failure_is_retried_next_start(
     assert await _role_of(async_session, email) is None
 
 
+@pytest.mark.asyncio
+async def test_any_other_failure_does_not_stop_startup(
+    async_session, no_admins, configured, email, create_user
+):
+    create_user.side_effect = KeyError("id")  # Supabase Auth answered oddly
+
+    assert await ensure_first_admin(async_session) == FirstAdmin.failed
+    assert await _role_of(async_session, email) is None
+
+
 def test_blank_settings_count_as_unset():
     s = Settings(admin_email=" ", admin_password="")
     assert s.admin_email is None

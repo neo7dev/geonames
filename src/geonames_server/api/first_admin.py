@@ -36,11 +36,22 @@ class FirstAdmin(StrEnum):
     created = "created"
     # The email was already registered, with ADMIN_PASSWORD: made admin
     promoted = "promoted"
-    # Supabase Auth refused or was unreachable; tried again on the next start
+    # Supabase Auth refused or was unreachable, or another error; tried again
+    # on the next start
     failed = "failed"
 
 
 async def ensure_first_admin(session: AsyncSession) -> FirstAdmin:
+    """Create or promote the first admin; never stops startup."""
+    try:
+        return await _ensure_first_admin(session)
+    except Exception:
+        await session.rollback()
+        log.exception("Could not set up the admin account; trying again on next start")
+        return FirstAdmin.failed
+
+
+async def _ensure_first_admin(session: AsyncSession) -> FirstAdmin:
     has_admin = await session.scalar(
         select(Profile.id)
         .join(Role, Role.name == Profile.role)
