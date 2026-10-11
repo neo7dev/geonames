@@ -292,10 +292,12 @@ A failing test needs a code fix. The Postgres and Redis tests need the dev stack
 
 ## Release
 
-1. Bump `version` in `pyproject.toml`: the app version and the image tag. Then `make openapi` (the spec carries it).
-2. `make predeploy`.
-3. `make image-check`: runs `prebuild`, builds on the host's Docker, checks the image.
-4. `make push-image`.
+1. `make bump-version V=patch` (or `minor`, `major`, `1.2.3`): sets the version in `pyproject.toml`, `uv.lock` and `openapi.yaml`. It is the app's version and the image tag. Commit the three files.
+2. Push to `main` (the pre-push hook runs `make predeploy`).
+
+`.github/workflows/release.yml` then sees a version with no `v<version>` tag, runs `make image-check`, pushes `ghcr.io/neo7dev/geonames-server:<version>` and `:latest` for amd64 and arm64, and creates the `v<version>` tag and GitHub release. A push to `main` without a new version releases nothing. The workflow does not run the tests, so a merge made in GitHub's web UI skips them.
+
+By hand instead, in the dev container: `echo "$GH_TOKEN" | docker login ghcr.io -u neo7dev --password-stdin` once (the token needs `write:packages`), then `make push-image`. That pushes only the host's platform, and does not tag or release.
 
 The image installs `requirements.txt` with pip: runtime packages only, no uv, tests or dev scripts. `docker-compose.yml` in the repo root is generated (`make deploy-compose`) from `deploy/docker-compose.template.yml` and `supabase/`, with Supabase's config files inlined; edit those, never the generated file. The deploy stack runs on the host (`docker compose up -d`): from the container, compose would hand the host `/workspace/...` paths it does not have.
 

@@ -1,0 +1,104 @@
+# Release on a push to main, but only when pyproject.toml's version has no v<version>
+# tag yet: bump the version (make bump-version) and merge, and this builds, checks and
+# pushes the image, then tags the commit and creates the GitHub release.
+#
+# It does not rerun the tests: .githooks/pre-push runs make predeploy before every push,
+# and the API tests need the Supabase database. A merge made in GitHub's web UI, or a
+# push with --no-verify, skips them.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One release at a time; a second push waits instead of cancelling a push half done.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # The Makefile's IMAGE, for this repository's owner
+  IMAGE: ghcr.io/${{ github.repository_owner }}/geonames-server
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Is the version new?
+        id: version
+        run: |
+          version=$(make -s status | sed -n 's/^Version: //p')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already released; nothing to do" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing v$version" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the tag and the release
+      packages: write # the image
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # make image-check runs make prebuild (ruff, uv.lock, openapi.yaml, the web UI's
+      # lint), which needs uv and Node, as in the dev container.
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # Builds for the runner (amd64) and smoke-tests that image: the app imports and
+      # reports $VERSION, one migration head per chain, the web UI is in, no tests.
+      - name: make image-check
+        run: make image-check IMAGE="$IMAGE"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # The same Dockerfile again, for both platforms (arm64 under QEMU), pushed as
+      # $VERSION and latest.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.VERSION }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Tags this commit v$VERSION and lists the changes since the last release.
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" \
+            --generate-notes --notes "Image: \`$IMAGE:$VERSION\`"

@@ -9,6 +9,9 @@ RUN npm run build
 
 FROM python:3.12-slim
 
+# Links the GHCR package to the repository, so the release workflow can push to it.
+LABEL org.opencontainers.image.source=https://github.com/neo7dev/geonames
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     && rm -rf /var/lib/apt/lists/*
