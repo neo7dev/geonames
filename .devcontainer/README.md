@@ -265,6 +265,10 @@ curl -H "X-API-Key: $KEY" "http://localhost:9500/cities15000/?limit=5"
 
 `.env.dev` points `GEONAMES_URL` at `slow-download-server`, which serves `gostatic/` at `limit_rate` from `.devcontainer/nginx.conf` (default `10m`/s; reloads within 2 s). The app downloads from it into `data/geonames/` exactly as from geonames.org. Lower the speed (`make download-speed RATE=500k`) to test retries and resume. To use geonames.org instead, set `GEONAMES_URL = "https://download.geonames.org/export/dump/"` in `.env`.
 
+## Before a push
+
+`.githooks/pre-push` runs `make predeploy` before every `git push` and stops the push if a check fails; the container turns it on at start (`git config core.hooksPath .githooks`). Push from the dev container: the repository is shared with the host, and the hook refuses there, since the checks need uv and the services. Skip it once with `git push --no-verify`.
+
 ## Release
 
 1. Bump `version` in `pyproject.toml`: the app version and the image tag. Then `make openapi` (the spec carries it).

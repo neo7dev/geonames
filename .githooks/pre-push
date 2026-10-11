@@ -1,0 +1,20 @@
+#!/bin/sh
+# Runs every check before a push: make predeploy (lint, formatting, lockfile,
+# requirements.txt, docker-compose.yml, openapi.yaml, all tests, the web UI's).
+# A failure stops the push. Skip it once with `git push --no-verify`.
+#
+# The checks run uv and the tests, which only work in the dev container: the
+# repository is shared with the host, so this hook also runs for a push from
+# the host, and stops it there.
+
+if [ ! -f /.dockerenv ]; then
+    echo "pre-push: push from the dev container, where make predeploy runs" >&2
+    echo "          (or skip the checks with git push --no-verify)" >&2
+    exit 1
+fi
+
+echo "pre-push: make predeploy"
+if ! make predeploy; then
+    echo "pre-push: checks failed, nothing was pushed (git push --no-verify skips them)" >&2
+    exit 1
+fi
