@@ -49,7 +49,9 @@ function Activity({ myId }: { myId: string }) {
   const userLabel = params.get('email') ?? userId
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState('')
-  const q = useDebounced(search, SEARCH_DELAY_MS)
+  const debounced = useDebounced(search, SEARCH_DELAY_MS)
+  // One account's history hides the search box, so it does not apply there.
+  const q = userId ? '' : debounced
   const events = GROUPS.find((g) => g.value === group)?.events ?? []
 
   const searchKey = `${q.trim()}|${group}|${userId}`

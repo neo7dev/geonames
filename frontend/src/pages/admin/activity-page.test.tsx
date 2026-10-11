@@ -121,6 +121,20 @@ describe('activity', () => {
     await waitFor(() => expect(queries.at(-1)!.get('user_id')).toBeNull())
   })
 
+  it("ignores the search in one account's history, where it is hidden", async () => {
+    const queries = eventsApi()
+    renderApp('/admin/activity')
+    await rows()
+
+    await userEvent.type(screen.getByLabelText('Search by email'), 'other-admin')
+    await waitFor(() => expect(queries.at(-1)!.get('q')).toBe('other-admin'))
+    await userEvent.click(screen.getByRole('button', { name: 'amy@example.com' }))
+
+    await waitFor(() => expect(queries.at(-1)!.get('user_id')).toBe('id-amy'))
+    expect(queries.at(-1)!.get('q')).toBeFalsy()
+    expect(screen.queryByLabelText('Search by email')).not.toBeInTheDocument()
+  })
+
   it('opens from a user on the Users tab', async () => {
     mockFetch({
       ...baseRoutes,
