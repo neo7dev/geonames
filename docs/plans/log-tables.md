@@ -108,8 +108,13 @@ Usage:
 
 ```python
 if log.isEnabledFor(logging.DEBUG):
-    log.debug(f"[{name}] {day}: changed columns", extra={"table": column_changes(name, day, counts)})
-log.info("Preflight", extra={"data": [{"check": ..., "target": ..., "result": ...}, ...]})
+    log.debug(
+        f"[{name}] {day}: changed columns",
+        extra={"table": column_changes(name, day, counts)},
+    )
+log.info(
+    "Preflight", extra={"data": [{"check": ..., "target": ..., "result": ...}, ...]}
+)
 ```
 
 `RichExtraFormatter` must skip `table` and `data`, the same way it skips `markup` and `color_message` now.
