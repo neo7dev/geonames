@@ -104,6 +104,48 @@ curl -H "X-API-Key: $KEY" \
   "http://localhost:9500/cities15000/filter?country_code=US&min_population=1000000&order_by=-population&limit=20"
 ```
 
+Over a limit:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 34
+
+{"detail": "Rate limit exceeded: 10 requests per minute on the basic tier"}
+```
+
+### Without the web UI
+
+Get a key from the command line. `ANON_KEY` is in `.env`; Kong requires it on the Auth API.
+
+```bash
+# 1. Sign up, then follow the link in the confirmation email (skip with ENABLE_EMAIL_AUTOCONFIRM=true)
+curl -X POST http://localhost:8000/auth/v1/signup -H "apikey: $ANON_KEY" \
+  -H "Content-Type: application/json" -d '{"email": "you@example.com", "password": "..."}'
+
+# 2. Log in: the response's access_token is the login token (valid for JWT_EXPIRY seconds, 3600)
+curl -X POST "http://localhost:8000/auth/v1/token?grant_type=password" -H "apikey: $ANON_KEY" \
+  -H "Content-Type: application/json" -d '{"email": "you@example.com", "password": "..."}'
+
+# 3. Create an API key: the response's "key" is shown only this once
+curl -X POST http://localhost:9500/portal/keys -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{"name": "laptop"}'
+```
+
+### Portal endpoints
+
+What the web UI uses; they take the login token (`Authorization: Bearer ...`), not an API key.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /portal/me` | Email, name, role, tier, limits, active key count |
+| `PATCH /portal/me` | Change your display name |
+| `GET /portal/keys` | Your active keys (name, prefix, created, last used); never the key itself |
+| `POST /portal/keys` | Create a key (`{"name": "..."}`, 1-64 characters): `201` with the key, `409` at the tier's key limit |
+| `POST /portal/keys/{id}/roll` | Replace a key with a new one of the same name |
+| `DELETE /portal/keys/{id}` | Revoke a key; it stops working at once |
+| `GET /portal/usage?days=30` | Current minute, hour and month against the limits (live), requests per UTC day (1-90 days), and this month's requests per key |
+| `/portal/admin/users`, `/portal/admin/roles` | Administration page (admins): list, create, edit, deactivate, delete and restore users |
+
 ### OpenAPI spec
 
 - Interactive docs: http://localhost:9500/docs (Swagger UI; **Authorize** with your key) and `/redoc`
@@ -119,7 +161,11 @@ curl -H "X-API-Key: $KEY" \
 | pro | dev | 120 | 2,500 | 500,000 | 5 |
 | max | sr_dev, admin | unlimited | unlimited | unlimited | unlimited |
 
-All of a user's keys share one set of limits. Windows reset at the start of each UTC minute, hour and month. Admins change a user's role on the Administration page; tiers and roles are editable in Supabase Studio (`app.tiers`, `app.roles`).
+All of a user's keys share one set of limits. Windows reset at the start of each UTC minute, hour and month.
+
+- **Changing plans:** admins change a user's role on the Administration page. Tiers, roles and which role new signups get (`is_default`) are rows in Supabase Studio (`app.tiers`, `app.roles`). Changes apply within `AUTH_CACHE_SECONDS` (60 s).
+- **Studio views** (Table Editor, schema `app`): `app.user_tiers` shows every user's role, tier, limits and key counts; `app.monthly_usage` shows each user's requests per month next to their quota (up to 5 minutes behind).
+- **Bans:** banning a user in Studio refuses their keys and logins until the ban ends; deleting them there removes their profile and keys.
 
 ## Configuration
 

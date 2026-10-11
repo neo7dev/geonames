@@ -137,7 +137,21 @@ sequenceDiagram
 
 - **Login** (web UI): the browser talks to Supabase Auth through Kong and sends its token to `/portal` (keys, usage, profile, `/portal/admin`).
 - **API keys**: only the SHA-256 is stored; the key is shown once.
-- **Counting**: Redis holds the live counters; every 5 minutes the counts per key and hour go to `app.api_key_usage`. With Redis down, counting continues in memory and is merged back later.
+
+### Rate limiting
+
+- **One check:** a single Redis script counts the request in the user's minute, hour and month windows and refuses it if any is full. `429` carries `Retry-After`: the seconds until the longest-blocked window resets.
+- **What counts:** every request on the data routes, `/modifications`, `/deletions`, `/metadata` and `/sync` that passes the key check, whatever its status (`404`, `422`, building `503`). Not counted: `429`s, unknown keys, a non-admin's refused `/sync`, `/portal`, `/health`. Unlimited tiers are counted, never refused.
+- **Fixed windows:** counters reset at the start of each UTC minute, hour and month, so up to twice the minute limit fits across a minute boundary.
+- **Flush:** every `USAGE_FLUSH_SECONDS` (300) the counts per key and hour go to `app.api_key_usage`, with each key's `last_used_at`. `/portal/usage`'s daily and per-key numbers come from there.
+- **Redis lost its data:** each user's hour and month counters are rebuilt from `app.api_key_usage` on their next request; at most the last flush interval is lost. Redis also appends to disk every second.
+- **Redis down:** counting and limiting continue in the app's memory, starting from each user's stored usage; the counts still reach Postgres, and are added to Redis when it is back. `/health` reports Redis `error`.
+  - Requests in flight when Redis fails wait up to 1 s; after that one request retries Redis every 30 s while the rest stay in memory.
+  - A request whose Redis reply times out (slow, not gone) passes uncounted, as Redis most likely counted it.
+  - A failed counter rebuild (Postgres down too) is counted in memory and flushed later.
+  - In-memory counts die with the process: stopping while Postgres is also down loses them (the shutdown warning says how many).
+- **No `REDIS_URL`:** nothing is limited or counted; preflight warns.
+- **Key cache:** a key's user, role and tier are cached for `AUTH_CACHE_SECONDS` (60), so Studio edits apply within a minute; revoking through `/portal` drops the key at once. One app instance only: a second would have its own cache and memory counters.
 
 ### Libraries
 
