@@ -6,7 +6,8 @@ import yaml
 from geonames_server.api.app import app
 
 spec = yaml.safe_dump(app.openapi(), sort_keys=False, allow_unicode=False)
-output_path = Path("/workspace/openapi.yaml")
+# The repository root, wherever it is checked out
+output_path = Path(__file__).resolve().parents[3] / "openapi.yaml"
 if "--check" in sys.argv:
     if output_path.read_text(encoding="utf-8") != spec:
         print(f"openapi-check: {output_path} is stale, run make openapi")
