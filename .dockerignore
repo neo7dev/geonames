@@ -20,3 +20,9 @@ tests
 .ruff_cache
 frontend/node_modules
 frontend/dist
+# Dev and test scripts (seeders, stress and scratch test_* scripts, generators) stay out
+# of the image; only the secret generator users run from it goes in.
+src/geonames_server/scripts/*
+!src/geonames_server/scripts/__init__.py
+!src/geonames_server/scripts/supabase_keys.py
+**/__pycache__

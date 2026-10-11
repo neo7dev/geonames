@@ -70,25 +70,16 @@ add-dev:
 sync:
 	$(UV) sync
 
-## Install dependencies including dev
+## Install dependencies with the dev and test groups (the default groups)
 sync-dev:
-	$(UV) sync --dev
+	$(UV) sync
 
-## Export requirements.txt (no dev, no hashes)
+# Runtime dependencies only: what the Docker image installs with pip
+REQUIREMENTS_EXPORT = $(UV) export --frozen --no-default-groups --no-hashes --no-emit-project -q
+
+## Export requirements.txt from uv.lock: runtime only, no dev or test group
 requirements:
-	$(UV) export --no-dev --no-hashes --no-emit-project -o requirements.txt
-
-## Export requirements.txt without hashes
-requirements-nohash:
-	$(UV) export --format requirements-txt --no-hashes > requirements.txt
-
-## Export requirements-dev.txt
-requirements-dev:
-	$(UV) export --group dev > requirements-dev.txt
-
-## Export requirements.txt from the frozen lockfile
-requirements-frozen:
-	$(UV) export --frozen --locked > requirements.txt
+	$(REQUIREMENTS_EXPORT) -o requirements.txt
 
 ## Update uv.lock
 lock:
@@ -168,7 +159,7 @@ deploy-compose-check:
 ## Check requirements.txt (what the Docker image installs) matches uv.lock
 requirements-check:
 	@tmp=$$(mktemp -d); \
-	$(UV) export --frozen --no-dev --no-hashes --no-emit-project -q -o $$tmp/expected; \
+	$(REQUIREMENTS_EXPORT) -o $$tmp/expected; \
 	grep -v '^#' $$tmp/expected > $$tmp/expected.body; grep -v '^#' requirements.txt > $$tmp/current.body; \
 	if diff -u $$tmp/current.body $$tmp/expected.body; then rm -rf $$tmp; \
 	else rm -rf $$tmp; echo "requirements.txt is out of date with uv.lock: run make requirements"; exit 1; fi
@@ -351,13 +342,20 @@ IMAGE ?= ghcr.io/neo7dev/$(APP_NAME)
 build-image: build-image-version
 	docker tag $(IMAGE):$(VERSION) $(IMAGE):latest
 
-## Build the image tagged $(VERSION)
-build-image-version:
+## Before a build: regenerate requirements.txt (from uv.lock) and docker-compose.yml,
+## then lint and check formatting, the lockfile and openapi.yaml. Needs uv: run in the
+## dev container (its Docker CLI builds on the host's Docker).
+prebuild: requirements deploy-compose lint-check format-check lock-check openapi-check ui-lint
+	@echo "prebuild: ok"
+
+## Build the image tagged $(VERSION), after make prebuild
+build-image-version: prebuild
 	docker build --label org.opencontainers.image.version=$(VERSION) -t $(IMAGE):$(VERSION) .
 
 ## Build the image and smoke-test it before pushing: the app imports and reports
 ## the image's version, each migration chain (geonames, app) has exactly one head,
-## and the web UI is built in. Tags latest too, so both tags are the checked image. Needs no database.
+## the web UI is built in, and no tests, test libraries or dev scripts got in. Tags
+## latest too, so both tags are the checked image. Needs no database.
 image-check: build-image
 	docker run --rm --entrypoint python $(IMAGE):$(VERSION) -c "import geonames_server.api.app"
 	@app_version=$$(docker run --rm --entrypoint python $(IMAGE):$(VERSION) -c "from geonames_server.config.config import settings; print(settings.app_version)" 2>/dev/null | tail -1); \
@@ -367,14 +365,19 @@ image-check: build-image
 		if [ "$$heads" != 1 ]; then echo "image-check: $$chain chain has $$heads heads, expected 1"; exit 1; fi; \
 	done
 	@docker run --rm --entrypoint python $(IMAGE):$(VERSION) -c "from geonames_server.config.config import settings as s; assert (s.ui_root / 'index.html').is_file(), f'no web UI in {s.ui_root}'; print(f'web UI in {s.ui_root}')"
+	@docker run --rm --entrypoint sh $(IMAGE):$(VERSION) -c '\
+		if python -c "import pytest" 2>/dev/null; then echo "image-check: pytest is installed"; exit 1; fi; \
+		if [ -e /app/tests ]; then echo "image-check: tests are in the image"; exit 1; fi; \
+		extra=$$(ls /app/src/geonames_server/scripts | grep -vxE "__init__.py|supabase_keys.py|__pycache__"); \
+		if [ -n "$$extra" ]; then echo "image-check: dev scripts in the image: $$extra"; exit 1; fi'
 	@echo "image-check: $(IMAGE):$(VERSION) ok"
 
 ## Push the image tagged latest and $(VERSION)
 push-image: push-image-version
 	docker push $(IMAGE):latest
 
-## Push the image tagged $(VERSION)
-push-image-version:
+## Push the image tagged $(VERSION), after make image-check
+push-image-version: image-check
 	docker push $(IMAGE):$(VERSION)
 
 ##@ GitHub (run in the dev container)
@@ -484,4 +487,4 @@ git-auth:
 	   $(OK) "git can push to origin"; \
 	 fi
 
-.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check requirements-check deploy-compose deploy-compose-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements requirements-nohash requirements-dev requirements-frozen lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys build-image build-image-version image-check push-image push-image-version gh-auth git-auth
+.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check requirements-check deploy-compose deploy-compose-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys prebuild build-image build-image-version image-check push-image push-image-version gh-auth git-auth
