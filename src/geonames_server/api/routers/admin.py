@@ -42,6 +42,9 @@ from geonames_server.database.models.accounts import (
     Profile,
     Role,
 )
+from geonames_server.log.mylogger import get_logger
+
+log = get_logger()
 
 router = APIRouter(tags=["Administration"])
 
@@ -350,8 +353,16 @@ async def delete_user(
     except gotrue.GoTrueError as e:
         raise _gotrue_failed(e) from None
     forget_user(user_id)
-    await claim_removal(session, user_id, principal.user_id, principal.email)
-    await session.commit()
+    try:
+        await claim_removal(session, user_id, principal.user_id, principal.email)
+        await session.commit()
+    except Exception as e:
+        # The user is gone already; only the log's credit is missing.
+        await session.rollback()
+        log.error(
+            f"Removed user {user_id}, but could not credit {principal.email} "
+            f"with it in the account log: {e}"
+        )
 
 
 @router.get("/events", response_model=AccountEventList)

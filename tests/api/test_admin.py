@@ -521,6 +521,28 @@ class TestDeleteUser:
 
         assert resp.status_code == 502
 
+    @pytest.mark.asyncio
+    async def test_permanent_delete_succeeds_when_the_log_cannot_credit_it(
+        self, auth_client, admin, make_user
+    ):
+        """The user is gone in Supabase Auth; a retry would only find nobody."""
+        user_id = await make_user()
+        url = f"/portal/admin/users/{user_id}"
+        await auth_client.delete(url, headers=admin[1])
+
+        with (
+            patch.object(gotrue, "delete_user", AsyncMock()),
+            patch(
+                "geonames_server.api.routers.admin.claim_removal",
+                AsyncMock(side_effect=RuntimeError("connection lost")),
+            ),
+        ):
+            resp = await auth_client.delete(
+                url, params={"permanent": "true"}, headers=admin[1]
+            )
+
+        assert resp.status_code == 204
+
 
 class TestCreateUser:
     @pytest.fixture
