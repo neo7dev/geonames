@@ -180,7 +180,7 @@ sequenceDiagram
 | zipfile, smtplib, tomllib (stdlib) | Extraction, the SMTP check, reading the version from `pyproject.toml` |
 | React, Vite, Tailwind, shadcn/Radix, TanStack Query, supabase-js, Recharts, Sonner | The web UI: pages, build, styling, components, data fetching, login, charts, toasts |
 
-Logs go to the console through Rich, at `LOG_LEVEL`; errors also go to `logs/geonames.jsonl` as JSON lines. Everything goes through the one console in `log/console.py`: in a terminal it follows the terminal's width, and in a container (no terminal) it is drawn at `LOG_WIDTH` and progress bars become a log line every 10%. Requests for the web UI's files, CORS preflights and health checks, Alembic's and APScheduler's bookkeeping, and per-dataset remote checks with nothing new are DEBUG.
+Logs go to the console through Rich, at `LOG_LEVEL`; errors also go to `logs/geonames.jsonl` as JSON lines. Everything goes through the one console in `log/console.py`: in a terminal it follows the terminal's width, and in a container (no terminal) it is drawn at `LOG_WIDTH` and progress bars become a log line every 10%. INFO is what an operator follows: startup checks, each dataset's download, extract and ingest progress and its row count, and each daily update's rows added, updated and deleted per dataset. DEBUG adds every SQL statement (SQLAlchemy's and the ingestion's psycopg2 ones), each load and swap step, which columns a day's modifications change (with up to 20 rows before and after), the rows its deletions remove and why, why a request was refused (401, 403, 422, 429), requests for the web UI's files, CORS preflights and health checks, and Alembic's and APScheduler's bookkeeping.
 
 ## Dev users
 

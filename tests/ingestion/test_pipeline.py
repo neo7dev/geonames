@@ -339,7 +339,7 @@ class TestCheckRemoteMetadata:
 class TestBuildDataset:
     @patch("geonames_server.ingestion.pipeline.DatasetMetaDataRepository")
     @patch("geonames_server.ingestion.pipeline.get_session")
-    @patch("geonames_server.ingestion.pipeline._load_and_swap")
+    @patch("geonames_server.ingestion.pipeline._load_and_swap", return_value=5)
     @patch("geonames_server.ingestion.pipeline.Extractor")
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
@@ -403,7 +403,7 @@ class TestBuildDataset:
 
     @patch("geonames_server.ingestion.pipeline.DatasetMetaDataRepository")
     @patch("geonames_server.ingestion.pipeline.get_session")
-    @patch("geonames_server.ingestion.pipeline._load_and_swap")
+    @patch("geonames_server.ingestion.pipeline._load_and_swap", return_value=5)
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_no_extraction_for_txt_only(
@@ -482,7 +482,7 @@ class TestBuildDataset:
         with pytest.raises(RuntimeError, match="bad zip"):
             build_dataset(ds)
 
-    @patch("geonames_server.ingestion.pipeline._load_and_swap")
+    @patch("geonames_server.ingestion.pipeline._load_and_swap", return_value=5)
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_raises_when_txt_file_missing(
@@ -504,7 +504,7 @@ class TestBuildDataset:
             with pytest.raises(FileNotFoundError, match="Extracted file not found"):
                 build_dataset(ds)
 
-    @patch("geonames_server.ingestion.pipeline._load_and_swap")
+    @patch("geonames_server.ingestion.pipeline._load_and_swap", return_value=5)
     @patch("geonames_server.ingestion.pipeline.Downloader")
     @patch("geonames_server.ingestion.pipeline.settings")
     def test_raises_on_ingest_failure(self, mock_settings, mock_dl_cls, mock_ingest):

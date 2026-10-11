@@ -5,12 +5,15 @@ import asyncio
 import geonames_server.database.models  # noqa: F401
 from geonames_server.database.models.base import Base
 from geonames_server.database.session import async_engine
+from geonames_server.log.mylogger import get_logger
+
+log = get_logger()
 
 
 async def _async_init_db():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print(Base.metadata.tables.keys())
+    log.info(f"Created tables: {', '.join(Base.metadata.tables)}")
 
 
 def init_db():

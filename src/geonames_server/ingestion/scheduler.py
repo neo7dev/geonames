@@ -36,10 +36,10 @@ def start_scheduler() -> AsyncIOScheduler:
             name=f"Daily GeoNames update at {hour:02d}:00 UTC",
             replace_existing=True,
         )
-        log.info(f"Scheduled daily update job at {hour:02d}:00 UTC")
+        log.debug(f"Scheduled daily update job at {hour:02d}:00 UTC")
 
     _scheduler.start()
-    log.info("Scheduler started")
+    log.debug("Scheduler started")
 
     # Run an immediate one-shot update on startup, after the API is up
     _scheduler.add_job(
@@ -49,7 +49,8 @@ def start_scheduler() -> AsyncIOScheduler:
         name="Daily GeoNames update on startup",
         replace_existing=True,
     )
-    log.info("Scheduled immediate startup daily update job")
+    hours = ", ".join(f"{hour:02d}:00" for hour in settings.sync_schedule_hours)
+    log.info(f"Daily updates run at {hours} UTC, and once now")
 
     return _scheduler
 
@@ -60,5 +61,5 @@ def stop_scheduler() -> None:
 
     if _scheduler is not None:
         _scheduler.shutdown(wait=False)
-        log.info("Scheduler stopped")
+        log.debug("Scheduler stopped")
         _scheduler = None

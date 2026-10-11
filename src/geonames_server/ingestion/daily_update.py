@@ -20,6 +20,7 @@ Applying a day is idempotent (upsert / delete by key), so replays are safe.
 from __future__ import annotations
 
 import io
+import logging
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -109,7 +110,7 @@ def _download_daily_file(client: RemoteFileClient, file_name: str) -> Path | Non
     url = settings.geonames_url + file_name
 
     if not client.exists(url):
-        log.info(f"Daily file not available: {url}")
+        log.debug(f"Daily file not published: {url}")
         return None
 
     with Downloader(
@@ -202,6 +203,7 @@ def _ingest_daily_file(file_path: Path, model) -> None:
                     columns,
                     fh,
                 )
+            log.debug(f"Staged {cur.rowcount:,} row(s) from {path.name}")
             _merge_unique_rows(
                 cur,
                 temp_table=temp_table,
@@ -245,6 +247,7 @@ def _ingest_deletions_file(file_path: Path, deletion_date: date) -> None:
                 columns,
                 buf,
             )
+            log.debug(f"Staged {cur.rowcount:,} row(s) from {path.name}")
             _merge_unique_rows(
                 cur,
                 temp_table=temp_table,
@@ -331,6 +334,101 @@ def _delete_from_dataset(
             return cur.rowcount
 
 
+# How many changed or deleted rows DEBUG lists one by one, per dataset and day
+DEBUG_SAMPLE_ROWS = 20
+# Changes in every modified row; not worth counting
+_ALWAYS_CHANGED = {"modification_date"}
+
+
+def _staged_modifications_filter(day: date, population_threshold: int):
+    where = [sql.SQL("m.modification_date = %s")]
+    params: list = [day]
+    if population_threshold > 0:
+        where.append(sql.SQL("COALESCE(m.population, 0) >= %s"))
+        params.append(population_threshold)
+    return sql.SQL(" AND ").join(where), params
+
+
+def _log_modifications(
+    conn_params: dict,
+    name: str,
+    target_table: str,
+    day: date,
+    population_threshold: int,
+) -> None:
+    """DEBUG: which columns *day*'s modifications change in *target_table*, and how.
+
+    Reads the staged rows against the live ones before the upsert; runs only
+    when DEBUG is on.
+    """
+    columns = [c for c in GEOBASE_COLUMNS if c != "geonameid"]
+    where, params = _staged_modifications_filter(day, population_threshold)
+    query = sql.SQL(
+        "SELECT m.geonameid, m.name, t.geonameid IS NULL, {pairs} "
+        "FROM {source} m LEFT JOIN {target} t USING (geonameid) WHERE {where} "
+        "ORDER BY m.geonameid"
+    ).format(
+        pairs=sql.SQL(", ").join(
+            sql.SQL("t.{c}, m.{c}").format(c=sql.Identifier(c)) for c in columns
+        ),
+        source=sql.Identifier("modifications"),
+        target=sql.Identifier(target_table),
+        where=where,
+    )
+    with psycopg2.connect(**conn_params) as conn, conn.cursor() as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
+
+    added = 0
+    by_column: dict[str, int] = {}
+    samples: list[str] = []
+    for geonameid, row_name, is_new, *pairs in rows:
+        if is_new:
+            added += 1
+            if len(samples) < DEBUG_SAMPLE_ROWS:
+                samples.append(f"{geonameid} {row_name!r}: new")
+            continue
+        changes = []
+        for column, old, new in zip(columns, pairs[::2], pairs[1::2]):
+            if old != new and column not in _ALWAYS_CHANGED:
+                by_column[column] = by_column.get(column, 0) + 1
+                changes.append(f"{column} {old!r} → {new!r}")
+        if changes and len(samples) < DEBUG_SAMPLE_ROWS:
+            samples.append(f"{geonameid} {row_name!r}: {', '.join(changes)}")
+
+    counts = ", ".join(
+        f"{column} {count:,}"
+        for column, count in sorted(by_column.items(), key=lambda kv: -kv[1])
+    )
+    log.debug(
+        f"[{name}] {day}: {len(rows):,} modification(s), {added:,} new; "
+        f"changed columns: {counts or 'none'}"
+    )
+    for sample in samples:
+        log.debug(f"[{name}] {day}:   {sample}")
+    if len(rows) > len(samples):
+        log.debug(f"[{name}] {day}:   ... and {len(rows) - len(samples):,} more")
+
+
+def _log_deletions(conn_params: dict, name: str, target_table: str, day: date) -> None:
+    """DEBUG: the rows *day*'s deletions remove from *target_table*, with the reason."""
+    query = sql.SQL(
+        "SELECT t.geonameid, t.name, d.reason FROM {target} t "
+        "JOIN {source} d USING (geonameid) WHERE d.deletion_date = %s "
+        "ORDER BY t.geonameid"
+    ).format(target=sql.Identifier(target_table), source=sql.Identifier("deletions"))
+    with psycopg2.connect(**conn_params) as conn, conn.cursor() as cur:
+        cur.execute(query, [day])
+        rows = cur.fetchall()
+    log.debug(f"[{name}] {day}: {len(rows):,} row(s) to delete")
+    for geonameid, row_name, reason in rows[:DEBUG_SAMPLE_ROWS]:
+        log.debug(
+            f"[{name}] {day}:   {geonameid} {row_name!r}: {reason or 'no reason'}"
+        )
+    if len(rows) > DEBUG_SAMPLE_ROWS:
+        log.debug(f"[{name}] {day}:   ... and {len(rows) - DEBUG_SAMPLE_ROWS:,} more")
+
+
 # ---------------------------------------------------------------------------
 # Step 3 – sync local metadata to remote values
 # ---------------------------------------------------------------------------
@@ -353,7 +451,7 @@ def _sync_metadata(datasets: list[DatasetInfo]) -> None:
             record.etag = record.remote_etag
             record.last_modified = now
             session.commit()
-            log.info(f"[{ds.name}] Metadata synced — out_of_sync={record.out_of_sync}")
+            log.debug(f"[{ds.name}] Metadata synced — out_of_sync={record.out_of_sync}")
 
 
 # ---------------------------------------------------------------------------
@@ -493,16 +591,22 @@ def apply_daily_updates(
                 with dataset_lock(ds.name):
                     if published:
                         on_dataset(ds.name, DatasetSyncStatus.APPLYING_MODIFICATIONS)
-                        count = _upsert_modifications(
-                            conn_params,
-                            table,
-                            day,
-                            POPULATION_THRESHOLDS.get(ds.name, 0),
+                        threshold = POPULATION_THRESHOLDS.get(ds.name, 0)
+                        if log.isEnabledFor(logging.DEBUG):
+                            _log_modifications(
+                                conn_params, ds.name, table, day, threshold
+                            )
+                        modified = _upsert_modifications(
+                            conn_params, table, day, threshold
                         )
-                        log.info(f"[{ds.name}] {day}: upserted {count} modification(s)")
                         on_dataset(ds.name, DatasetSyncStatus.APPLYING_DELETES)
-                        count = _delete_from_dataset(conn_params, table, day)
-                        log.info(f"[{ds.name}] {day}: deleted {count} row(s)")
+                        if log.isEnabledFor(logging.DEBUG):
+                            _log_deletions(conn_params, ds.name, table, day)
+                        deleted = _delete_from_dataset(conn_params, table, day)
+                        log.info(
+                            f"[{ds.name}] {day}: {modified:,} row(s) added or "
+                            f"updated, {deleted:,} deleted"
+                        )
                     _set_last_applied(ds.name, day)
             except Exception:
                 log.exception(f"[{ds.name}] Failed to apply {day}")
@@ -529,7 +633,7 @@ def apply_daily_updates(
 def check_and_apply_daily_updates() -> None:
     """Scheduler entry point: HEAD-check remotes, then catch up out-of-sync datasets."""
     all_datasets = get_all_datasets()
-    log.info(f"Starting daily update check for {_yesterday()}")
+    log.debug(f"Starting daily update check for {_yesterday()}")
 
     check_remote_metadata(all_datasets)
 

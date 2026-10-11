@@ -62,7 +62,7 @@ def _create_directory(path: Path | str) -> Path:
         return p
 
     p.mkdir(parents=True, exist_ok=True)
-    log.info(f"Directory created: {p}")
+    log.debug(f"Directory created: {p}")
     return p
 
 
@@ -327,7 +327,7 @@ class Downloader:
             meta.write_text(json.dumps(info))
 
             log.info(
-                f"Starting download: {url} -> {dest} "
+                f"Downloading {url} "
                 f"(size: {_human_readable_bytes(total)}"
                 f"{f', resumed_at: {_human_readable_bytes(offset)}' if offset else ''})"
             )
@@ -355,7 +355,7 @@ class Downloader:
 
         elapsed = time.perf_counter() - start
         log.info(
-            f"Finished download: {dest} ({_human_readable_bytes(size)}) "
+            f"Downloaded {dest.name} ({_human_readable_bytes(size)}) "
             f"avg speed: {_human_readable_bytes(int(written / elapsed) if elapsed else 0)}/s"
         )
         return self._finalize(part, meta, dest, info)

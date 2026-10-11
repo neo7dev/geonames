@@ -123,7 +123,7 @@ def test_uvicorns_colour_copy_is_not_repeated():
 class TestProgressMilestones:
     def test_logs_every_ten_percent(self, caplog):
         steps = ProgressMilestones(
-            logging.getLogger("test"), "Downloading x.zip", 100_000_000
+            logging.getLogger("test"), "Downloading x.zip", 100_000_000, min_interval=0
         )
         with caplog.at_level(logging.INFO, logger="test"):
             for _ in range(25):
@@ -136,7 +136,12 @@ class TestProgressMilestones:
 
     def test_a_resumed_download_starts_from_where_it_was(self, caplog):
         steps = ProgressMilestones(
-            logging.getLogger("test"), "Downloading x.zip", 100, 55, unit="B"
+            logging.getLogger("test"),
+            "Downloading x.zip",
+            100,
+            55,
+            unit="B",
+            min_interval=0,
         )
         with caplog.at_level(logging.INFO, logger="test"):
             steps.set(59)
@@ -145,6 +150,14 @@ class TestProgressMilestones:
         assert [r.getMessage() for r in caplog.records] == [
             "Downloading x.zip: 60% (61.0 of 100.0 B)"
         ]
+
+    def test_a_fast_file_logs_nothing(self, caplog):
+        steps = ProgressMilestones(logging.getLogger("test"), "x", 100, unit="B")
+        with caplog.at_level(logging.INFO, logger="test"):
+            for _ in range(100):
+                steps.advance(1)
+
+        assert caplog.records == []
 
     def test_unknown_total_logs_nothing(self, caplog):
         steps = ProgressMilestones(logging.getLogger("test"), "x", None)
@@ -173,3 +186,85 @@ def test_alembics_setup_lines_are_debug(message, shown):
         assert AlembicNoiseFilter().filter(record) is shown
     finally:
         logger.setLevel(before)
+
+
+class TestRefusalsAtDebug:
+    @pytest.mark.asyncio
+    async def test_a_refused_request_says_why(self, caplog):
+        from httpx import ASGITransport, AsyncClient
+
+        from geonames_server.api.app import app
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with caplog.at_level(logging.DEBUG, logger="geonames_server"):
+                resp = await client.get("/cities15000/")
+
+        assert resp.status_code == 401
+        assert any(
+            r.levelno == logging.DEBUG
+            and r.getMessage().startswith("GET /cities15000/ answered 401: ")
+            for r in caplog.records
+        )
+
+
+def test_modification_diffs_count_columns_and_list_samples(caplog):
+    from datetime import date
+    from unittest.mock import MagicMock, patch
+
+    from geonames_server.ingestion import daily_update
+
+    columns = [c for c in daily_update.GEOBASE_COLUMNS if c != "geonameid"]
+
+    def row(geonameid, label, new, **changes):
+        pairs = []
+        for c in columns:
+            old_value = f"{c}-old" if c in changes else f"{c}-same"
+            pairs += [old_value, changes.get(c, old_value)]
+        return (geonameid, label, new, *pairs)
+
+    rows = [
+        row(1, "Berlin", False, population=2, modification_date="2026-10-10"),
+        row(2, "Paris", False, name="Paris!", population=3),
+        row(3, "Nowhere", True),
+        row(4, "Same", False, modification_date="2026-10-10"),
+    ]
+    cursor = MagicMock()
+    cursor.fetchall.return_value = rows
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.cursor.return_value.__enter__.return_value = cursor
+    with (
+        patch.object(daily_update.psycopg2, "connect", return_value=conn),
+        caplog.at_level(logging.DEBUG, logger="geonames_server"),
+    ):
+        daily_update._log_modifications({}, "x", "x", date(2026, 10, 10), 0)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages[0] == (
+        "[x] 2026-10-10: 4 modification(s), 1 new; changed columns: population 2, name 1"
+    )
+    assert "[x] 2026-10-10:   1 'Berlin': population 'population-old' → 2" in messages
+    assert (
+        "[x] 2026-10-10:   2 'Paris': name 'name-old' → 'Paris!', "
+        "population 'population-old' → 3"
+    ) in messages
+    assert "[x] 2026-10-10:   3 'Nowhere': new" in messages
+    # Only its modification date changed: nothing to show
+    assert not any("'Same'" in m for m in messages)
+
+
+def test_ingestion_sql_is_logged_at_debug_only():
+    from geonames_server.ingestion import pipeline
+
+    before = pipeline.sql_log.level
+    try:
+        pipeline.sql_log.setLevel(logging.INFO)
+        assert "connection_factory" not in pipeline._get_conn_params()
+
+        pipeline.sql_log.setLevel(logging.DEBUG)
+        factory = pipeline._get_conn_params()["connection_factory"]
+        assert factory.filter(None, b"SELECT 1", None) == "SELECT 1"
+    finally:
+        pipeline.sql_log.setLevel(before)

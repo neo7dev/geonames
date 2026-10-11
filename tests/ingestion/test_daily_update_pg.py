@@ -220,6 +220,35 @@ def test_day_upserts_modified_rows_and_deletes_deleted_rows(engine, remote):
     assert meta["needs_rebuild"] is False
 
 
+def test_debug_says_which_columns_changed_and_what_was_deleted(engine, remote, caplog):
+    _seed_rows(
+        engine,
+        AllCountries,
+        [_geo(1, "Old1", population=10), _geo(2, "Keep2"), _geo(3, "Doomed3")],
+    )
+    _seed_metadata(remote, ALLCOUNTRIES, last_applied=Y - timedelta(days=1))
+    remote.publish(
+        Y, [_row(1, "New1", Y, population=10), _row(4, "Added4", Y)], deletes=[3]
+    )
+
+    with caplog.at_level("DEBUG", logger="geonames_server"):
+        apply_daily_updates([ALLCOUNTRIES], {"allcountries"})
+
+    messages = [r.getMessage() for r in caplog.records]
+    [summary] = [m for m in messages if "modification(s)" in m]
+    assert summary.startswith(f"[allcountries] {Y}: 2 modification(s), 1 new; ")
+    assert "name 1" in summary and "asciiname 1" in summary
+    # Every modified row has a new modification_date: not counted
+    assert "modification_date" not in summary
+    [changed] = [m for m in messages if m.startswith(f"[allcountries] {Y}:   1 ")]
+    assert "name 'Old1' → 'New1'" in changed
+    assert "population" not in changed
+    assert f"[allcountries] {Y}:   4 'Added4': new" in messages
+    assert f"[allcountries] {Y}: 1 row(s) to delete" in messages
+    assert any(m.startswith(f"[allcountries] {Y}:   3 'Doomed3': ") for m in messages)
+    assert f"[allcountries] {Y}: 2 row(s) added or updated, 1 deleted" in messages
+
+
 def test_city_dataset_only_gets_rows_above_its_population_threshold(engine, remote):
     for ds in (ALLCOUNTRIES, CITIES5000):
         _seed_metadata(remote, ds, last_applied=Y - timedelta(days=1))

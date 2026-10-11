@@ -12,8 +12,14 @@ import sys
 import threading
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from redis.asyncio import Redis
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from geonames_server.api.auth import require_admin
 from geonames_server.api.first_admin import ensure_first_admin
@@ -57,7 +63,7 @@ async def lifespan(app: FastAPI):
     # uvicorn reset its loggers when it started
     set_log_level(settings.log_level)
 
-    log.info("Starting GeoNames Server lifespan")
+    log.debug("Starting GeoNames Server lifespan")
 
     # 1. Preflight: database, Redis, Supabase Auth and settings, before anything
     #    else. Exit 1 if a requirement is missing; warn about SMTP and the like.
@@ -71,15 +77,15 @@ async def lifespan(app: FastAPI):
 
     # 2. Initialize database (force drops all tables + re-migrates)
     force = settings.force_rebuild
-    log.info("Running database migrations", extra={"force_rebuild": force})
+    log.debug("Running database migrations", extra={"force_rebuild": force})
     db_migrations(force=force)
     log.info("Database migrations complete")
 
     # 3. Seed metadata rows for ALL datasets
     all_datasets = get_all_datasets()
-    log.info("Seeding dataset metadata for %d dataset(s)", len(all_datasets))
+    log.debug("Seeding dataset metadata for %d dataset(s)", len(all_datasets))
     seed_dataset_metadata(all_datasets)
-    log.info("Dataset metadata seeded")
+    log.debug("Dataset metadata seeded")
 
     # A fresh deployment gets its first admin from ADMIN_EMAIL / ADMIN_PASSWORD.
     async with asyncSessionLocal() as session:
@@ -136,7 +142,7 @@ async def lifespan(app: FastAPI):
             await _final_usage_flush(app)
         if app.state.redis is not None:
             await app.state.redis.aclose()
-        log.info("Scheduler stopped — shutdown complete")
+        log.info("Shutdown complete")
 
 
 async def _final_usage_flush(app: FastAPI) -> None:
@@ -168,9 +174,9 @@ def _prepare_datasets(
     try:
         # 4. HEAD-check all datasets to refresh remote metadata
         #    Event listeners auto-compute needs_rebuild / out_of_sync
-        log.info("Checking remote metadata for all datasets")
+        log.debug("Checking remote metadata for all datasets")
         check_remote_metadata(all_datasets)
-        log.info("Remote metadata check complete")
+        log.debug("Remote metadata check complete")
 
         # Indexes the migrations left to build here, on tables with data; first,
         # so a rebuild copies them to its new table.
@@ -179,13 +185,13 @@ def _prepare_datasets(
             log.error(f"Startup could not build index(es): {failed_indexes}")
 
         # 5. Rebuild enabled datasets that need it
-        log.info("Checking for datasets that need rebuilding")
+        log.debug("Checking for datasets that need rebuilding")
         failed = build_all_datasets()
         if failed:
             log.error(f"Startup could not build dataset(s): {failed}")
             app.state.dataset_startup = "failed"
         else:
-            log.info("Dataset rebuild step complete")
+            log.debug("Dataset rebuild step complete")
             app.state.dataset_startup = "done"
     except Exception:
         log.exception("Dataset startup preparation failed")
@@ -195,7 +201,7 @@ def _prepare_datasets(
     #    thread; checking `stopping` there orders it against shutdown's stop_scheduler.
     def _start() -> None:
         if not stopping.is_set():
-            log.info("Starting AsyncIOScheduler for daily updates")
+            log.debug("Starting AsyncIOScheduler for daily updates")
             start_scheduler()
 
     try:
@@ -220,6 +226,25 @@ app = FastAPI(
     description=DESCRIPTION,
     lifespan=lifespan,
 )
+
+
+# The access log line shows only the status; DEBUG adds why a request was refused.
+@app.exception_handler(StarletteHTTPException)
+async def _log_refusal(request: Request, exc: StarletteHTTPException):
+    log.debug(
+        f"{request.method} {request.url.path} answered {exc.status_code}: {exc.detail}"
+    )
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def _log_invalid(request: Request, exc: RequestValidationError):
+    problems = "; ".join(
+        f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()
+    )
+    log.debug(f"{request.method} {request.url.path} answered 422: {problems}")
+    return await request_validation_exception_handler(request, exc)
+
 
 # Health router, public like the docs
 app.include_router(health.router, prefix="/health")

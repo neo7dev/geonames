@@ -1,7 +1,11 @@
+import time
 import zipfile
 from pathlib import Path
 
+from geonames_server.log.mylogger import get_logger
 from geonames_server.rich_console.extractor_progressbar import ExtractorProgressBar
+
+log = get_logger()
 
 
 class Extractor:
@@ -27,6 +31,7 @@ class Extractor:
             # collect file entries (skip directories) and total size
             entries = [info for info in zf.infolist() if not info.is_dir()]
             total_bytes = sum(info.file_size for info in entries)
+            started = time.perf_counter()
 
             with ExtractorProgressBar(
                 total=total_bytes, description=f"Extracting {zip_path.name}"
@@ -38,6 +43,10 @@ class Extractor:
                         continue
 
                     target_path.parent.mkdir(parents=True, exist_ok=True)
+                    log.debug(
+                        f"Extracting {info.filename} ({info.file_size:,} bytes) "
+                        f"to {target_path}"
+                    )
 
                     # stream the file so we can update progress by bytes
                     with (
@@ -59,3 +68,8 @@ class Extractor:
                     except Exception:
                         # ignore permission setting errors
                         pass
+
+            log.info(
+                f"Extracted {zip_path.name}: {len(entries)} file(s), "
+                f"{total_bytes / 1_000_000:,.1f} MB in {time.perf_counter() - started:,.0f} s"
+            )

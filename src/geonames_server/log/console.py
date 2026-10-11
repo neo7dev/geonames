@@ -7,6 +7,7 @@ is drawn at LOG_WIDTH columns (Rich's fallback would be 80).
 
 import logging
 import sys
+import time
 
 from rich.console import Console
 from rich.theme import Theme
@@ -49,7 +50,8 @@ def get_console() -> Console:
 
 class ProgressMilestones:
     """Without a terminal a progress bar cannot redraw in place, so it is not
-    drawn: this logs every `step` percent instead."""
+    drawn: this logs every `step` percent instead, at most once every
+    `min_interval` seconds, so a file done in seconds logs nothing."""
 
     def __init__(
         self,
@@ -59,6 +61,7 @@ class ProgressMilestones:
         completed: int = 0,
         unit: str = "MB",
         step: int = 10,
+        min_interval: float = 5.0,
     ):
         self._log = logger
         self._description = description
@@ -68,6 +71,8 @@ class ProgressMilestones:
         self._unit = unit
         self._step = step
         self._logged = self._percent() // step * step
+        self._min_interval = min_interval
+        self._last = time.monotonic()
 
     def _percent(self) -> int:
         if self._total <= 0:
@@ -80,8 +85,13 @@ class ProgressMilestones:
     def set(self, completed: int) -> None:
         self._completed = completed
         percent = self._percent()
-        if percent >= self._logged + self._step:
+        now = time.monotonic()
+        if (
+            percent >= self._logged + self._step
+            and now - self._last >= self._min_interval
+        ):
             self._logged = percent // self._step * self._step
+            self._last = now
             self._log.info(
                 f"{self._description}: {self._logged}% "
                 f"({self._completed / self._divisor:,.1f} of "

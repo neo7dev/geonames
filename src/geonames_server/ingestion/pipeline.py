@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import psycopg2
 from psycopg2 import sql
+from psycopg2.extras import LoggingConnection
 
 from geonames_server.config.config import settings
 from geonames_server.database.models.dataset_metadata import DatasetMetaData
@@ -23,10 +25,23 @@ from geonames_server.ingestion.remote import RemoteFileClient
 from geonames_server.log.mylogger import get_logger
 
 log = get_logger()
+# Every statement the ingestion runs through psycopg2, at DEBUG (SQLAlchemy's
+# are logged by sqlalchemy.engine)
+sql_log = get_logger("geonames_server.sql")
+
+
+class _SqlLoggingConnection(LoggingConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initialize(sql_log)
+
+    def filter(self, msg, curs):
+        # psycopg2 hands over the statement as bytes
+        return msg.decode(errors="replace") if isinstance(msg, bytes) else msg
 
 
 def _get_conn_params() -> dict:
-    return {
+    params = {
         "user": settings.postgres_user,
         "password": settings.postgres_password,
         "host": settings.postgres_host,
@@ -34,6 +49,9 @@ def _get_conn_params() -> dict:
         "dbname": settings.postgres_db,
         "options": settings.postgres_options,
     }
+    if sql_log.isEnabledFor(logging.DEBUG):
+        params["connection_factory"] = _SqlLoggingConnection
+    return params
 
 
 # Sort memory for index builds: trigram indexes on allcountries build much faster.
@@ -99,8 +117,7 @@ def seed_dataset_metadata(datasets: list[DatasetInfo]) -> None:
                     needs_rebuild=True,
                 )
                 repo.add(metadata)
-                log.debug(f"Created metadata entry for dataset: {ds}")
-                log.info(f"Seeded metadata for dataset: {ds.name}")
+                log.debug(f"Created the metadata row for dataset {ds.name}: {ds}")
 
 
 def check_remote_metadata(datasets: list[DatasetInfo]) -> None:
@@ -162,7 +179,9 @@ def build_dataset(dataset_info: DatasetInfo, force: bool = False) -> None:
 
     url = settings.geonames_url + file_to_download
 
-    log.info(f"[{name}] Starting dataset sync (force={force})")
+    log.info(f"[{name}] Building the dataset from {file_to_download}")
+    log.debug(f"[{name}] Source {url}, table {table_name}, force={force}")
+    started = time.perf_counter()
 
     # --- Download ---
     try:
@@ -192,7 +211,7 @@ def build_dataset(dataset_info: DatasetInfo, force: bool = False) -> None:
     # Daily updates wait until the swap and metadata write are both done.
     with dataset_lock(name):
         try:
-            _load_and_swap(model, table_name, txt_path)
+            rows = _load_and_swap(model, table_name, txt_path)
         except Exception:
             log.exception(f"[{name}] Ingestion failed")
             raise
@@ -214,8 +233,16 @@ def build_dataset(dataset_info: DatasetInfo, force: bool = False) -> None:
                 built = result.last_modified or now
                 metadata.last_applied_date = built.date() - timedelta(days=1)
                 session.commit()
+                log.debug(
+                    f"[{name}] Metadata: etag={result.etag}, "
+                    f"remote last modified {result.last_modified}, "
+                    f"daily updates apply after {metadata.last_applied_date}"
+                )
 
-    log.info(f"[{name}] Dataset sync complete")
+    log.info(
+        f"[{name}] Dataset ready: {rows:,} rows in "
+        f"{time.perf_counter() - started:,.0f} s"
+    )
 
 
 class RowCountError(Exception):
@@ -299,12 +326,13 @@ def _transfer_sequences(cur, old: str, table: str) -> None:
         )
 
 
-def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
+def _load_and_swap(model, table_name: str, txt_path: Path) -> int:
     """Load *txt_path* into a staging table, then swap it in atomically.
 
     Everything runs in one transaction. The live table keeps serving reads
     during the load; only the final renames take a brief exclusive lock. The
     swap is refused if the new table is empty or much smaller than the live one.
+    Returns the number of rows swapped in.
     """
     column_names = [c.name for c in model.__table__.columns]
     key = ["geonameid"] if "geonameid" in column_names else [column_names[0]]
@@ -343,8 +371,10 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                         s=ident(staged), t=ident(table_name)
                     )
                 )
+                log.debug(f"[{table_name}] COPY {txt_path.name} into {staged}")
                 cur.copy_expert(copy_sql, wrapper)
                 copied = cur.rowcount
+                log.debug(f"[{table_name}] Copied {copied:,} rows into {staged}")
 
                 # Keys that appear more than once are dropped entirely.
                 cur.execute(
@@ -355,8 +385,18 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                 )
 
                 # Checked after deduplication: that is what would be swapped in.
-                new_rows = copied - cur.rowcount
+                dropped = cur.rowcount
+                new_rows = copied - dropped
+                if dropped:
+                    log.warning(
+                        f"[{table_name}] Dropped {dropped:,} rows whose "
+                        f"{', '.join(key)} appears more than once in {txt_path.name}"
+                    )
                 live_rows = _live_rows(cur, table_name)
+                log.debug(
+                    f"[{table_name}] {new_rows:,} rows to swap in; "
+                    f"the live table has about {live_rows:,}"
+                )
                 if new_rows == 0 or new_rows < live_rows * MIN_ROW_RATIO:
                     raise RowCountError(
                         f"{table_name}: loaded {new_rows} rows vs {live_rows} live; "
@@ -376,7 +416,12 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                 )
                 row = cur.fetchone()
                 pk_name = row[0] if row else None
+                log.debug(f"[{table_name}] Built the primary key on {staged}")
                 index_renames = _clone_indexes(cur, table_name, staged, pk_name)
+                log.debug(
+                    f"[{table_name}] Built {len(index_renames)} index(es) on {staged}: "
+                    f"{', '.join(final for _, final in index_renames) or 'none'}"
+                )
                 # Fresh planner statistics, so queries plan well right after the swap.
                 cur.execute(sql.SQL("ANALYZE {s}").format(s=ident(staged)))
 
@@ -408,6 +453,7 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
                         )
                     )
             conn.commit()
+            log.debug(f"[{table_name}] Swapped {staged} in and dropped {old}")
         except Exception:
             if conn is not None:
                 conn.rollback()
@@ -416,6 +462,7 @@ def _load_and_swap(model, table_name: str, txt_path: Path) -> None:
             wrapper.close()
             if conn is not None:
                 conn.close()
+    return new_rows
 
 
 def build_all_datasets() -> list[str]:
@@ -436,7 +483,7 @@ def build_all_datasets() -> list[str]:
                 to_build.append(ds)
 
     if not to_build:
-        log.info("No enabled datasets need rebuilding")
+        log.info("All enabled datasets are built")
         return []
 
     log.info(f"Rebuilding {len(to_build)} dataset(s): {[d.name for d in to_build]}")
