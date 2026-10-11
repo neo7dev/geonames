@@ -53,6 +53,11 @@ def setup_logging():
     with open(config_path) as f:
         config = json.load(f)
 
+    # A fresh checkout has no logs/, and the file handler does not create it.
+    for handler in config["handlers"].values():
+        if "filename" in handler:
+            Path(handler["filename"]).parent.mkdir(parents=True, exist_ok=True)
+
     logging.config.dictConfig(config)
 
     _INITIALIED = True
