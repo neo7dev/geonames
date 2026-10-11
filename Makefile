@@ -190,31 +190,35 @@ ui-install:
 	$(NPM) ci
 
 ## Start the Vite dev server on 5173 (hot reload); it proxies the API on 9500
-ui-dev: frontend/node_modules
+ui-dev: $(NODE_MODULES)
 	$(NPM) run dev
 
-# Installed only when missing; run make ui-install after package-lock.json changes
-frontend/node_modules:
+# npm writes this record of the install last, so it is missing after an install
+# that broke off or a node_modules that was partly deleted. Installed again then,
+# and when package-lock.json changes.
+NODE_MODULES = frontend/node_modules/.package-lock.json
+
+$(NODE_MODULES): frontend/package-lock.json
 	$(NPM) ci
 
 ## Build the web UI into frontend/dist, which the API serves at /ui
-ui-build: frontend/node_modules
+ui-build: $(NODE_MODULES)
 	$(NPM) run build
 
 ## Lint and type-check the web UI
-ui-lint: frontend/node_modules
+ui-lint: $(NODE_MODULES)
 	$(NPM) run lint
 
 ## Run the web UI's tests once
-ui-test: frontend/node_modules
+ui-test: $(NODE_MODULES)
 	$(NPM) test
 
 ## Regenerate the web UI's API types from openapi.yaml (after `make openapi`)
-ui-types: frontend/node_modules
+ui-types: $(NODE_MODULES)
 	$(NPM) run gen:api
 
 ## Fail if the web UI's API types are out of date with openapi.yaml
-ui-types-check: frontend/node_modules
+ui-types-check: $(NODE_MODULES)
 	@cd frontend && npx openapi-typescript ../openapi.yaml -o node_modules/.tmp/schema.d.ts >/dev/null \
 		&& cmp -s node_modules/.tmp/schema.d.ts src/api/schema.d.ts \
 		|| { echo "ui-types-check: src/api/schema.d.ts is stale, run make ui-types"; exit 1; }
