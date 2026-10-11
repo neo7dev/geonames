@@ -410,13 +410,14 @@ def test_existing_accounts_get_their_signup_logged():
     command.upgrade(cfg, "head")
 
     assert _query(
-        "SELECT user_email, event, source, details ->> 'backfilled', created_at "
-        "FROM app.account_events"
+        "SELECT user_email, event, source, actor_id = user_id, "
+        "details ->> 'backfilled', created_at FROM app.account_events"
     ) == [
         (
             "old@example.com",
             "signed_up",
-            "external",
+            "user",
+            True,
             "true",
             datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc),
         )

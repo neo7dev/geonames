@@ -16,8 +16,8 @@ relabels that event as created, naming them; likewise it credits the admin
 with a removal Supabase Auth carried out.
 
 Rows keep the user's id and email, with no foreign key, so the history
-survives the account being removed. Existing accounts get a signed_up event
-at their profile's created_at.
+survives the account being removed. Existing accounts get a signed_up event,
+their own, at their profile's created_at.
 
 Revision ID: c4d8e2f6a9b1
 Revises: 8e2f4a6c1b93
@@ -203,11 +203,12 @@ FOR EACH ROW EXECUTE FUNCTION app.record_account_event()
 """
 
 # Accounts from before this log: when they signed up is all that is known.
+# Logged as their own signup, like the trigger logs new ones.
 BACKFILL = """
 INSERT INTO app.account_events
-    (created_at, user_id, user_email, event, details, source)
+    (created_at, user_id, user_email, event, details, actor_id, actor_email, source)
 SELECT created_at, id, email, 'signed_up',
-       jsonb_build_object('role', role, 'backfilled', true), 'external'
+       jsonb_build_object('role', role, 'backfilled', true), id, email, 'user'
 FROM app.profiles
 ORDER BY created_at
 """
