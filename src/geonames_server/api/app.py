@@ -204,7 +204,22 @@ def _prepare_datasets(
         log.info("Event loop closed before the scheduler could start")
 
 
-app = FastAPI(title="GeoNames Server", version=settings.app_version, lifespan=lifespan)
+# Shown at the top of /docs and /redoc. GeoNames' CC BY 4.0 licence asks that
+# every use of the data credits it.
+DESCRIPTION = (
+    "Place data from [GeoNames](https://www.geonames.org), licensed under "
+    "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Credit GeoNames "
+    "wherever you use it.\n\n"
+    "Data endpoints need an API key in the `X-API-Key` header: create one in the "
+    "web UI at `/ui`, then use **Authorize** to try requests here."
+)
+
+app = FastAPI(
+    title="GeoNames Server",
+    version=settings.app_version,
+    description=DESCRIPTION,
+    lifespan=lifespan,
+)
 
 # Health router, public like the docs
 app.include_router(health.router, prefix="/health")

@@ -1,6 +1,13 @@
 openapi: 3.1.0
 info:
   title: GeoNames Server
+  description: 'Place data from [GeoNames](https://www.geonames.org), licensed under
+    [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Credit GeoNames wherever
+    you use it.
+
+
+    Data endpoints need an API key in the `X-API-Key` header: create one in the web
+    UI at `/ui`, then use **Authorize** to try requests here.'
   version: 0.1.0
 paths:
   /health:

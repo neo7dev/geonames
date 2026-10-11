@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Outlet } from 'react-router'
 
+import { AttributionFooter } from '@/components/attribution-footer'
 import { Logo } from '@/components/logo'
 import { ThemeToggle } from '@/components/theme-toggle'
 
@@ -17,6 +18,7 @@ export function AuthLayout() {
           <Outlet />
         </div>
       </main>
+      <AttributionFooter />
     </div>
   )
 }

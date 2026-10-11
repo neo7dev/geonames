@@ -164,6 +164,13 @@ async def test_docs_are_public(auth_client, path):
 
 
 @pytest.mark.asyncio
+async def test_docs_credit_geonames(auth_client):
+    description = (await auth_client.get("/openapi.json")).json()["info"]["description"]
+    assert "[GeoNames](https://www.geonames.org)" in description
+    assert "https://creativecommons.org/licenses/by/4.0/" in description
+
+
+@pytest.mark.asyncio
 async def test_health_is_public(auth_client):
     assert (await auth_client.get("/health")).status_code != 401
 

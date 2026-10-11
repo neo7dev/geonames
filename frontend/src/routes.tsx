@@ -3,6 +3,7 @@ import { Outlet, type RouteObject } from 'react-router'
 import { AuthProvider } from '@/auth/auth-provider'
 import { GuestOnly, RequireAuth } from '@/auth/guards'
 import { AppShell } from '@/components/app-shell'
+import { AttributionFooter } from '@/components/attribution-footer'
 import { AuthLayout } from '@/components/auth-layout'
 import { Toaster } from '@/components/ui/sonner'
 import { AdminPage } from '@/pages/admin/admin-page'
@@ -26,9 +27,12 @@ export const routes: RouteObject[] = [
       </AuthProvider>
     ),
     errorElement: (
-      <main className="mx-auto max-w-xl p-6">
-        <RouteError />
-      </main>
+      <div className="flex min-h-svh flex-col">
+        <main className="mx-auto w-full max-w-xl flex-1 p-6">
+          <RouteError />
+        </main>
+        <AttributionFooter />
+      </div>
     ),
     children: [
       {

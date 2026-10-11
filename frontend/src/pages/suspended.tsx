@@ -1,6 +1,7 @@
 import { ShieldAlert } from 'lucide-react'
 
 import { useAuth } from '@/auth/use-auth'
+import { AttributionFooter } from '@/components/attribution-footer'
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 
@@ -21,6 +22,7 @@ export function SuspendedPage() {
           Sign out
         </Button>
       </div>
+      <AttributionFooter className="mt-auto" />
     </div>
   )
 }

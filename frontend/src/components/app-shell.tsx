@@ -4,6 +4,7 @@ import { NavLink, Outlet } from 'react-router'
 
 import { useMe } from '@/api/queries'
 import { useAuth } from '@/auth/use-auth'
+import { AttributionFooter } from '@/components/attribution-footer'
 import { Logo } from '@/components/logo'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -132,9 +133,13 @@ export function AppShell() {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-[1100px] px-4 py-8 md:px-8">
-        <Outlet />
-      </main>
+      {/* The footer sits at the bottom of the window on short pages, below the content on long ones. */}
+      <div className="flex min-h-[calc(100svh-49px)] flex-col md:min-h-svh">
+        <main className="mx-auto w-full max-w-[1100px] flex-1 px-4 py-8 md:px-8">
+          <Outlet />
+        </main>
+        <AttributionFooter />
+      </div>
     </div>
   )
 }
