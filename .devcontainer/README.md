@@ -288,7 +288,7 @@ When a check in `make predeploy` fails, this regenerates what it found out of da
 | `openapi-check` | `make openapi` |
 | `ui-types-check` | `make ui-types` |
 
-A failing test needs a code fix. The Postgres and Redis tests need the dev stack running. In VS Code, a refused push only says "failed to push some refs": View → Output → Git shows which check stopped it.
+A failing test needs a code fix. The Postgres and Redis tests need the dev stack running and the `geonames_test` database (Get started, step 8). In VS Code, a refused push only says "failed to push some refs": View → Output → Git shows which check stopped it.
 
 ## Release
 
