@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -654,6 +654,29 @@ class TestCreateUser:
 
         assert resp.status_code == 500
         delete.assert_awaited_once_with(user_id)
+
+    @pytest.mark.asyncio
+    async def test_failure_after_supabase_auth_is_logged_as_the_admins(
+        self, auth_client, admin, domain
+    ):
+        """The rollback undoes the claim, so the undone account is claimed again."""
+        user_id = uuid.uuid4()
+        with (
+            patch.object(gotrue, "create_user", AsyncMock(return_value=user_id)),
+            patch.object(gotrue, "delete_user", AsyncMock()),
+            patch("geonames_server.api.routers.admin.claim_creation") as creation,
+            patch("geonames_server.api.routers.admin.claim_removal") as removal,
+        ):
+            resp = await auth_client.post(
+                "/portal/admin/users",
+                json={"email": f"half@{domain}", "password": "long-enough"},
+                headers=admin[1],
+            )
+
+        assert resp.status_code == 404  # no auth.users row, so no profile
+        by_admin = (ANY, user_id, admin[0], ANY)
+        assert [c.args[:4] for c in creation.await_args_list] == [by_admin] * 2
+        assert [c.args for c in removal.await_args_list] == [by_admin]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

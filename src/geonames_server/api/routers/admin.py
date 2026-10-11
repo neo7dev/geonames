@@ -273,8 +273,22 @@ async def create_user(
         await session.rollback()
         try:
             await gotrue.delete_user(user_id)
+            removed = True
         except gotrue.GoTrueError:
-            pass
+            removed = False
+        # The rollback undid the claim: log the attempt and its undoing as the admin's.
+        try:
+            await claim_creation(
+                session, user_id, principal.user_id, principal.email, "admin"
+            )
+            if removed:
+                await claim_removal(
+                    session, user_id, principal.user_id, principal.email
+                )
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            log.error(f"Could not credit {principal.email} with user {user_id}: {e}")
         raise
     return created
 
