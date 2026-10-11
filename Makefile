@@ -185,6 +185,11 @@ clean:
 
 NPM = npm --prefix frontend
 
+# npm writes this record of the install last, so it is missing after an install
+# that broke off or a node_modules that was partly deleted. Installed again then,
+# and when package-lock.json changes.
+NODE_MODULES = frontend/node_modules/.package-lock.json
+
 ## Install the web UI's packages from package-lock.json
 ui-install:
 	$(NPM) ci
@@ -192,11 +197,6 @@ ui-install:
 ## Start the Vite dev server on 5173 (hot reload); it proxies the API on 9500
 ui-dev: $(NODE_MODULES)
 	$(NPM) run dev
-
-# npm writes this record of the install last, so it is missing after an install
-# that broke off or a node_modules that was partly deleted. Installed again then,
-# and when package-lock.json changes.
-NODE_MODULES = frontend/node_modules/.package-lock.json
 
 $(NODE_MODULES): frontend/package-lock.json
 	$(NPM) ci
