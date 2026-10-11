@@ -1,11 +1,17 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, expect, it, vi } from 'vitest'
 
 import { fakeAuth, fakeSession } from '@/test/fake-supabase'
 import { baseRoutes, mockFetch, USAGE } from '@/test/fetch'
 import { prefersColorScheme } from '@/test/media'
 import { currentPath, renderApp } from '@/test/render'
+
+// The route loads this page (and its chart library) lazily. Loading it once up
+// front keeps that out of the first test's 1 s wait, which a busy run exceeds.
+beforeAll(async () => {
+  await import('@/pages/usage/usage-page')
+})
 
 beforeEach(() => {
   prefersColorScheme('light')
