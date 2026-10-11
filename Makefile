@@ -6,7 +6,8 @@ PYTHON = python3
 UV = uv
 UVX = uvx
 PROJECT_NAME := $(shell grep -m 1 "name =" pyproject.toml | cut -d '"' -f 2)
-VERSION := $(shell grep -m 1 "version =" pyproject.toml | tr -s ' ' | cut -d '"' -f 2)
+# Read on every use, so recipes after make bump-version see the new version
+VERSION = $(shell grep -m 1 "version =" pyproject.toml | tr -s ' ' | cut -d '"' -f 2)
 MESSAGE ?= "manual_revision"
 APP_NAME ?= $(shell grep -m 1 "name =" pyproject.toml | tr -s ' ' | cut -d '"' -f 2)
 
@@ -334,6 +335,27 @@ remote-etag:
 
 IMAGE ?= ghcr.io/neo7dev/$(APP_NAME)
 
+## Set the app's version in pyproject.toml, uv.lock and openapi.yaml, e.g. V=0.3.0,
+## or V=patch, V=minor, V=major. Without V it asks, showing the current version
+## (and keeps it when there is no terminal to ask). Run in the dev container.
+bump-version:
+	@current="$(VERSION)"; new="$(V)"; \
+	if [ -z "$$new" ]; then \
+		if [ ! -t 0 ]; then echo "bump-version: keeping $$current (no V given, no terminal to ask)"; exit 0; fi; \
+		printf "Update the version [%s]? [y/N] " "$$current"; read answer; \
+		case "$$answer" in [yY]*) ;; *) echo "Keeping version $$current"; exit 0 ;; esac; \
+		printf "New version (1.2.3, or patch, minor, major): "; read new; \
+	fi; \
+	case "$$new" in \
+		patch|minor|major) $(UV) version --bump "$$new" -q || exit 1 ;; \
+		*) if ! echo "$$new" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'; then \
+				echo "bump-version: '$$new' is not a version like 1.2.3"; exit 1; fi; \
+			if [ "$$new" = "$$current" ]; then echo "Version is already $$current"; exit 0; fi; \
+			$(UV) version "$$new" -q || exit 1 ;; \
+	esac; \
+	$(UV) run python -m geonames_server.scripts.openapi >/dev/null 2>&1 || { echo "bump-version: could not regenerate openapi.yaml"; exit 1; }; \
+	echo "Version $$current -> $$($(UV) version --short); commit pyproject.toml, uv.lock and openapi.yaml"
+
 ## Build the image tagged $(VERSION) and latest. The version comes from
 ## pyproject.toml, as does the app's own (/health, /docs).
 build-image: build-image-version
@@ -345,8 +367,9 @@ build-image: build-image-version
 prebuild: requirements deploy-compose lint-check format-check lock-check openapi-check ui-lint
 	@echo "prebuild: ok"
 
-## Build the image tagged $(VERSION), after make prebuild
-build-image-version: prebuild
+## Build the image tagged $(VERSION), after make bump-version (asks without V)
+## and make prebuild
+build-image-version: bump-version prebuild
 	docker build --label org.opencontainers.image.version=$(VERSION) -t $(IMAGE):$(VERSION) .
 
 ## Build the image and smoke-test it before pushing: the app imports and reports
@@ -484,4 +507,4 @@ git-auth:
 	   $(OK) "git can push to origin"; \
 	 fi
 
-.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check requirements-check deploy-compose deploy-compose-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements lock status supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys prebuild build-image build-image-version image-check push-image push-image-version gh-auth git-auth
+.PHONY: install install-dev help run api-call stress stress-limits reset-usage tests tests-pg build lint lint-check format format-check lock-check requirements-check deploy-compose deploy-compose-check predeploy clean openapi openapi-check ui-install ui-dev ui-build ui-lint ui-test ui-types ui-types-check build-image init add add-dev requirements lock status bump-version supabase-keys switch2prod switch2dev download-speed download-datasets remote-etag migrations db-auto-revision db-revision db-upgrade db-downgrade db-app-auto-revision db-app-revision db-app-upgrade db-app-downgrade seed-users check-keys prebuild build-image build-image-version image-check push-image push-image-version gh-auth git-auth

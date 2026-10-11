@@ -254,8 +254,9 @@ curl -H "X-API-Key: $KEY" "http://localhost:9500/cities15000/?limit=5"
 | `make download-speed` | Set slow-download-server's speed (`RATE=2m`, `0` = unlimited) |
 | `make remote-etag` | Show the remote files' ETag and Last-Modified |
 | **Docker image** | |
+| `make bump-version` | Set the version in `pyproject.toml`, `uv.lock` and `openapi.yaml` (`V=0.3.0`, or `V=patch`/`minor`/`major`); without `V` it asks, showing the current one |
 | `make prebuild` | Regenerate `requirements.txt` and `docker-compose.yml`, then ruff, `uv lock --check`, `openapi-check`, UI lint |
-| `make build-image` / `make build-image-version` | `prebuild`, then build `:<version>` (and tag `:latest`) |
+| `make build-image` / `make build-image-version` | `bump-version` (pass `V=` or answer its question), `prebuild`, then build `:<version>` (and tag `:latest`) |
 | `make image-check` | Build, then check: imports, version, one migration head per chain, UI built in, no tests or dev scripts |
 | `make push-image` / `make push-image-version` | `image-check`, then push to ghcr |
 | **GitHub** | |
