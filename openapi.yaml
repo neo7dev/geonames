@@ -8,7 +8,7 @@ info:
 
     Data endpoints need an API key in the `X-API-Key` header: create one in the web
     UI at `/ui`, then use **Authorize** to try requests here.'
-  version: 0.1.0
+  version: 0.2.0
 paths:
   /health:
     get:
